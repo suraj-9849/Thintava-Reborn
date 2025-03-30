@@ -1,35 +1,39 @@
+// 🔧 FILE: lib/screens/kitchen/kitchen_dashboard.dart
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 class KitchenDashboard extends StatelessWidget {
   const KitchenDashboard({super.key});
 
-  Future<void> updateStatus(String docId, String currentStatus) async {
-    String nextStatus = switch (currentStatus) {
-      'placed' => 'preparing',
-      'preparing' => 'ready',
-      'ready' => 'collected',
-      _ => 'collected',
-    };
+  Stream<QuerySnapshot> getOrdersStream() {
+    return FirebaseFirestore.instance
+        .collection('orders')
+        .orderBy('timestamp', descending: false)
+        .snapshots();
+  }
 
-    await FirebaseFirestore.instance.collection('orders').doc(docId).update({
-      'status': nextStatus,
+  Future<void> updateOrderStatus(String orderId, String newStatus) async {
+    await FirebaseFirestore.instance.collection('orders').doc(orderId).update({
+      'status': newStatus,
+      if (newStatus == 'Pick Up') 'pickedUpTime': FieldValue.serverTimestamp(),
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final ordersStream = FirebaseFirestore.instance
-        .collection('orders')
-        .orderBy('timestamp', descending: true)
-        .snapshots();
-
     return Scaffold(
       appBar: AppBar(title: const Text("Kitchen Dashboard")),
-      body: StreamBuilder(
-        stream: ordersStream,
+      body: StreamBuilder<QuerySnapshot>(
+        stream: getOrdersStream(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          if (snapshot.hasError) {
+            return const Center(child: Text("Something went wrong"));
+          }
+
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
           final orders = snapshot.data!.docs;
 
@@ -38,29 +42,40 @@ class KitchenDashboard extends StatelessWidget {
           }
 
           return ListView.builder(
+            padding: const EdgeInsets.all(12),
             itemCount: orders.length,
             itemBuilder: (context, index) {
               final order = orders[index];
               final data = order.data() as Map<String, dynamic>;
-              final items = (data['items'] as Map<String, dynamic>).entries
-                  .map((e) => "${e.key} x${e.value}")
-                  .join(', ');
 
               return Card(
-                margin: const EdgeInsets.all(10),
+                elevation: 4,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                margin: const EdgeInsets.only(bottom: 12),
                 child: ListTile(
-                  title: Text("Order by ${data['userId']}"),
+                  title: Text("Order ID: ${order.id.substring(0, 6)}"),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text("Items: $items"),
-                      Text("Status: ${data['status']}"),
-                      Text("Total: ₹${data['total']}"),
+                      const SizedBox(height: 6),
+                      Text("Items: ${data['items']?.join(', ') ?? 'N/A'}"),
+                      const SizedBox(height: 6),
+                      Text("Status: ${data['status']}")
                     ],
                   ),
-                  trailing: ElevatedButton(
-                    onPressed: () => updateStatus(order.id, data['status']),
-                    child: const Text("Next Stage"),
+                  trailing: DropdownButton<String>(
+                    value: data['status'],
+                    onChanged: (newStatus) {
+                      if (newStatus != null) {
+                        updateOrderStatus(order.id, newStatus);
+                      }
+                    },
+                    items: ['Placed', 'Cooking', 'Cooked', 'Pick Up']
+                        .map((status) => DropdownMenuItem(
+                              value: status,
+                              child: Text(status),
+                            ))
+                        .toList(),
                   ),
                 ),
               );
