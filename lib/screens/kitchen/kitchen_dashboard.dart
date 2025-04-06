@@ -18,7 +18,7 @@ class KitchenDashboard extends StatelessWidget {
   }
 
   Future<void> updateOrderStatus(String orderId, String newStatus) async {
-    final updates = <String, Object>{ 'status': newStatus };
+    final updates = <String, Object>{'status': newStatus};
     if (newStatus == 'Cooked') {
       updates['cookedTime'] = FieldValue.serverTimestamp();
     }
@@ -41,7 +41,8 @@ class KitchenDashboard extends StatelessWidget {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pushReplacementNamed(context, '/kitchen-menu'),
+          onPressed: () =>
+              Navigator.pushReplacementNamed(context, '/kitchen-menu'),
         ),
         actions: [
           IconButton(
@@ -64,18 +65,35 @@ class KitchenDashboard extends StatelessWidget {
         child: StreamBuilder<QuerySnapshot>(
           stream: getOrdersStream(),
           builder: (context, snap) {
-            if (snap.hasError) return const Center(child: Text("Error", style: TextStyle(color: Colors.white)));
-            if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-            final orders = snap.data!.docs;
-            if (orders.isEmpty) return const Center(child: Text("No orders.", style: TextStyle(color: Colors.white)));
+            if (snap.hasError) {
+              return const Center(
+                  child:
+                      Text("Error", style: TextStyle(color: Colors.white)));
+            }
+            if (!snap.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            // Filter out Terminated and PickedUp
+            final docs = snap.data!.docs.where((d) {
+              final s = d['status'];
+              return s != 'Terminated' && s != 'PickedUp';
+            }).toList();
+
+            if (docs.isEmpty) {
+              return const Center(
+                  child:
+                      Text("No active orders.", style: TextStyle(color: Colors.white)));
+            }
 
             return ListView.builder(
-              padding: EdgeInsets.only(top: kToolbarHeight + 24, left:16, right:16, bottom:16),
-              itemCount: orders.length,
+              padding: const EdgeInsets.only(
+                  top: kToolbarHeight + 24, left: 16, right: 16, bottom: 16),
+              itemCount: docs.length,
               itemBuilder: (ctx, i) {
-                final doc = orders[i];
+                final doc = docs[i];
                 final data = doc.data()! as Map<String, dynamic>;
-                return _OrderCard(
+                return OrderCard(
+                  key: ValueKey(doc.id),
                   orderId: doc.id,
                   data: data,
                   onUpdate: updateOrderStatus,
@@ -89,12 +107,12 @@ class KitchenDashboard extends StatelessWidget {
   }
 }
 
-class _OrderCard extends StatefulWidget {
+class OrderCard extends StatefulWidget {
   final String orderId;
   final Map<String, dynamic> data;
   final Future<void> Function(String, String) onUpdate;
 
-  const _OrderCard({
+  const OrderCard({
     Key? key,
     required this.orderId,
     required this.data,
@@ -102,29 +120,41 @@ class _OrderCard extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<_OrderCard> createState() => _OrderCardState();
+  State<OrderCard> createState() => _OrderCardState();
 }
 
-class _OrderCardState extends State<_OrderCard> {
+class _OrderCardState extends State<OrderCard> {
   Timer? _timer;
   Duration _remaining = Duration.zero;
+  Timestamp? _lastPickedTs;
 
   @override
   void initState() {
     super.initState();
-    _setupCountdown();
+    _maybeStartTimer(widget.data);
   }
 
-  void _setupCountdown() {
-    final status = widget.data['status'];
-    if (status == 'Pick Up' && widget.data['pickedUpTime'] != null) {
-      final pickedTs = (widget.data['pickedUpTime'] as Timestamp).toDate();
-      final expiry = pickedTs.add(const Duration(minutes:5));
+  @override
+  void didUpdateWidget(covariant OrderCard old) {
+    super.didUpdateWidget(old);
+    final newTs = widget.data['pickedUpTime'] as Timestamp?;
+    if (widget.data['status'] == 'Pick Up' && newTs != null && newTs != _lastPickedTs) {
+      _maybeStartTimer(widget.data);
+    }
+  }
+
+  void _maybeStartTimer(Map<String, dynamic> data) {
+    _timer?.cancel();
+    final status = data['status'];
+    final ts = data['pickedUpTime'] as Timestamp?;
+    if (status == 'Pick Up' && ts != null) {
+      _lastPickedTs = ts;
+      final expiry = ts.toDate().add(const Duration(minutes: 5));
       _remaining = expiry.difference(DateTime.now());
-      _timer = Timer.periodic(const Duration(seconds:1), (_) {
-        final now = DateTime.now();
-        setState(() => _remaining = expiry.difference(now));
-        if (_remaining.isNegative) _timer?.cancel();
+      _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+        final diff = expiry.difference(DateTime.now());
+        setState(() => _remaining = diff);
+        if (diff.isNegative) _timer!.cancel();
       });
     }
   }
@@ -138,43 +168,53 @@ class _OrderCardState extends State<_OrderCard> {
   @override
   Widget build(BuildContext context) {
     final status = capitalize(widget.data['status'] ?? '');
-    final shortId = widget.orderId.substring(0,6);
-    final items = (widget.data['items'] as Map<String,dynamic>?)
-        ?.entries.map((e) => '${e.key} (${e.value})').join(', ') ?? 'N/A';
+    final shortId = widget.orderId.substring(0, 6);
+    final items = (widget.data['items'] as Map<String, dynamic>?)
+            ?.entries
+            .map((e) => '${e.key} (${e.value})')
+            .join(', ') ??
+        'N/A';
 
     Widget timerWidget = const SizedBox();
     if (status == 'Pick Up') {
       if (_remaining.isNegative) {
-        timerWidget = const Text("⏰ Expired", style: TextStyle(color: Colors.red));
+        timerWidget =
+            const Text("⏰ Expired", style: TextStyle(color: Colors.red));
       } else {
-        final m = _remaining.inMinutes.remainder(60).toString().padLeft(2,'0');
-        final s = _remaining.inSeconds.remainder(60).toString().padLeft(2,'0');
-        timerWidget = Text("⏱ $m:$s", style: const TextStyle(color: Colors.green));
+        final m = _remaining.inMinutes.remainder(60).toString().padLeft(2, '0');
+        final s =
+            _remaining.inSeconds.remainder(60).toString().padLeft(2, '0');
+        timerWidget =
+            Text("⏱ $m:$s", style: const TextStyle(color: Colors.green));
       }
     }
 
     return Card(
       color: Colors.white.withOpacity(0.95),
       elevation: 6,
-      margin: const EdgeInsets.symmetric(vertical:8),
+      margin: const EdgeInsets.symmetric(vertical: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text("Order ID: $shortId", style: const TextStyle(fontSize:18, fontWeight: FontWeight.bold)),
-          const SizedBox(height:8),
-          Text("Items: $items", style: const TextStyle(fontSize:16)),
-          const SizedBox(height:8),
+          Text("Order ID: $shortId",
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Text("Items: $items", style: const TextStyle(fontSize: 16)),
+          const SizedBox(height: 8),
           Row(children: [
-            const Text("Status: ", style: TextStyle(fontSize:16, fontWeight: FontWeight.w500)),
+            const Text("Status: ",
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
             DropdownButton<String>(
               value: status,
               underline: Container(),
               onChanged: (newStatus) {
-                if (newStatus!=null) widget.onUpdate(widget.orderId, newStatus);
+                if (newStatus != null) {
+                  widget.onUpdate(widget.orderId, newStatus);
+                }
               },
-              items: ['Placed','Cooking','Cooked','Pick Up']
-                  .map((s)=> DropdownMenuItem(value: s, child: Text(s)))
+              items: ['Placed', 'Cooking', 'Cooked', 'Pick Up']
+                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                   .toList(),
             ),
             const Spacer(),
