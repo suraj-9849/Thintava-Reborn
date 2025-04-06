@@ -1,8 +1,9 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-// Helper function to capitalize status.
+// Capitalize helper
 String capitalize(String s) =>
     s.isNotEmpty ? '${s[0].toUpperCase()}${s.substring(1)}' : '';
 
@@ -17,11 +18,17 @@ class KitchenDashboard extends StatelessWidget {
   }
 
   Future<void> updateOrderStatus(String orderId, String newStatus) async {
-    await FirebaseFirestore.instance.collection('orders').doc(orderId).update({
-      'status': newStatus,
-      if (newStatus == 'Pick Up')
-        'pickedUpTime': FieldValue.serverTimestamp(),
-    });
+    final updates = <String, Object>{ 'status': newStatus };
+    if (newStatus == 'Cooked') {
+      updates['cookedTime'] = FieldValue.serverTimestamp();
+    }
+    if (newStatus == 'Pick Up') {
+      updates['pickedUpTime'] = FieldValue.serverTimestamp();
+    }
+    await FirebaseFirestore.instance
+        .collection('orders')
+        .doc(orderId)
+        .update(updates);
   }
 
   @override
@@ -34,15 +41,11 @@ class KitchenDashboard extends StatelessWidget {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
-          tooltip: "Back",
-          onPressed: () {
-            Navigator.pushReplacementNamed(context, '/kitchen-menu');
-          },
+          onPressed: () => Navigator.pushReplacementNamed(context, '/kitchen-menu'),
         ),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
-            tooltip: "Logout",
             onPressed: () async {
               await FirebaseAuth.instance.signOut();
               Navigator.pushReplacementNamed(context, '/auth');
@@ -60,33 +63,22 @@ class KitchenDashboard extends StatelessWidget {
         ),
         child: StreamBuilder<QuerySnapshot>(
           stream: getOrdersStream(),
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return const Center(
-                child: Text("Something went wrong",
-                    style: TextStyle(color: Colors.white)),
-              );
-            }
-            if (!snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            final orders = snapshot.data!.docs;
-            if (orders.isEmpty) {
-              return const Center(
-                child: Text("No orders yet.",
-                    style: TextStyle(color: Colors.white)),
-              );
-            }
+          builder: (context, snap) {
+            if (snap.hasError) return const Center(child: Text("Error", style: TextStyle(color: Colors.white)));
+            if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+            final orders = snap.data!.docs;
+            if (orders.isEmpty) return const Center(child: Text("No orders.", style: TextStyle(color: Colors.white)));
+
             return ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, kToolbarHeight + 24, 16, 16),
+              padding: EdgeInsets.only(top: kToolbarHeight + 24, left:16, right:16, bottom:16),
               itemCount: orders.length,
-              itemBuilder: (context, index) {
-                final order = orders[index];
-                final data = order.data() as Map<String, dynamic>;
+              itemBuilder: (ctx, i) {
+                final doc = orders[i];
+                final data = doc.data()! as Map<String, dynamic>;
                 return _OrderCard(
-                  orderId: order.id,
+                  orderId: doc.id,
                   data: data,
-                  updateOrderStatus: updateOrderStatus,
+                  onUpdate: updateOrderStatus,
                 );
               },
             );
@@ -97,70 +89,98 @@ class KitchenDashboard extends StatelessWidget {
   }
 }
 
-class _OrderCard extends StatelessWidget {
+class _OrderCard extends StatefulWidget {
   final String orderId;
   final Map<String, dynamic> data;
-  final Future<void> Function(String, String) updateOrderStatus;
+  final Future<void> Function(String, String) onUpdate;
 
   const _OrderCard({
     Key? key,
     required this.orderId,
     required this.data,
-    required this.updateOrderStatus,
+    required this.onUpdate,
   }) : super(key: key);
 
   @override
+  State<_OrderCard> createState() => _OrderCardState();
+}
+
+class _OrderCardState extends State<_OrderCard> {
+  Timer? _timer;
+  Duration _remaining = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _setupCountdown();
+  }
+
+  void _setupCountdown() {
+    final status = widget.data['status'];
+    if (status == 'Pick Up' && widget.data['pickedUpTime'] != null) {
+      final pickedTs = (widget.data['pickedUpTime'] as Timestamp).toDate();
+      final expiry = pickedTs.add(const Duration(minutes:5));
+      _remaining = expiry.difference(DateTime.now());
+      _timer = Timer.periodic(const Duration(seconds:1), (_) {
+        final now = DateTime.now();
+        setState(() => _remaining = expiry.difference(now));
+        if (_remaining.isNegative) _timer?.cancel();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    String status = capitalize(data['status'] ?? '');
-    String shortOrderId = orderId.substring(0, 6);
-    String itemsString = data['items'] is Map
-        ? (data['items'] as Map<String, dynamic>)
-            .entries
-            .map((e) => '${e.key} (${e.value})')
-            .join(', ')
-        : 'N/A';
+    final status = capitalize(widget.data['status'] ?? '');
+    final shortId = widget.orderId.substring(0,6);
+    final items = (widget.data['items'] as Map<String,dynamic>?)
+        ?.entries.map((e) => '${e.key} (${e.value})').join(', ') ?? 'N/A';
+
+    Widget timerWidget = const SizedBox();
+    if (status == 'Pick Up') {
+      if (_remaining.isNegative) {
+        timerWidget = const Text("⏰ Expired", style: TextStyle(color: Colors.red));
+      } else {
+        final m = _remaining.inMinutes.remainder(60).toString().padLeft(2,'0');
+        final s = _remaining.inSeconds.remainder(60).toString().padLeft(2,'0');
+        timerWidget = Text("⏱ $m:$s", style: const TextStyle(color: Colors.green));
+      }
+    }
 
     return Card(
       color: Colors.white.withOpacity(0.95),
       elevation: 6,
-      margin: const EdgeInsets.symmetric(vertical: 8),
+      margin: const EdgeInsets.symmetric(vertical:8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text("Order ID: $shortOrderId",
-                style: const TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Text("Items: $itemsString", style: const TextStyle(fontSize: 16)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Text("Status: ",
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-                DropdownButton<String>(
-                  value: status,
-                  underline: Container(),
-                  iconEnabledColor: Colors.black,
-                  onChanged: (newStatus) {
-                    if (newStatus != null) {
-                      updateOrderStatus(orderId, newStatus);
-                    }
-                  },
-                  items: ['Placed', 'Cooking', 'Cooked', 'Pick Up']
-                      .map((s) => DropdownMenuItem(
-                            value: s,
-                            child: Text(s, style: const TextStyle(fontSize: 16)),
-                          ))
-                      .toList(),
-                ),
-              ],
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text("Order ID: $shortId", style: const TextStyle(fontSize:18, fontWeight: FontWeight.bold)),
+          const SizedBox(height:8),
+          Text("Items: $items", style: const TextStyle(fontSize:16)),
+          const SizedBox(height:8),
+          Row(children: [
+            const Text("Status: ", style: TextStyle(fontSize:16, fontWeight: FontWeight.w500)),
+            DropdownButton<String>(
+              value: status,
+              underline: Container(),
+              onChanged: (newStatus) {
+                if (newStatus!=null) widget.onUpdate(widget.orderId, newStatus);
+              },
+              items: ['Placed','Cooking','Cooked','Pick Up']
+                  .map((s)=> DropdownMenuItem(value: s, child: Text(s)))
+                  .toList(),
             ),
-          ],
-        ),
+            const Spacer(),
+            timerWidget,
+          ]),
+        ]),
       ),
     );
   }

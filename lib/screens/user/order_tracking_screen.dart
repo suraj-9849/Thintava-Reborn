@@ -1,20 +1,22 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+class OrderTrackingScreen extends StatefulWidget {
+  const OrderTrackingScreen({Key? key}) : super(key: key);
+  @override
+  State<OrderTrackingScreen> createState() => _OrderTrackingScreenState();
+}
 
-class OrderTrackingScreen extends StatelessWidget {
-  const OrderTrackingScreen({super.key});
+class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
+  Timer? _timer;
+  Duration _remaining = Duration.zero;
+  DateTime? _expiry;
 
   Stream<DocumentSnapshot?> getLatestOrderStream() {
     final user = FirebaseAuth.instance.currentUser;
-
-    if (user == null) {
-      print("No user logged in, redirecting to login page");
-      // Redirect to login or show a message
-      return const Stream.empty();
-    }
-
+    if (user==null) return const Stream.empty();
     return FirebaseFirestore.instance
         .collection('orders')
         .where('userId', isEqualTo: user.uid)
@@ -24,42 +26,76 @@ class OrderTrackingScreen extends StatelessWidget {
         .map((snap) => snap.docs.isNotEmpty ? snap.docs.first : null);
   }
 
+  void _startCountdown(DateTime pickedAt) {
+    _expiry = pickedAt.add(const Duration(minutes:5));
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds:1), (_) {
+      final now = DateTime.now();
+      setState(() {
+        _remaining = _expiry!.difference(now);
+      });
+      if (_remaining.isNegative) _timer?.cancel();
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text("Track Your Order")),
       body: StreamBuilder<DocumentSnapshot?>(
         stream: getLatestOrderStream(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+        builder: (ctx, snap) {
+          if (snap.connectionState==ConnectionState.waiting)
             return const Center(child: CircularProgressIndicator());
+          final doc = snap.data;
+          if (doc==null) return const Center(child: Text("No current orders."));
+          final data = doc.data()! as Map<String,dynamic>;
+          final status = data['status'] ?? 'Unknown';
+          final total = data['total'] ?? 0.0;
+          final items = (data['items'] as Map<String,dynamic>?)
+              ?.entries.map((e)=>"${e.key}: ${e.value}").join('\n') ?? 'No items';
+
+          Widget countdown = const SizedBox();
+          if (status=='Pick Up' && data['pickedUpTime']!=null) {
+            final pickedAt = (data['pickedUpTime'] as Timestamp).toDate();
+            if (_expiry==null || _expiry!.difference(pickedAt).inMinutes<5)
+              _startCountdown(pickedAt);
+            if (_remaining.isNegative) {
+              countdown = const Text("⏰ Order expired", style: TextStyle(color: Colors.red, fontSize:16));
+            } else {
+              final m = _remaining.inMinutes.remainder(60).toString().padLeft(2,'0');
+              final s = _remaining.inSeconds.remainder(60).toString().padLeft(2,'0');
+              countdown = Text("⏱ $m:$s", style: const TextStyle(color: Colors.green, fontSize:16));
+            }
           }
 
-          if (!snapshot.hasData || snapshot.data == null) {
-            return const Center(child: Text("No current orders."));
+          if (status=='Terminated') {
+            // Move user to history or show dialog
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Order expired. Check history."))
+              );
+              Navigator.pushReplacementNamed(context,'/history');
+            });
           }
-
-          final order = snapshot.data!.data() as Map<String, dynamic>;
-          final status = order['status'] ?? 'Unknown';
-          final total = order['total'] ?? 0.0;
-          final items = (order['items'] as Map<String, dynamic>?)
-              ?.entries
-              .map((e) => "${e.key}: ${e.value}")
-              .join('\n') ??
-              'No items';
 
           return Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text("Order Status: $status", style: const TextStyle(fontSize: 22)),
-                const SizedBox(height: 10),
-                Text("Total: ₹$total", style: const TextStyle(fontSize: 18)),
-                const SizedBox(height: 10),
-                Text("Items:\n$items", style: const TextStyle(fontSize: 16)),
-              ],
-            ),
+            padding: const EdgeInsets.all(20),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text("Status: $status", style: const TextStyle(fontSize:22)),
+              const SizedBox(height:8),
+              countdown,
+              const SizedBox(height:16),
+              Text("Total: ₹$total", style: const TextStyle(fontSize:18)),
+              const SizedBox(height:16),
+              Text("Items:\n$items", style: const TextStyle(fontSize:16)),
+            ]),
           );
         },
       ),
