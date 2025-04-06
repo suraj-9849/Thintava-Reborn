@@ -6,7 +6,6 @@ class AdminHome extends StatelessWidget {
   const AdminHome({super.key});
 
   void logout(BuildContext context) async {
-    // Show confirmation dialog
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -54,33 +53,28 @@ class AdminHome extends StatelessWidget {
     final user = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
-      // No built-in AppBar; we use a custom Stack + SafeArea approach
       body: Stack(
         children: [
-          // Top background gradient
           Container(
             height: size.height * 0.35,
             width: double.infinity,
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [Color(0xFF004D40), Color(0xFF1B5E20)],
               ),
-              borderRadius: const BorderRadius.only(
+              borderRadius: BorderRadius.only(
                 bottomLeft: Radius.circular(40),
                 bottomRight: Radius.circular(40),
               ),
             ),
           ),
-
-          // Main content in a scroll view
           SafeArea(
             child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // App bar row
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
                     child: Row(
@@ -102,8 +96,6 @@ class AdminHome extends StatelessWidget {
                       ],
                     ),
                   ),
-
-                  // Admin info card
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
                     child: Row(
@@ -147,10 +139,7 @@ class AdminHome extends StatelessWidget {
                       ],
                     ),
                   ),
-
                   const SizedBox(height: 30),
-
-                  // "Quick Actions" label
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Text(
@@ -162,14 +151,10 @@ class AdminHome extends StatelessWidget {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 15),
-
-                  // Admin action cards grid
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: GridView.count(
-                      // Make the grid shrink to its content, so the whole screen scrolls
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       crossAxisCount: 2,
@@ -177,54 +162,33 @@ class AdminHome extends StatelessWidget {
                       crossAxisSpacing: 15,
                       mainAxisSpacing: 15,
                       children: [
-                        // Menu Management Card
                         _buildActionCard(
                           context,
                           title: 'Manage Menu',
                           icon: Icons.restaurant_menu,
                           color: Colors.orange,
-                          onTap: () =>
-                              Navigator.pushNamed(context, '/admin/menu'),
+                          onTap: () => Navigator.pushNamed(context, '/admin/menu'),
                         ),
-
-                        // Kitchen Dashboard Card
                         _buildActionCard(
                           context,
                           title: 'Kitchen Dashboard',
                           icon: Icons.kitchen,
                           color: Colors.green,
-                          onTap: () =>
-                              Navigator.pushNamed(context, '/kitchen'),
+                          onTap: () => Navigator.pushNamed(context, '/admin/admin-kitchen-view'),
                         ),
-
-                        // Orders Analytics Card
                         _buildActionCard(
                           context,
                           title: 'Order Analytics',
                           icon: Icons.analytics,
                           color: Colors.blue,
-                          onTap: () {
-                            // Add navigation when you implement this screen
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Coming soon!',
-                                  style: GoogleFonts.poppins(),
-                                ),
-                                behavior: SnackBarBehavior.floating,
-                              ),
-                            );
-                          },
+                          onTap: () => Navigator.pushNamed(context, '/admin/admin-history'),
                         ),
-
-                        // User Management Card
                         _buildActionCard(
                           context,
                           title: 'User Management',
                           icon: Icons.people,
                           color: Colors.purple,
                           onTap: () {
-                            // Add navigation when you implement this screen
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
@@ -239,8 +203,6 @@ class AdminHome extends StatelessWidget {
                       ],
                     ),
                   ),
-
-                  // App info footer
                   Padding(
                     padding: const EdgeInsets.all(20),
                     child: Center(
