@@ -64,30 +64,30 @@ class KitchenDashboard extends StatelessWidget {
         ),
         child: StreamBuilder<QuerySnapshot>(
           stream: getOrdersStream(),
-          builder: (context, snap) {
-            if (snap.hasError) {
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
               return const Center(
-                  child:
-                      Text("Error", style: TextStyle(color: Colors.white)));
+                child: Text("Error loading orders.", style: TextStyle(color: Colors.white)),
+              );
             }
-            if (!snap.hasData) {
+            if (!snapshot.hasData) {
               return const Center(child: CircularProgressIndicator());
             }
-            // Filter out Terminated and PickedUp
-            final docs = snap.data!.docs.where((d) {
+
+            // Filter to remove Terminated and PickedUp orders
+            final docs = snapshot.data!.docs.where((d) {
               final s = d['status'];
               return s != 'Terminated' && s != 'PickedUp';
             }).toList();
 
             if (docs.isEmpty) {
               return const Center(
-                  child:
-                      Text("No active orders.", style: TextStyle(color: Colors.white)));
+                child: Text("No active orders.", style: TextStyle(color: Colors.white)),
+              );
             }
 
             return ListView.builder(
-              padding: const EdgeInsets.only(
-                  top: kToolbarHeight + 24, left: 16, right: 16, bottom: 16),
+              padding: const EdgeInsets.fromLTRB(16, kToolbarHeight + 24, 16, 16),
               itemCount: docs.length,
               itemBuilder: (ctx, i) {
                 final doc = docs[i];
@@ -135,8 +135,8 @@ class _OrderCardState extends State<OrderCard> {
   }
 
   @override
-  void didUpdateWidget(covariant OrderCard old) {
-    super.didUpdateWidget(old);
+  void didUpdateWidget(covariant OrderCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
     final newTs = widget.data['pickedUpTime'] as Timestamp?;
     if (widget.data['status'] == 'Pick Up' && newTs != null && newTs != _lastPickedTs) {
       _maybeStartTimer(widget.data);
@@ -154,7 +154,9 @@ class _OrderCardState extends State<OrderCard> {
       _timer = Timer.periodic(const Duration(seconds: 1), (_) {
         final diff = expiry.difference(DateTime.now());
         setState(() => _remaining = diff);
-        if (diff.isNegative) _timer!.cancel();
+        if (diff.isNegative) {
+          _timer?.cancel();
+        }
       });
     }
   }
@@ -170,22 +172,18 @@ class _OrderCardState extends State<OrderCard> {
     final status = capitalize(widget.data['status'] ?? '');
     final shortId = widget.orderId.substring(0, 6);
     final items = (widget.data['items'] as Map<String, dynamic>?)
-            ?.entries
-            .map((e) => '${e.key} (${e.value})')
-            .join(', ') ??
-        'N/A';
+        ?.entries
+        .map((e) => '${e.key} (${e.value})')
+        .join(', ') ?? 'N/A';
 
     Widget timerWidget = const SizedBox();
     if (status == 'Pick Up') {
       if (_remaining.isNegative) {
-        timerWidget =
-            const Text("⏰ Expired", style: TextStyle(color: Colors.red));
+        timerWidget = const Text("⏰ Expired", style: TextStyle(color: Colors.red, fontSize: 16));
       } else {
         final m = _remaining.inMinutes.remainder(60).toString().padLeft(2, '0');
-        final s =
-            _remaining.inSeconds.remainder(60).toString().padLeft(2, '0');
-        timerWidget =
-            Text("⏱ $m:$s", style: const TextStyle(color: Colors.green));
+        final s = _remaining.inSeconds.remainder(60).toString().padLeft(2, '0');
+        timerWidget = Text("⏱ $m:$s", style: const TextStyle(color: Colors.green, fontSize: 16));
       }
     }
 
@@ -203,8 +201,7 @@ class _OrderCardState extends State<OrderCard> {
           Text("Items: $items", style: const TextStyle(fontSize: 16)),
           const SizedBox(height: 8),
           Row(children: [
-            const Text("Status: ",
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+            const Text("Status: ", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
             DropdownButton<String>(
               value: status,
               underline: Container(),

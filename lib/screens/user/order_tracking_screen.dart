@@ -54,10 +54,11 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           final doc = snap.data;
-          if (doc == null) {
+          if (doc == null || !doc.exists) {
             return const Center(child: Text("No current orders."));
           }
           final data = doc.data()! as Map<String, dynamic>;
+
           final status = data['status'] ?? 'Unknown';
           final total = data['total'] ?? 0.0;
           final items = (data['items'] as Map<String, dynamic>?)
@@ -70,8 +71,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
           Widget countdown = const SizedBox();
           if (status == 'Pick Up' && data['pickedUpTime'] != null) {
             final pickedAt = (data['pickedUpTime'] as Timestamp).toDate();
-            if (_expiry == null ||
-                _expiry!.difference(pickedAt).inMinutes < 5) {
+            if (_expiry == null || _expiry!.difference(pickedAt).inMinutes < 5) {
               _startCountdown(pickedAt);
             }
             if (_remaining.isNegative) {
@@ -107,7 +107,10 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                 ElevatedButton(
                   onPressed: () async {
                     final id = doc.id;
-                    // 1) Mark as PickedUp
+                    final userId = FirebaseAuth.instance.currentUser!.uid; // <<✅ FIX
+
+                    final orderData = {...data, 'status': 'PickedUp'};
+
                     await FirebaseFirestore.instance
                         .collection('orders')
                         .doc(id)
@@ -115,20 +118,19 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                       'status': 'PickedUp',
                       'pickedUpByUserTime': FieldValue.serverTimestamp(),
                     });
-                    // 2) Archive to histories
-                    final userId = data['userId'];
-                    final orderData = {...data, 'status': 'PickedUp'};
+
                     await FirebaseFirestore.instance
                         .collection('users')
                         .doc(userId)
                         .collection('orderHistory')
                         .doc(id)
                         .set(orderData);
+
                     await FirebaseFirestore.instance
                         .collection('adminOrderHistory')
                         .doc(id)
                         .set(orderData);
-                    // 3) Navigate to history
+
                     Navigator.pushReplacementNamed(context, '/history');
                   },
                   child: const Text("I Have Picked Up"),
