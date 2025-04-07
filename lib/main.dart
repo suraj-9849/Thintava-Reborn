@@ -208,17 +208,25 @@ class _SplashScreenState extends State<SplashScreen> {
         try {
           print("User: ${user?.uid}");
           if (user != null) {
-            // 👇 Always update FCM token (even if user already exists)
+            // 👇 Always get the latest FCM token
             String? token = await FirebaseMessaging.instance.getToken();
             print("FCM Token: $token");
 
             if (token != null) {
               await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
                 'fcmToken': token,
-              }, SetOptions(merge: true)); // 🔥 merge: true to avoid overwriting other fields
+              }, SetOptions(merge: true));
             }
 
-            // Fetch role
+            // 👇 Listen to Token Refresh
+            FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+              print("🔥 Token refreshed: $newToken");
+              await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+                'fcmToken': newToken,
+              }, SetOptions(merge: true));
+            });
+
+            // 👇 Fetch the user's role
             DocumentSnapshot<Map<String, dynamic>> userDoc = await FirebaseFirestore.instance
                 .collection('users')
                 .doc(user.uid)
@@ -231,7 +239,7 @@ class _SplashScreenState extends State<SplashScreen> {
             } else if (role == 'kitchen') {
               Navigator.pushReplacementNamed(context, '/kitchen-menu');
             } else {
-              Navigator.pushReplacementNamed(context, '/user/user-home'); 
+              Navigator.pushReplacementNamed(context, '/user/user-home');
             }
           } else {
             print("User null, navigating to /auth");
@@ -246,8 +254,6 @@ class _SplashScreenState extends State<SplashScreen> {
     });
   });
 }
-
-
 
   @override
   void dispose() {
