@@ -21,7 +21,16 @@ import 'package:canteen_app/screens/user/order_history_screen.dart';
 import 'package:canteen_app/screens/admin/admin_order_history_screen.dart';
 import 'package:canteen_app/screens/admin/admin_kitchen_view_screen.dart';
 import 'package:canteen_app/screens/user/user_home.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+// Background message handler
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+  print('Handling a background message: ${message.messageId}');
+}
 
 
 void main() async {
@@ -40,13 +49,34 @@ void main() async {
         measurementId: "",
       ),
     );
-    // On web, set persistence.
     await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
   } else {
     await Firebase.initializeApp();
-    // On mobile, persistence is automatic.
   }
+
+  // 🔥 1. Initialize Firebase Messaging
+  FirebaseMessaging messaging = FirebaseMessaging.instance;
   
+  // 🔥 2. Request permission
+  await messaging.requestPermission();
+
+  // 🔥 3. Handle background messages
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  // 🔥 4. Initialize local notifications (for showing popup inside app)
+  const AndroidInitializationSettings initializationSettingsAndroid =
+      AndroidInitializationSettings('@mipmap/ic_launcher');
+
+  const DarwinInitializationSettings initializationSettingsIOS =
+    DarwinInitializationSettings();    
+
+  const InitializationSettings initializationSettings = InitializationSettings(
+    android: initializationSettingsAndroid,
+    iOS: initializationSettingsIOS,
+  );
+
+  await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+
   runApp(const MyApp());
 }
 
@@ -138,47 +168,89 @@ class SplashScreen extends StatefulWidget {
  
 class _SplashScreenState extends State<SplashScreen> {
   late final StreamSubscription<User?> _authSubscription;
-  
+
   @override
   void initState() {
     super.initState();
-    // Listen to auth changes.
-    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
-      Future.delayed(const Duration(seconds: 2), () async {
-        if (mounted) {
+    _setupFirebaseMessaging(); // 👈 Add this
+    _listenToAuth();
+  }
+
+  void _setupFirebaseMessaging() async {
+    // Foreground Notifications
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      RemoteNotification? notification = message.notification;
+      AndroidNotification? android = message.notification?.android;
+
+      if (notification != null && android != null) {
+        flutterLocalNotificationsPlugin.show(
+          notification.hashCode,
+          notification.title,
+          notification.body,
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'thintava_channel', // Channel ID
+              'Thintava Notifications', // Channel name
+              importance: Importance.high,
+              priority: Priority.high,
+            ),
+          ),
+        );
+      }
+    });
+  }
+
+  void _listenToAuth() {
+  print("Listening to auth...");
+  _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
+    Future.delayed(const Duration(seconds: 2), () async {
+      if (mounted) {
+        try {
+          print("User: ${user?.uid}");
           if (user != null) {
-            // If logged in, fetch the user's role from Firestore.
+            // Save FCM token
+            String? token = await FirebaseMessaging.instance.getToken();
+            print("FCM Token: $token");
+
+            // Fetch role
             DocumentSnapshot<Map<String, dynamic>> userDoc = await FirebaseFirestore.instance
                 .collection('users')
                 .doc(user.uid)
                 .get();
             String role = userDoc.exists ? (userDoc.data()?['role'] ?? 'user') : 'user';
-            
-            // Route based on role.
+            print("Role: $role");
+
             if (role == 'admin') {
               Navigator.pushReplacementNamed(context, '/admin/home');
             } else if (role == 'kitchen') {
               Navigator.pushReplacementNamed(context, '/kitchen-menu');
             } else {
-              Navigator.pushReplacementNamed(context, '/menu');
+              Navigator.pushReplacementNamed(context, '/menu'); // ✅ VERY IMPORTANT
             }
           } else {
+            print("User null, navigating to /auth");
             Navigator.pushReplacementNamed(context, '/auth');
           }
+        } catch (e, stack) {
+          print("❗ SplashScreen Error: $e");
+          print(stack);
+          Navigator.pushReplacementNamed(context, '/auth'); // If error, send user to login
         }
-      });
+      }
     });
-  }
-  
+  });
+}
+
+
   @override
   void dispose() {
     _authSubscription.cancel();
     super.dispose();
   }
-  
+
   @override
   Widget build(BuildContext context) {
-    // Show a splash UI while waiting for auth state.
+    // Splash UI
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
