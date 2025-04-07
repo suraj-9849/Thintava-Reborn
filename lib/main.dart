@@ -208,9 +208,15 @@ class _SplashScreenState extends State<SplashScreen> {
         try {
           print("User: ${user?.uid}");
           if (user != null) {
-            // Save FCM token
+            // 👇 Always update FCM token (even if user already exists)
             String? token = await FirebaseMessaging.instance.getToken();
             print("FCM Token: $token");
+
+            if (token != null) {
+              await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+                'fcmToken': token,
+              }, SetOptions(merge: true)); // 🔥 merge: true to avoid overwriting other fields
+            }
 
             // Fetch role
             DocumentSnapshot<Map<String, dynamic>> userDoc = await FirebaseFirestore.instance
@@ -225,7 +231,7 @@ class _SplashScreenState extends State<SplashScreen> {
             } else if (role == 'kitchen') {
               Navigator.pushReplacementNamed(context, '/kitchen-menu');
             } else {
-              Navigator.pushReplacementNamed(context, '/menu'); // ✅ VERY IMPORTANT
+              Navigator.pushReplacementNamed(context, '/user/user-home'); 
             }
           } else {
             print("User null, navigating to /auth");
@@ -234,12 +240,13 @@ class _SplashScreenState extends State<SplashScreen> {
         } catch (e, stack) {
           print("❗ SplashScreen Error: $e");
           print(stack);
-          Navigator.pushReplacementNamed(context, '/auth'); // If error, send user to login
+          Navigator.pushReplacementNamed(context, '/auth');
         }
       }
     });
   });
 }
+
 
 
   @override
