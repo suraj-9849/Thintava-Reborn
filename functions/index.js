@@ -1,14 +1,16 @@
-const functions = require('firebase-functions');
+const functions = require('firebase-functions/v1');   // ✅ THIS
 const admin = require('firebase-admin');
-admin.initializeApp();
-
+const serviceAccount = require('./serviceAccountKey.json');  // 👈 Add this line
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 // ✅ Your existing function (KEEP IT)
 exports.terminateStalePickups = functions.pubsub
   .schedule('every 1 minutes')
   .onRun(async (context) => {
     const db = admin.firestore();
     const now = admin.firestore.FieldValue.serverTimestamp();
-    const serverNow = admin.firestore.Timestamp.now(); // for calculations
+    const serverNow = admin.firestore.Timestamp.now();
     const cutoff = admin.firestore.Timestamp.fromMillis(serverNow.toMillis() - 5 * 60 * 1000);
 
     const stale = await db.collection('orders')
@@ -27,19 +29,16 @@ exports.terminateStalePickups = functions.pubsub
       const id = doc.id;
       const userId = data.userId;
 
-      // Update the main orders collection
       batch.update(db.collection('orders').doc(id), {
         status: 'Terminated',
         terminatedTime: now,
       });
 
-      // Save to user's order history
       batch.set(
         db.collection('users').doc(userId).collection('orderHistory').doc(id),
         { ...data, status: 'Terminated', terminatedTime: serverNow }
       );
 
-      // Save to admin order history
       batch.set(
         db.collection('adminOrderHistory').doc(id),
         { ...data, status: 'Terminated', terminatedTime: serverNow }
@@ -51,30 +50,73 @@ exports.terminateStalePickups = functions.pubsub
     return null;
   });
 
-// ✅ New function to send notification automatically
-exports.sendNotificationOnNewNotification = functions.firestore
-  .document('notifications/{notificationId}')
+// 🚀 New function: notify user when order status changes
+exports.notifyKitchenOnNewOrder = functions.firestore
+  .document('orders/{orderId}')
   .onCreate(async (snap, context) => {
-    const notification = snap.data();
+    const newOrder = snap.data();
 
-    if (!notification) {
-      console.log("No notification data");
+    // 🔥 Fetch kitchen user with role 'kitchen' from users collection
+    const kitchenUsers = await admin.firestore().collection('users')
+      .where('role', '==', 'kitchen')
+      .get();
+
+    if (kitchenUsers.empty) {
+      console.log('No kitchen user found!');
+      return null;
+    }
+
+    const kitchenFcmToken = kitchenUsers.docs[0].data().fcmToken;  // 🔥 Use fcmToken
+
+    if (!kitchenFcmToken) {
+      console.log('No FCM token for kitchen!');
       return null;
     }
 
     const payload = {
       notification: {
-        title: notification.title || "New Update",
-        body: notification.body || "",
+        title: 'New Order Received',
+        body: `A new order has been placed. Check the kitchen panel.`,
       },
-      data: notification.data || {},
     };
 
-    if (notification.token) {
-      console.log(`Sending notification to token: ${notification.token}`);
-      await admin.messaging().sendToDevice(notification.token, payload);
-    } else {
-      console.log("No token found, skipping send.");
+    return admin.messaging().sendToDevice(kitchenFcmToken, payload);
+  });
+
+// 🚀 New function: notify kitchen when a new order is created
+exports.notifyUserOnOrderStatusChange = functions.firestore
+  .document('orders/{orderId}')
+  .onUpdate(async (change, context) => {
+    const beforeStatus = change.before.data().status;
+    const afterStatus = change.after.data().status;
+
+    if (beforeStatus !== afterStatus) {
+      const orderData = change.after.data();
+      const userId = orderData.userId;
+
+      const userDoc = await admin.firestore().collection('users').doc(userId).get();
+      if (!userDoc.exists) {
+        console.log('No such user!');
+        return null;
+      }
+
+      const fcmToken = userDoc.data().fcmToken;
+
+      if (!fcmToken) {
+        console.log('No FCM token found for user!');
+        return null;
+      }
+
+      const payload = {
+        notification: {
+          title: 'Order Update',
+          body: `Your order status changed!`,
+        },
+      };
+      
+      // ✅ Correct way for your setup
+      return admin.messaging().sendToDevice(fcmToken, payload);
+      
     }
 
     return null;
