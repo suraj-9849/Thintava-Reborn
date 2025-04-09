@@ -2,6 +2,7 @@ const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 admin.initializeApp();
 
+// ✅ Your existing function (KEEP IT)
 exports.terminateStalePickups = functions.pubsub
   .schedule('every 1 minutes')
   .onRun(async (context) => {
@@ -47,5 +48,34 @@ exports.terminateStalePickups = functions.pubsub
 
     await batch.commit();
     console.log(`Terminated ${stale.size} stale pickups.`);
+    return null;
+  });
+
+// ✅ New function to send notification automatically
+exports.sendNotificationOnNewNotification = functions.firestore
+  .document('notifications/{notificationId}')
+  .onCreate(async (snap, context) => {
+    const notification = snap.data();
+
+    if (!notification) {
+      console.log("No notification data");
+      return null;
+    }
+
+    const payload = {
+      notification: {
+        title: notification.title || "New Update",
+        body: notification.body || "",
+      },
+      data: notification.data || {},
+    };
+
+    if (notification.token) {
+      console.log(`Sending notification to token: ${notification.token}`);
+      await admin.messaging().sendToDevice(notification.token, payload);
+    } else {
+      console.log("No token found, skipping send.");
+    }
+
     return null;
   });

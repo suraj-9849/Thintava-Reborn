@@ -108,7 +108,7 @@ class _CartScreenState extends State<CartScreen> {
     }
   }
 
- void _handlePaymentSuccess(PaymentSuccessResponse response) async {
+void _handlePaymentSuccess(PaymentSuccessResponse response) async {
   final user = FirebaseAuth.instance.currentUser;
   if (user == null) return;
 
@@ -129,7 +129,27 @@ class _CartScreenState extends State<CartScreen> {
     'paymentStatus': 'success',
   };
 
-  await FirebaseFirestore.instance.collection('orders').add(order);
+  // ✅ Save the order
+  final orderDoc = await FirebaseFirestore.instance.collection('orders').add(order);
+
+  // ✅ Send notification to kitchen
+  final kitchenDoc = await FirebaseFirestore.instance
+      .collection('users')
+      .where('role', isEqualTo: 'kitchen')
+      .limit(1)
+      .get();
+
+  if (kitchenDoc.docs.isNotEmpty) {
+    final kitchenToken = kitchenDoc.docs.first.data()['fcmToken'];
+
+    if (kitchenToken != null) {
+      await FirebaseFirestore.instance.collection('notifications').add({
+        'title': 'New Order Placed!',
+        'body': 'A user has placed a new order 🛒',
+        'token': kitchenToken,
+      });
+    }
+  }
 
   // ✅ CLEAR THE CART
   widget.cart.clear();

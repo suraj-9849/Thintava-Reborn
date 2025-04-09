@@ -18,18 +18,39 @@ class KitchenDashboard extends StatelessWidget {
   }
 
   Future<void> updateOrderStatus(String orderId, String newStatus) async {
-    final updates = <String, Object>{'status': newStatus};
-    if (newStatus == 'Cooked') {
-      updates['cookedTime'] = FieldValue.serverTimestamp();
-    }
-    if (newStatus == 'Pick Up') {
-      updates['pickedUpTime'] = FieldValue.serverTimestamp();
-    }
-    await FirebaseFirestore.instance
-        .collection('orders')
-        .doc(orderId)
-        .update(updates);
+  final db = FirebaseFirestore.instance;
+  final orderRef = db.collection('orders').doc(orderId);
+
+  final updates = <String, Object>{'status': newStatus};
+  if (newStatus == 'Cooked') {
+    updates['cookedTime'] = FieldValue.serverTimestamp();
   }
+  if (newStatus == 'Pick Up') {
+    updates['pickedUpTime'] = FieldValue.serverTimestamp();
+  }
+
+  // ✅ Update order status
+  await orderRef.update(updates);
+
+  // ✅ Send notification to User when status becomes Pick Up
+  if (newStatus == 'Pick Up') {
+    final orderDoc = await orderRef.get();
+    final userId = orderDoc.data()?['userId'];
+
+    if (userId != null) {
+      final userDoc = await db.collection('users').doc(userId).get();
+      final fcmToken = userDoc.data()?['fcmToken'];
+
+      if (fcmToken != null) {
+        await db.collection('notifications').add({
+          'title': 'Order Ready!',
+          'body': 'Your order is ready for pickup 🍽️',
+          'token': fcmToken,
+        });
+      }
+    }
+  }
+}
 
   @override
   Widget build(BuildContext context) {
