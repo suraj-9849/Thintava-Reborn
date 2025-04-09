@@ -18,20 +18,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final auth = AuthService();
 
   void handleRegister() async {
-    try {
-      final user = await auth.register(
-          emailController.text, passwordController.text, selectedRole);
-      if (user != null) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => RoleRouter(uid: user.uid)),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Register Failed: $e')));
+  try {
+    final user = await auth.register(
+        emailController.text, passwordController.text, selectedRole);
+    if (user != null) {
+      // 🚀 After successful register, go to SplashScreen
+      Navigator.pushReplacementNamed(context, '/splash');
     }
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Register Failed: $e')));
   }
+}
+
 
   @override
   Widget build(BuildContext context) {

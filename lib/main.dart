@@ -52,6 +52,8 @@ void main() async {
     await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
   } else {
     await Firebase.initializeApp();
+    await saveInitialFCMToken();
+
   }
 
   // 🔥 1. Initialize Firebase Messaging
@@ -79,6 +81,25 @@ void main() async {
 
   runApp(const MyApp());
 }
+
+Future<void> saveInitialFCMToken() async {
+  User? user = FirebaseAuth.instance.currentUser;
+  if (user != null) {
+    String? token = await FirebaseMessaging.instance.getToken();
+    if (token != null) {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'fcmToken': token,
+      }, SetOptions(merge: true));
+    }
+
+    FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'fcmToken': newToken,
+      }, SetOptions(merge: true));
+    });
+  }
+}
+
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -141,6 +162,7 @@ class MyApp extends StatelessWidget {
     final cart = ModalRoute.of(context)!.settings.arguments as Map<String, int>;
     return CartScreen(cart: cart);
   },
+  '/splash': (context) => const SplashScreen(),
   '/track': (_) => const OrderTrackingScreen(),
   '/kitchen': (_) => const KitchenDashboard(),
   '/kitchen-menu': (_) => const KitchenHome(),
@@ -168,16 +190,16 @@ class SplashScreen extends StatefulWidget {
  
 class _SplashScreenState extends State<SplashScreen> {
   late final StreamSubscription<User?> _authSubscription;
+  StreamSubscription<String>? _tokenRefreshSubscription;
 
   @override
   void initState() {
     super.initState();
-    _setupFirebaseMessaging(); // 👈 Add this
-    _listenToAuth();
+    _setupFirebaseMessaging();
+    _startListeningToAuth();
   }
 
-  void _setupFirebaseMessaging() async {
-    // Foreground Notifications
+  void _setupFirebaseMessaging() {
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       RemoteNotification? notification = message.notification;
       AndroidNotification? android = message.notification?.android;
@@ -189,8 +211,8 @@ class _SplashScreenState extends State<SplashScreen> {
           notification.body,
           const NotificationDetails(
             android: AndroidNotificationDetails(
-              'thintava_channel', // Channel ID
-              'Thintava Notifications', // Channel name
+              'thintava_channel',
+              'Thintava Notifications',
               importance: Importance.high,
               priority: Priority.high,
             ),
@@ -200,109 +222,122 @@ class _SplashScreenState extends State<SplashScreen> {
     });
   }
 
-  void _listenToAuth() {
-  print("Listening to auth...");
-  _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
-    Future.delayed(const Duration(seconds: 2), () async {
-      if (mounted) {
-        try {
-          print("User: ${user?.uid}");
-          if (user != null) {
-            // 👇 Always get the latest FCM token
-            String? token = await FirebaseMessaging.instance.getToken();
-            print("FCM Token: $token");
+  void _startListeningToAuth() {
+    print("👂 Listening to authStateChanges...");
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) async {
+      if (!mounted) return;
 
-            if (token != null) {
-              await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-                'fcmToken': token,
-              }, SetOptions(merge: true));
-            }
+      if (user == null) {
+        print("🔴 No user. Navigating to /auth...");
+        Navigator.pushReplacementNamed(context, '/auth');
+        return;
+      }
 
-            // 👇 Listen to Token Refresh
-            FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
-              print("🔥 Token refreshed: $newToken");
-              await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-                'fcmToken': newToken,
-              }, SetOptions(merge: true));
-            });
+      print("🟢 User signed in: ${user.uid}");
 
-            // 👇 Fetch the user's role
-            DocumentSnapshot<Map<String, dynamic>> userDoc = await FirebaseFirestore.instance
-                .collection('users')
-                .doc(user.uid)
-                .get();
-            String role = userDoc.exists ? (userDoc.data()?['role'] ?? 'user') : 'user';
-            print("Role: $role");
+      // Important: START FCM Token Fetching
+      await _fetchAndSaveFcmToken(user.uid);
 
-            if (role == 'admin') {
-              Navigator.pushReplacementNamed(context, '/admin/home');
-            } else if (role == 'kitchen') {
-              Navigator.pushReplacementNamed(context, '/kitchen-menu');
-            } else {
-              Navigator.pushReplacementNamed(context, '/user/user-home');
-            }
-          } else {
-            print("User null, navigating to /auth");
-            Navigator.pushReplacementNamed(context, '/auth');
-          }
-        } catch (e, stack) {
-          print("❗ SplashScreen Error: $e");
-          print(stack);
-          Navigator.pushReplacementNamed(context, '/auth');
-        }
+      // Now fetch the user role
+      final role = await _fetchUserRole(user.uid);
+
+      if (!mounted) return;
+
+      if (role == 'admin') {
+        Navigator.pushReplacementNamed(context, '/admin/home');
+      } else if (role == 'kitchen') {
+        Navigator.pushReplacementNamed(context, '/kitchen-menu');
+      } else {
+        Navigator.pushReplacementNamed(context, '/user/user-home');
       }
     });
-  });
-}
+  }
+
+  Future<void> _fetchAndSaveFcmToken(String userId) async {
+    try {
+      print("🚀 Fetching FCM token...");
+      String? token;
+      int retries = 0;
+
+      while (token == null && retries < 10) {
+        token = await FirebaseMessaging.instance.getToken();
+        if (token == null) {
+          print("⏳ FCM token not ready, retrying... attempt $retries");
+          await Future.delayed(const Duration(seconds: 1));
+          retries++;
+        }
+      }
+
+      if (token != null) {
+        print("✅ Got FCM token: $token");
+        await FirebaseFirestore.instance.collection('users').doc(userId).set(
+          {'fcmToken': token},
+          SetOptions(merge: true),
+        );
+
+        // Also listen for future token refreshes
+        _tokenRefreshSubscription?.cancel();
+        _tokenRefreshSubscription = FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+          print("🔄 FCM token refreshed: $newToken");
+          await FirebaseFirestore.instance.collection('users').doc(userId).set(
+            {'fcmToken': newToken},
+            SetOptions(merge: true),
+          );
+        });
+      } else {
+        print("❗ Failed to get FCM token after retries.");
+      }
+    } catch (e) {
+      print("❗ Error fetching FCM token: $e");
+    }
+  }
+
+  Future<String> _fetchUserRole(String userId) async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
+      if (doc.exists) {
+        return doc.data()?['role'] ?? 'user';
+      } else {
+        return 'user';
+      }
+    } catch (e) {
+      print("❗ Error fetching role: $e");
+      return 'user';
+    }
+  }
 
   @override
   void dispose() {
     _authSubscription.cancel();
+    _tokenRefreshSubscription?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // Splash UI
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment(0.0, -0.5),
-            radius: 1.0,
-            colors: [Color(0xFF4CAF50), Colors.black87],
-          ),
-        ),
-        child: const Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircleAvatar(
-                radius: 60,
-                backgroundColor: Colors.white,
-                child: Icon(
-                  Icons.restaurant_menu,
-                  size: 70,
-                  color: Color(0xFF4CAF50),
-                ),
-              ),
-              SizedBox(height: 24),
-              CircularProgressIndicator(color: Colors.white),
-              SizedBox(height: 16),
-              Text(
-                "Getting things ready...",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                ),
-              ),
-            ],
-          ),
+    return const Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(color: Colors.green),
+            SizedBox(height: 16),
+            Text(
+              "Preparing your app...",
+              style: TextStyle(color: Colors.white, fontSize: 16),
+            ),
+          ],
         ),
       ),
+      backgroundColor: Colors.black,
     );
   }
 }
+
+
+
+
+
 
 /// AUTH MENU (Login/Register Options)
 class AuthMenu extends StatelessWidget {

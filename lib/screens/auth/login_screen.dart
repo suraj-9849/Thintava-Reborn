@@ -17,20 +17,17 @@ class _LoginScreenState extends State<LoginScreen> {
   final auth = AuthService();
 
   void handleLogin() async {
-    try {
-      final user =
-          await auth.login(emailController.text, passwordController.text);
-      if (user != null) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => RoleRouter(uid: user.uid)),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Login Failed: $e')));
+  try {
+    final user = await auth.login(emailController.text, passwordController.text);
+    if (user != null) {
+      Navigator.pushReplacementNamed(context, '/splash'); // 👈 Go to Splash
     }
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Login Failed: $e')),
+    );
   }
+}
 
   @override
   Widget build(BuildContext context) {
