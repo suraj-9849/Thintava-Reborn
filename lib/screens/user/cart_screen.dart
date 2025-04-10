@@ -122,7 +122,7 @@ void _handlePaymentSuccess(PaymentSuccessResponse response) async {
   final order = {
     'userId': user.uid,
     'items': orderItems,
-    'status': 'placed',
+    'status': 'Placed',   // 🛠️ Fixed: Use 'Placed' not 'placed'
     'timestamp': Timestamp.now(),
     'total': total,
     'paymentId': response.paymentId,
@@ -130,26 +130,10 @@ void _handlePaymentSuccess(PaymentSuccessResponse response) async {
   };
 
   // ✅ Save the order
-  final orderDoc = await FirebaseFirestore.instance.collection('orders').add(order);
+  await FirebaseFirestore.instance.collection('orders').add(order);
 
-  // ✅ Send notification to kitchen
-  final kitchenDoc = await FirebaseFirestore.instance
-      .collection('users')
-      .where('role', isEqualTo: 'kitchen')
-      .limit(1)
-      .get();
-
-  if (kitchenDoc.docs.isNotEmpty) {
-    final kitchenToken = kitchenDoc.docs.first.data()['fcmToken'];
-
-    if (kitchenToken != null) {
-      await FirebaseFirestore.instance.collection('notifications').add({
-        'title': 'New Order Placed!',
-        'body': 'A user has placed a new order 🛒',
-        'token': kitchenToken,
-      });
-    }
-  }
+  // ❌ No need to manually send notification to kitchen
+  // Cloud Function will automatically notify kitchen
 
   // ✅ CLEAR THE CART
   widget.cart.clear();
@@ -159,7 +143,6 @@ void _handlePaymentSuccess(PaymentSuccessResponse response) async {
   );
   Navigator.popUntil(context, (route) => route.isFirst);
 }
-
 
 
  void _handlePaymentError(PaymentFailureResponse response) {

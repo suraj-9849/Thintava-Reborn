@@ -80,7 +80,11 @@ exports.notifyKitchenOnNewOrder = functions.firestore
       },
     };
 
-    return admin.messaging().sendToDevice(kitchenFcmToken, payload);
+    // Fixed: Using send() instead of sendToDevice()
+    return admin.messaging().send({
+      token: kitchenFcmToken,
+      notification: payload.notification
+    });
   });
 
 // 🚀 New function: notify kitchen when a new order is created
@@ -114,9 +118,11 @@ exports.notifyUserOnOrderStatusChange = functions.firestore
         },
       };
       
-      // ✅ Correct way for your setup
-      return admin.messaging().sendToDevice(fcmToken, payload);
-      
+      // ✅ FIXED: Use send() method instead of sendToDevice()
+      return admin.messaging().send({
+        token: fcmToken,
+        notification: payload.notification
+      });
     }
 
     return null;

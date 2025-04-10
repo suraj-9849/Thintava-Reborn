@@ -1,3 +1,8 @@
+# Node Modules & Local Files
+node_modules/
+*.local
+serviceAccountKey.json
+
 # Miscellaneous
 *.class
 *.log
