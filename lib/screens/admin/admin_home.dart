@@ -14,7 +14,7 @@ class AdminHome extends StatelessWidget {
           'Confirm Logout',
           style: GoogleFonts.poppins(
             fontWeight: FontWeight.bold,
-            color: Theme.of(context).colorScheme.primary,
+            color: const Color(0xFFFFB703),
           ),
         ),
         content: Text(
@@ -32,7 +32,7 @@ class AdminHome extends StatelessWidget {
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.primary,
+              backgroundColor: const Color(0xFFFFB703),
               foregroundColor: Colors.white,
             ),
             child: const Text('Logout'),
@@ -55,6 +55,7 @@ class AdminHome extends StatelessWidget {
     return Scaffold(
       body: Stack(
         children: [
+          // Top curved background
           Container(
             height: size.height * 0.35,
             width: double.infinity,
@@ -62,7 +63,7 @@ class AdminHome extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [Color(0xFF004D40), Color(0xFF1B5E20)],
+                colors: [Color(0xFFFFB703), Color(0xFFFFB703)],
               ),
               borderRadius: BorderRadius.only(
                 bottomLeft: Radius.circular(40),
@@ -108,7 +109,7 @@ class AdminHome extends StatelessWidget {
                             style: GoogleFonts.poppins(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
-                              color: Theme.of(context).colorScheme.primary,
+                              color: const Color(0xFFFFB703),
                             ),
                           ),
                         ),
@@ -147,7 +148,7 @@ class AdminHome extends StatelessWidget {
                       style: GoogleFonts.poppins(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.primary,
+                        color: const Color(0xFFFFB703),
                       ),
                     ),
                   ),
@@ -171,34 +172,24 @@ class AdminHome extends StatelessWidget {
                         ),
                         _buildActionCard(
                           context,
-                          title: 'Kitchen Dashboard',
-                          icon: Icons.kitchen,
-                          color: Colors.green,
-                          onTap: () => Navigator.pushNamed(context, '/admin/admin-kitchen-view'),
+                          title: 'Live Orders',
+                          icon: Icons.receipt_long,
+                          color: Colors.red,
+                          onTap: () => Navigator.pushNamed(context, '/admin/live-orders'),
                         ),
                         _buildActionCard(
                           context,
-                          title: 'Order Analytics',
-                          icon: Icons.analytics,
+                          title: 'Order History',
+                          icon: Icons.history,
                           color: Colors.blue,
                           onTap: () => Navigator.pushNamed(context, '/admin/admin-history'),
                         ),
                         _buildActionCard(
                           context,
-                          title: 'User Management',
-                          icon: Icons.people,
-                          color: Colors.purple,
-                          onTap: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Coming soon!',
-                                  style: GoogleFonts.poppins(),
-                                ),
-                                behavior: SnackBarBehavior.floating,
-                              ),
-                            );
-                          },
+                          title: 'Kitchen View',
+                          icon: Icons.kitchen,
+                          color: Colors.green,
+                          onTap: () => Navigator.pushNamed(context, '/admin/admin-kitchen-view'),
                         ),
                       ],
                     ),

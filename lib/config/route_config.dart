@@ -11,6 +11,7 @@ import 'package:canteen_app/screens/admin/admin_home.dart';
 import 'package:canteen_app/screens/admin/menu_management_screen.dart';
 import 'package:canteen_app/screens/admin/admin_order_history_screen.dart';
 import 'package:canteen_app/screens/admin/admin_kitchen_view_screen.dart';
+import 'package:canteen_app/screens/admin/admin_live_orders.dart'; // Add this new import
 import 'package:canteen_app/screens/kitchen/kitchen_dashboard.dart';
 import 'package:canteen_app/screens/kitchen/kitchen_home.dart';
 import 'package:canteen_app/screens/splash/splash_screen.dart';
@@ -32,6 +33,7 @@ class RouteConfig {
       '/kitchen-dashboard': (_) => const KitchenDashboard(),
       '/admin/menu': (_) => const MenuManagementScreen(),
       '/admin/home': (_) => const AdminHome(),
+      '/admin/live-orders': (_) => const AdminLiveOrdersScreen(), // Add this new route
       '/history': (_) => const OrderHistoryScreen(),
       '/admin/admin-history': (_) => const AdminOrderHistoryScreen(),
       '/admin/admin-kitchen-view': (_) => const AdminKitchenViewScreen(),
