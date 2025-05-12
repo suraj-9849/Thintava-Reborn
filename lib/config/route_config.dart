@@ -21,13 +21,15 @@ class RouteConfig {
       '/auth': (_) => const AuthMenu(),
       '/menu': (_) => const MenuScreen(),
       '/cart': (context) {
-        final cart = ModalRoute.of(context)!.settings.arguments as Map<String, int>;
+        final cart =
+            ModalRoute.of(context)!.settings.arguments as Map<String, int>;
         return CartScreen(cart: cart);
       },
       '/splash': (context) => const SplashScreen(),
       '/track': (_) => const OrderTrackingScreen(),
       '/kitchen': (_) => const KitchenDashboard(),
       '/kitchen-menu': (_) => const KitchenHome(),
+      '/kitchen-dashboard': (_) => const KitchenDashboard(),
       '/admin/menu': (_) => const MenuManagementScreen(),
       '/admin/home': (_) => const AdminHome(),
       '/history': (_) => const OrderHistoryScreen(),
