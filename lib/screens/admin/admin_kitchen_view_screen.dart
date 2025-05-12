@@ -9,9 +9,9 @@ class AdminKitchenViewScreen extends StatelessWidget {
   const AdminKitchenViewScreen({super.key});
 
   Stream<QuerySnapshot> getOrdersStream() {
+    // Simple query without whereNotIn filter
     return FirebaseFirestore.instance
         .collection('orders')
-        .where('status', whereNotIn: ['PickedUp', 'Terminated'])
         .orderBy('timestamp', descending: false)
         .snapshots();
   }
@@ -22,7 +22,10 @@ class AdminKitchenViewScreen extends StatelessWidget {
       appBar: AppBar(
         title: Text(
           'Kitchen Dashboard (Admin View)',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
         backgroundColor: const Color(0xFFFFB703),
         elevation: 0,
@@ -41,19 +44,26 @@ class AdminKitchenViewScreen extends StatelessWidget {
             if (snapshot.hasError) {
               return Center(
                 child: Text(
-                  'Error loading orders',
+                  'Error loading orders: ${snapshot.error}',
                   style: GoogleFonts.poppins(color: Colors.red),
                 ),
               );
             }
             
-            if (!snapshot.hasData) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(
                 child: CircularProgressIndicator(color: Color(0xFFFFB703)),
               );
             }
 
-            final docs = snapshot.data!.docs;
+            final allDocs = snapshot.data!.docs;
+            
+            // Filter active orders in Dart
+            final docs = allDocs.where((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              final status = (data['status'] as String?)?.toLowerCase() ?? '';
+              return status != 'pickedup' && status != 'terminated';
+            }).toList();
 
             if (docs.isEmpty) {
               return Center(
@@ -90,7 +100,7 @@ class AdminKitchenViewScreen extends StatelessWidget {
               itemCount: docs.length,
               itemBuilder: (ctx, i) {
                 final doc = docs[i];
-                final data = doc.data()! as Map<String, dynamic>;
+                final data = doc.data() as Map<String, dynamic>;
                 final orderId = doc.id;
                 return _KitchenOrderCard(
                   key: ValueKey(orderId),
@@ -118,12 +128,20 @@ class _KitchenOrderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final status = capitalize(data['status'] ?? '');
-    final shortId = orderId.substring(0, 6);
-    final items = (data['items'] as Map<String, dynamic>?)
-        ?.entries
+    // Safely get values with null checks
+    final status = capitalize(data['status'] as String? ?? '');
+    final shortId = orderId.substring(0, min(6, orderId.length));
+    
+    // Handle potentially missing or malformed 'items' field
+    Map<String, dynamic> itemsMap = {};
+    if (data['items'] is Map) {
+      itemsMap = Map<String, dynamic>.from(data['items'] as Map);
+    }
+    
+    final items = itemsMap.entries
         .map((e) => '${e.key} (${e.value})')
-        .join(', ') ?? 'N/A';
+        .join(', ');
+    
     final timestamp = (data['timestamp'] as Timestamp?)?.toDate();
     final timeAgo = timestamp != null 
         ? _getTimeAgo(timestamp) 
@@ -193,7 +211,7 @@ class _KitchenOrderCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              items,
+              items.isNotEmpty ? items : 'No items',
               style: GoogleFonts.poppins(
                 fontSize: 14,
               ),
@@ -235,6 +253,8 @@ class _KitchenOrderCard extends StatelessWidget {
 
   Widget _buildStatusFlow(String currentStatus) {
     const statuses = ['Placed', 'Cooking', 'Cooked', 'Pick Up'];
+    
+    // Find the index of the current status (case-insensitive)
     final currentIndex = statuses.indexWhere(
         (s) => s.toLowerCase() == currentStatus.toLowerCase());
 
@@ -305,4 +325,9 @@ class _KitchenOrderCard extends StatelessWidget {
       return '${difference.inDays}d ago';
     }
   }
+}
+
+// Helper function to avoid substring errors
+int min(int a, int b) {
+  return a < b ? a : b;
 }

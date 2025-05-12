@@ -8,7 +8,6 @@ class AdminLiveOrdersScreen extends StatelessWidget {
   Stream<QuerySnapshot> getActiveOrdersStream() {
     return FirebaseFirestore.instance
         .collection('orders')
-        .where('status', whereNotIn: ['PickedUp', 'Terminated'])
         .orderBy('timestamp', descending: true)
         .snapshots();
   }
@@ -33,6 +32,7 @@ class AdminLiveOrdersScreen extends StatelessWidget {
           'Live Orders',
           style: GoogleFonts.poppins(
             fontWeight: FontWeight.bold,
+            color: Colors.white,
           ),
         ),
         elevation: 0,
@@ -52,7 +52,7 @@ class AdminLiveOrdersScreen extends StatelessWidget {
             if (snapshot.hasError) {
               return Center(
                 child: Text(
-                  'Error loading orders',
+                  'Error loading orders: ${snapshot.error}',
                   style: GoogleFonts.poppins(),
                 ),
               );
@@ -63,8 +63,15 @@ class AdminLiveOrdersScreen extends StatelessWidget {
             }
 
             final orders = snapshot.data!.docs;
+            
+            // Filter out terminated and picked up orders
+            final activeOrders = orders.where((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              final status = data['status'] as String?;
+              return status != 'PickedUp' && status != 'Terminated';
+            }).toList();
 
-            if (orders.isEmpty) {
+            if (activeOrders.isEmpty) {
               return Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -72,7 +79,7 @@ class AdminLiveOrdersScreen extends StatelessWidget {
                     const Icon(
                       Icons.receipt_long,
                       size: 72,
-                      color: Color(0xFFFFB703),
+                      color: Color(0xFFDDDDDD),
                     ),
                     const SizedBox(height: 16),
                     Text(
@@ -96,21 +103,30 @@ class AdminLiveOrdersScreen extends StatelessWidget {
 
             return ListView.builder(
               padding: const EdgeInsets.all(16),
-              itemCount: orders.length,
+              itemCount: activeOrders.length,
               itemBuilder: (context, index) {
-                final orderData = orders[index].data() as Map<String, dynamic>;
-                final orderId = orders[index].id;
-                final status = orderData['status'] ?? 'Unknown';
+                final orderDoc = activeOrders[index];
+                final orderData = orderDoc.data() as Map<String, dynamic>;
+                final orderId = orderDoc.id;
+                
+                // Safely get values with null checks
+                final status = orderData['status'] as String? ?? 'Unknown';
                 final timestamp = orderData['timestamp'] as Timestamp?;
-                final userId = orderData['userId'] as String?;
+                final userId = orderData['userId'] as String? ?? '';
                 final total = orderData['total'] ?? 0.0;
-                final items = (orderData['items'] as Map<String, dynamic>?)?.entries
+                
+                // Handle potentially missing or malformed 'items' field
+                Map<String, dynamic> itemsMap = {};
+                if (orderData['items'] is Map) {
+                  itemsMap = Map<String, dynamic>.from(orderData['items'] as Map);
+                }
+                
+                final items = itemsMap.entries
                     .map((e) => '${e.key} × ${e.value}')
-                    .join(', ') ??
-                    'No items';
+                    .join(', ');
 
                 return FutureBuilder<String>(
-                  future: fetchUserEmail(userId ?? ''),
+                  future: fetchUserEmail(userId),
                   builder: (context, emailSnapshot) {
                     final email = emailSnapshot.data ?? 'Loading...';
                     
@@ -133,7 +149,7 @@ class AdminLiveOrdersScreen extends StatelessWidget {
                                     _buildStatusBadge(status),
                                     const SizedBox(width: 8),
                                     Text(
-                                      'Order #${orderId.substring(0, 6)}',
+                                      'Order #${orderId.substring(0, min(6, orderId.length))}',
                                       style: GoogleFonts.poppins(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 16,
@@ -194,7 +210,7 @@ class AdminLiveOrdersScreen extends StatelessWidget {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              items,
+                              items.isNotEmpty ? items : 'No items',
                               style: GoogleFonts.poppins(
                                 fontSize: 15,
                               ),
@@ -272,4 +288,9 @@ class AdminLiveOrdersScreen extends StatelessWidget {
     final minute = dateTime.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
   }
+}
+
+// Helper function to avoid substring errors
+int min(int a, int b) {
+  return a < b ? a : b;
 }
