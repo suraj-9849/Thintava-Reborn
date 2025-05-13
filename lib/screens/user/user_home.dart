@@ -154,93 +154,6 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
           ),
         ],
       ),
-      drawer: Drawer(
-        child: Container(
-          color: const Color(0xFFFFF1D7),
-          child: ListView(
-            padding: EdgeInsets.zero,
-            children: [
-              DrawerHeader(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [const Color(0xFFFFB703), const Color(0xFFFFB703).withOpacity(0.7)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const CircleAvatar(
-                      radius: 40,
-                      backgroundColor: Colors.white70,
-                      child: Icon(Icons.person, size: 40, color: Color(0xFF023047)),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      "Welcome Back!",
-                      style: GoogleFonts.poppins(
-                        color: const Color(0xFF023047),
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.person, color: Color(0xFF023047)),
-                title: Text('My Profile', style: GoogleFonts.poppins()),
-                onTap: () {
-                  Navigator.pop(context);
-                  // Navigate to profile page
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.favorite, color: Color(0xFF023047)),
-                title: Text('Favorites', style: GoogleFonts.poppins()),
-                onTap: () {
-                  Navigator.pop(context);
-                  // Navigate to favorites page
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.location_on, color: Color(0xFF023047)),
-                title: Text('Delivery Address', style: GoogleFonts.poppins()),
-                onTap: () {
-                  Navigator.pop(context);
-                  // Navigate to address page
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.payment, color: Color(0xFF023047)),
-                title: Text('Payment Methods', style: GoogleFonts.poppins()),
-                onTap: () {
-                  Navigator.pop(context);
-                  // Navigate to payment page
-                },
-              ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.settings, color: Color(0xFF023047)),
-                title: Text('Settings', style: GoogleFonts.poppins()),
-                onTap: () {
-                  Navigator.pop(context);
-                  // Navigate to settings page
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.help, color: Color(0xFF023047)),
-                title: Text('Help & Support', style: GoogleFonts.poppins()),
-                onTap: () {
-                  Navigator.pop(context);
-                  // Navigate to help page
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -261,7 +174,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16), // Reduced height
                   Text(
                     "What would you like today?",
                     style: GoogleFonts.poppins(
@@ -270,7 +183,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
                       color: const Color(0xFF023047),
                     ),
                   ),
-                  const SizedBox(height: 5),
+                  const SizedBox(height: 4), // Reduced height
                   Text(
                     "Explore our delicious menu options",
                     style: GoogleFonts.poppins(
@@ -278,11 +191,11 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
                       color: const Color(0xFF023047).withOpacity(0.7),
                     ),
                   ),
-                  const SizedBox(height: 30),
+                  const SizedBox(height: 16), // Reduced height
                   
                   // Food categories horizontal scrollable list
                   SizedBox(
-                    height: 120,
+                    height: 100, // Reduced height from 120
                     child: ListView(
                       scrollDirection: Axis.horizontal,
                       children: [
@@ -295,7 +208,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
                     ),
                   ),
                   
-                  const SizedBox(height: 30),
+                  const SizedBox(height: 16), // Reduced height
                   Text(
                     "Quick Actions",
                     style: GoogleFonts.poppins(
@@ -304,15 +217,18 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
                       color: const Color(0xFF023047),
                     ),
                   ),
-                  const SizedBox(height: 15),
+                  const SizedBox(height: 10), // Reduced height
                   
                   // Main action cards in a responsive grid
-                  Expanded(
+                  // Wrap with Flexible instead of Expanded to avoid overflow
+                  Flexible(
                     child: GridView.count(
                       crossAxisCount: 2,
                       childAspectRatio: 1.1,
                       crossAxisSpacing: 15,
                       mainAxisSpacing: 15,
+                      shrinkWrap: true, // Add shrinkWrap
+                      physics: const ScrollPhysics(), // Allow scrolling if needed
                       children: [
                         SlideTransition(
                           position: _cardAnimation1,
@@ -362,55 +278,26 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
                     ),
                   ),
                   
-                  // Footer with current promotions
+                  // Add padding at the bottom to ensure there's no overflow
+                  const SizedBox(height: 10),
                 ],
               ),
             ),
           ),
         ),
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.white,
-        selectedItemColor: const Color(0xFFFFB703),
-        unselectedItemColor: Colors.grey,
-        selectedLabelStyle: GoogleFonts.poppins(fontWeight: FontWeight.w500),
-        unselectedLabelStyle: GoogleFonts.poppins(),
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.search),
-            label: 'Search',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.shopping_bag),
-            label: 'Orders',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-        ],
-        currentIndex: 0,
-        onTap: (index) {
-          // Handle navigation
-        },
-      ),
     );
   }
 
   Widget _buildCategoryItem(IconData icon, String label) {
     return Container(
-      width: 100,
+      width: 90, // Reduced width
       margin: const EdgeInsets.only(right: 15),
       child: Column(
         children: [
           Container(
-            height: 70,
-            width: 70,
+            height: 60, // Reduced height
+            width: 60, // Reduced width
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(15),
@@ -424,15 +311,15 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
             ),
             child: Icon(
               icon,
-              size: 35,
+              size: 30, // Reduced size
               color: const Color(0xFF023047),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6), // Reduced spacing
           Text(
             label,
             style: GoogleFonts.poppins(
-              fontSize: 14,
+              fontSize: 13, // Reduced font size
               fontWeight: FontWeight.w500,
               color: const Color(0xFF023047),
             ),
@@ -467,37 +354,37 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
             ],
           ),
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(12.0), // Reduced padding
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  padding: const EdgeInsets.all(10),
+                  padding: const EdgeInsets.all(8), // Reduced padding
                   decoration: BoxDecoration(
                     color: accentColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
                     icon,
-                    size: 32,
+                    size: 28, // Reduced size
                     color: accentColor,
                   ),
                 ),
-                const SizedBox(height: 15),
+                const SizedBox(height: 10), // Reduced spacing
                 Text(
                   title,
                   style: GoogleFonts.poppins(
-                    fontSize: 16,
+                    fontSize: 15, // Reduced font size
                     fontWeight: FontWeight.bold,
                     color: const Color(0xFF023047),
                   ),
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 4), // Reduced spacing
                 Text(
                   subtitle,
                   style: GoogleFonts.poppins(
-                    fontSize: 12,
+                    fontSize: 11, // Reduced font size
                     color: Colors.grey[600],
                   ),
                   maxLines: 2,
