@@ -10,20 +10,16 @@ class UserHome extends StatefulWidget {
 }
 
 class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
-  late AnimationController _controller;
+  late AnimationController _fadeController;
   late AnimationController _pulseController;
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
-  late Animation<Offset> _cardAnimation1;
-  late Animation<Offset> _cardAnimation2;
-  late Animation<Offset> _cardAnimation3;
-  late Animation<Offset> _cardAnimation4;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 1800),
+    _fadeController = AnimationController(
+      duration: const Duration(milliseconds: 800),
       vsync: this,
     );
 
@@ -34,7 +30,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
 
     // Overall fade-in animation for the content
     _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeIn),
+      CurvedAnimation(parent: _fadeController, curve: Curves.easeIn),
     );
 
     // Pulse animation for interactive elements
@@ -42,36 +38,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
-    // Staggered slide animations for each card
-    _cardAnimation1 = Tween<Offset>(
-      begin: const Offset(1.5, 0),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(parent: _controller, curve: const Interval(0.0, 0.4, curve: Curves.elasticOut)),
-    );
-
-    _cardAnimation2 = Tween<Offset>(
-      begin: const Offset(-1.5, 0),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(parent: _controller, curve: const Interval(0.2, 0.6, curve: Curves.elasticOut)),
-    );
-
-    _cardAnimation3 = Tween<Offset>(
-      begin: const Offset(1.5, 0),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(parent: _controller, curve: const Interval(0.4, 0.8, curve: Curves.elasticOut)),
-    );
-
-    _cardAnimation4 = Tween<Offset>(
-      begin: const Offset(-1.5, 0),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(parent: _controller, curve: const Interval(0.6, 1.0, curve: Curves.elasticOut)),
-    );
-
-    _controller.forward();
+    _fadeController.forward();
   }
 
   void logout(BuildContext context) async {
@@ -109,7 +76,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
 
   @override
   void dispose() {
-    _controller.dispose();
+    _fadeController.dispose();
     _pulseController.dispose();
     super.dispose();
   }
@@ -174,7 +141,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 16), // Reduced height
+                  const SizedBox(height: 16),
                   Text(
                     "What would you like today?",
                     style: GoogleFonts.poppins(
@@ -183,7 +150,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
                       color: const Color(0xFF023047),
                     ),
                   ),
-                  const SizedBox(height: 4), // Reduced height
+                  const SizedBox(height: 4),
                   Text(
                     "Explore our delicious menu options",
                     style: GoogleFonts.poppins(
@@ -191,11 +158,11 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
                       color: const Color(0xFF023047).withOpacity(0.7),
                     ),
                   ),
-                  const SizedBox(height: 16), // Reduced height
+                  const SizedBox(height: 16),
                   
                   // Food categories horizontal scrollable list
                   SizedBox(
-                    height: 100, // Reduced height from 120
+                    height: 100,
                     child: ListView(
                       scrollDirection: Axis.horizontal,
                       children: [
@@ -208,7 +175,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
                     ),
                   ),
                   
-                  const SizedBox(height: 16), // Reduced height
+                  const SizedBox(height: 16),
                   Text(
                     "Quick Actions",
                     style: GoogleFonts.poppins(
@@ -217,68 +184,52 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
                       color: const Color(0xFF023047),
                     ),
                   ),
-                  const SizedBox(height: 10), // Reduced height
-                  
-                  // Main action cards in a responsive grid
-                  // Wrap with Flexible instead of Expanded to avoid overflow
+                  const SizedBox(height: 10),
                   Flexible(
                     child: GridView.count(
                       crossAxisCount: 2,
                       childAspectRatio: 1.1,
                       crossAxisSpacing: 15,
                       mainAxisSpacing: 15,
-                      shrinkWrap: true, // Add shrinkWrap
-                      physics: const ScrollPhysics(), // Allow scrolling if needed
+                      shrinkWrap: true,
+                      physics: const ScrollPhysics(),
                       children: [
-                        SlideTransition(
-                          position: _cardAnimation1,
-                          child: _buildActionCard(
-                            context,
-                            Icons.restaurant_menu,
-                            "Browse Menu",
-                            "Explore our delicious options",
-                            () => Navigator.pushNamed(context, '/menu'),
-                            Colors.orangeAccent,
-                          ),
+                        _buildActionCard(
+                          context,
+                          Icons.restaurant_menu,
+                          "Browse Menu",
+                          "Explore our delicious options",
+                          () => Navigator.pushNamed(context, '/menu'),
+                          Colors.orangeAccent,
                         ),
-                        SlideTransition(
-                          position: _cardAnimation2,
-                          child: _buildActionCard(
-                            context,
-                            Icons.track_changes,
-                            "Track Order",
-                            "Check your current order status",
-                            () => Navigator.pushNamed(context, '/track'),
-                            Colors.blueAccent,
-                          ),
+                        _buildActionCard(
+                          context,
+                          Icons.track_changes,
+                          "Track Order",
+                          "Check your current order status",
+                          () => Navigator.pushNamed(context, '/track'),
+                          Colors.blueAccent,
                         ),
-                        SlideTransition(
-                          position: _cardAnimation3,
-                          child: _buildActionCard(
-                            context,
-                            Icons.history,
-                            "Order History",
-                            "View your past orders",
-                            () => Navigator.pushNamed(context, '/history'),
-                            Colors.purpleAccent,
-                          ),
+                        _buildActionCard(
+                          context,
+                          Icons.history,
+                          "Order History",
+                          "View your past orders",
+                          () => Navigator.pushNamed(context, '/history'),
+                          Colors.purpleAccent,
                         ),
-                        SlideTransition(
-                          position: _cardAnimation4,
-                          child: _buildActionCard(
-                            context,
-                            Icons.local_offer,
-                            "Special Deals",
-                            "Check out today's offers",
-                            () => Navigator.pushNamed(context, '/deals'),
-                            Colors.redAccent,
-                          ),
+                        _buildActionCard(
+                          context,
+                          Icons.local_offer,
+                          "Special Deals",
+                          "Check out today's offers",
+                          () => Navigator.pushNamed(context, '/deals'),
+                          Colors.redAccent,
                         ),
                       ],
                     ),
                   ),
                   
-                  // Add padding at the bottom to ensure there's no overflow
                   const SizedBox(height: 10),
                 ],
               ),
@@ -291,13 +242,13 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
 
   Widget _buildCategoryItem(IconData icon, String label) {
     return Container(
-      width: 90, // Reduced width
+      width: 90,
       margin: const EdgeInsets.only(right: 15),
       child: Column(
         children: [
           Container(
-            height: 60, // Reduced height
-            width: 60, // Reduced width
+            height: 60,
+            width: 60,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(15),
@@ -311,15 +262,15 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
             ),
             child: Icon(
               icon,
-              size: 30, // Reduced size
+              size: 30,
               color: const Color(0xFF023047),
             ),
           ),
-          const SizedBox(height: 6), // Reduced spacing
+          const SizedBox(height: 6),
           Text(
             label,
             style: GoogleFonts.poppins(
-              fontSize: 13, // Reduced font size
+              fontSize: 13,
               fontWeight: FontWeight.w500,
               color: const Color(0xFF023047),
             ),
@@ -354,37 +305,37 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
             ],
           ),
           child: Padding(
-            padding: const EdgeInsets.all(12.0), // Reduced padding
+            padding: const EdgeInsets.all(12.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8), // Reduced padding
+                  padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: accentColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
                     icon,
-                    size: 28, // Reduced size
+                    size: 28,
                     color: accentColor,
                   ),
                 ),
-                const SizedBox(height: 10), // Reduced spacing
+                const SizedBox(height: 10),
                 Text(
                   title,
                   style: GoogleFonts.poppins(
-                    fontSize: 15, // Reduced font size
+                    fontSize: 15,
                     fontWeight: FontWeight.bold,
                     color: const Color(0xFF023047),
                   ),
                 ),
-                const SizedBox(height: 4), // Reduced spacing
+                const SizedBox(height: 4),
                 Text(
                   subtitle,
                   style: GoogleFonts.poppins(
-                    fontSize: 11, // Reduced font size
+                    fontSize: 11,
                     color: Colors.grey[600],
                   ),
                   maxLines: 2,
