@@ -226,10 +226,6 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> with SingleTick
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.3),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -268,12 +264,10 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> with SingleTick
                         filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                         child: Container(
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.85),
-                            borderRadius: BorderRadius.circular(20),
                             border: Border.all(color: Colors.white.withOpacity(0.3)),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.2),
+                                color: Colors.black.withOpacity(0),
                                 blurRadius: 20,
                                 offset: const Offset(0, 10),
                               ),
