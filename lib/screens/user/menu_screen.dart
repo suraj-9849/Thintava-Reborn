@@ -75,7 +75,26 @@ class _MenuScreenState extends State<MenuScreen> {
 
     return WillPopScope(
       onWillPop: () async {
-        return false;
+        // Show confirmation dialog when back button is pressed
+        bool shouldPop = await showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text("Exit Menu"),
+            content: const Text("Are you sure you want to go back to home?"),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false), // Don't pop
+                child: const Text("CANCEL"),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true), // Do pop
+                child: const Text("YES"),
+              ),
+            ],
+          ),
+        ) ?? false; // Default to false if dialog is dismissed
+        
+        return shouldPop;
       },
       child: Scaffold(
         appBar: AppBar(
