@@ -1,7 +1,8 @@
+// lib/screens/user/menu_screen.dart
 import 'package:canteen_app/screens/user/cart_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:canteen_app/services/auth_service.dart'; // Add this import
 
 class MenuScreen extends StatefulWidget {
   const MenuScreen({super.key});
@@ -17,6 +18,7 @@ class _MenuScreenState extends State<MenuScreen> {
   int cartCount = 0;
   double cartTotal = 0.0;
   bool isLoading = true;
+  final _authService = AuthService(); // Add this line
 
   @override
   void initState() {
@@ -130,7 +132,8 @@ class _MenuScreenState extends State<MenuScreen> {
                       ),
                       TextButton(
                         onPressed: () async {
-                          await FirebaseAuth.instance.signOut();
+                          // Use AuthService instead of FirebaseAuth directly
+                          await _authService.logout();
                           Navigator.pushReplacementNamed(context, '/auth');
                         },
                         child: const Text("LOGOUT"),

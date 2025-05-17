@@ -1,7 +1,8 @@
+// lib/screens/kitchen/kitchen_dashboard.dart
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:canteen_app/services/auth_service.dart'; // Add this import
 
 // Capitalize helper
 String capitalize(String s) =>
@@ -18,6 +19,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> with SingleTickerPr
   late TabController _tabController;
   final List<String> _statusFilters = ['All', 'Placed', 'Cooking', 'Cooked', 'Pick Up'];
   String _currentFilter = 'All';
+  final _authService = AuthService(); // Add this line
 
   @override
   void initState() {
@@ -88,7 +90,8 @@ class _KitchenDashboardState extends State<KitchenDashboard> with SingleTickerPr
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.black87),
             onPressed: () async {
-              await FirebaseAuth.instance.signOut();
+              // Use AuthService instead of FirebaseAuth directly
+              await _authService.logout();
               Navigator.pushReplacementNamed(context, '/auth');
             },
           ),

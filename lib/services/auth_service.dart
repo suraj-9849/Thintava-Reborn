@@ -1,6 +1,7 @@
 // lib/services/auth_service.dart
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart'; // Add this import
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -36,7 +37,25 @@ class AuthService {
 
   // Logout
   Future<void> logout() async {
-    await _auth.signOut();
+    try {
+      // Remove FCM token before signing out
+      User? user = _auth.currentUser;
+      if (user != null) {
+        await _db.collection('users').doc(user.uid).update({
+          'fcmToken': null, // Remove the FCM token
+        });
+        
+        // Delete the FCM token from Firebase Messaging
+        await FirebaseMessaging.instance.deleteToken();
+      }
+      
+      // Then sign out
+      await _auth.signOut();
+    } catch (e) {
+      print('Error during logout: $e');
+      // Still attempt to sign out even if token removal fails
+      await _auth.signOut();
+    }
   }
 
   // Get current user

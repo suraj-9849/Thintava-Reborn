@@ -1,11 +1,16 @@
+// lib/screens/admin/admin_home.dart
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:canteen_app/services/auth_service.dart'; // Add this import
 
 class AdminHome extends StatelessWidget {
   const AdminHome({super.key});
+  
+  // Remove the class field and create the service inside methods
 
   void logout(BuildContext context) async {
+    final authService = AuthService(); // Create instance locally when needed
+    
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -42,15 +47,17 @@ class AdminHome extends StatelessWidget {
     );
 
     if (confirmed ?? false) {
-      await FirebaseAuth.instance.signOut();
+      // Use AuthService instead of FirebaseAuth directly
+      await authService.logout();
       Navigator.popUntil(context, (route) => route.isFirst);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final authService = AuthService(); // Create instance locally when needed
     final size = MediaQuery.of(context).size;
-    final user = FirebaseAuth.instance.currentUser;
+    final user = authService.currentUser;
 
     return Scaffold(
       body: Stack(

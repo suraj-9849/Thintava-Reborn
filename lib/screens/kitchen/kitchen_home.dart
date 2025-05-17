@@ -1,7 +1,8 @@
+// lib/screens/kitchen/kitchen_home.dart
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:canteen_app/screens/kitchen/kitchen_dashboard.dart'; // Import the KitchenDashboard directly
+import 'package:canteen_app/screens/kitchen/kitchen_dashboard.dart';
+import 'package:canteen_app/services/auth_service.dart'; // Add this import
 
 class KitchenHome extends StatefulWidget {
   const KitchenHome({Key? key}) : super(key: key);
@@ -13,6 +14,7 @@ class KitchenHome extends StatefulWidget {
 class _KitchenHomeState extends State<KitchenHome> {
   Map<String, int> _orderStats = {'active': 0, 'pending': 0, 'completed': 0};
   bool _isLoading = true;
+  final _authService = AuthService(); // Add this line
 
   @override
   void initState() {
@@ -106,8 +108,8 @@ class _KitchenHomeState extends State<KitchenHome> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          FirebaseAuth.instance.currentUser?.displayName != null
-                              ? 'Welcome, ${FirebaseAuth.instance.currentUser!.displayName}'
+                          _authService.currentUser?.displayName != null
+                              ? 'Welcome, ${_authService.currentUser!.displayName}'
                               : 'Welcome, Chef',
                           style: const TextStyle(
                             fontSize: 16,
@@ -123,7 +125,8 @@ class _KitchenHomeState extends State<KitchenHome> {
                         size: 28,
                       ),
                       onPressed: () async {
-                        await FirebaseAuth.instance.signOut();
+                        // Use AuthService instead of FirebaseAuth directly
+                        await _authService.logout();
                         Navigator.pushReplacementNamed(context, '/auth');
                       },
                     ),

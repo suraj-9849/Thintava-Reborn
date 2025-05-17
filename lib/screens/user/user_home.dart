@@ -1,6 +1,8 @@
+// lib/screens/user/user_home.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:canteen_app/services/auth_service.dart'; // Add this import
 
 class UserHome extends StatefulWidget {
   const UserHome({Key? key}) : super(key: key);
@@ -14,6 +16,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
   late AnimationController _pulseController;
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
+  final _authService = AuthService(); // Add this line
 
   @override
   void initState() {
@@ -69,7 +72,10 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
     
     // Actual logout with a small delay for animation
     await Future.delayed(const Duration(seconds: 1));
-    await FirebaseAuth.instance.signOut();
+    
+    // Use AuthService.logout instead of FirebaseAuth directly
+    await _authService.logout();
+    
     Navigator.of(context).pop(); // Close dialog
     Navigator.popUntil(context, (route) => route.isFirst);
   }
@@ -83,6 +89,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    // Rest of the build method remains unchanged
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
