@@ -135,7 +135,7 @@ class _AdminOrderHistoryScreenState extends State<AdminOrderHistoryScreen> {
                           label: Text(
                             filter,
                             style: GoogleFonts.poppins(
-                              color: isSelected ? const Color(0xFFFFB703) : Colors.white,
+                              color: isSelected ? const Color(0xFFFFB703) : Colors.black,
                               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                             ),
                           ),

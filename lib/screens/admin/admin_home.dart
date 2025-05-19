@@ -1,20 +1,18 @@
-// lib/screens/admin/admin_home.dart
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:canteen_app/services/auth_service.dart'; // Add this import
+import 'package:canteen_app/services/auth_service.dart';
+import 'dart:ui';
 
 class AdminHome extends StatelessWidget {
   const AdminHome({super.key});
   
-  // Remove the class field and create the service inside methods
-
   void logout(BuildContext context) async {
-    final authService = AuthService(); // Create instance locally when needed
+    final authService = AuthService();
     
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
           'Confirm Logout',
           style: GoogleFonts.poppins(
@@ -39,6 +37,10 @@ class AdminHome extends StatelessWidget {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFFFB703),
               foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             child: const Text('Logout'),
           ),
@@ -47,132 +49,209 @@ class AdminHome extends StatelessWidget {
     );
 
     if (confirmed ?? false) {
-      // Use AuthService instead of FirebaseAuth directly
       await authService.logout();
-      Navigator.popUntil(context, (route) => route.isFirst);
+      Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final authService = AuthService(); // Create instance locally when needed
+    final authService = AuthService();
     final size = MediaQuery.of(context).size;
     final user = authService.currentUser;
-
+    
     return Scaffold(
+      backgroundColor: Colors.grey[100],
       body: Stack(
         children: [
-          // Top curved background
+          // Background gradient with waves
           Container(
-            height: size.height * 0.35,
+            height: size.height * 0.4,
             width: double.infinity,
             decoration: const BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [Color(0xFFFFB703), Color(0xFFFFB703)],
-              ),
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(40),
-                bottomRight: Radius.circular(40),
+                colors: [Color(0xFFFFB703), Color(0xFFFFC124)],
               ),
             ),
+            child: CustomPaint(
+              painter: WavePainter(),
+              child: Container(),
+            ),
           ),
+          
+          // Main Content
           SafeArea(
             child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Top App Bar
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
                           'Admin Dashboard',
                           style: GoogleFonts.poppins(
-                            fontSize: 24,
+                            fontSize: 26,
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
                           ),
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.logout, color: Colors.white),
-                          onPressed: () => logout(context),
-                          tooltip: 'Logout',
+                        // Logout Icon Button
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.3),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: IconButton(
+                            icon: const Icon(Icons.logout_rounded, color: Colors.white),
+                            onPressed: () => logout(context),
+                            tooltip: 'Logout',
+                          ),
                         ),
                       ],
                     ),
                   ),
+                  
+                  // User Profile Card
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 30,
-                          backgroundColor: Colors.white,
-                          child: Text(
-                            user?.email?.substring(0, 1).toUpperCase() ?? 'A',
-                            style: GoogleFonts.poppins(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFFFFB703),
+                    padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 5),
+                          ),
+                        ],
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Row(
+                          children: [
+                            // Avatar with animated border
+                            Container(
+                              padding: const EdgeInsets.all(3),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: const LinearGradient(
+                                  colors: [Color(0xFFFFB703), Color(0xFFFFC93C)],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(0xFFFFB703).withOpacity(0.5),
+                                    blurRadius: 10,
+                                    spreadRadius: 2,
+                                  ),
+                                ],
+                              ),
+                              child: CircleAvatar(
+                                radius: 35,
+                                backgroundColor: Colors.white,
+                                child: Text(
+                                  user?.email?.substring(0, 1).toUpperCase() ?? 'A',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 30,
+                                    fontWeight: FontWeight.bold,
+                                    color: const Color(0xFFFFB703),
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                        const SizedBox(width: 15),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Welcome back,',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 16,
-                                  color: Colors.white70,
-                                ),
+                            const SizedBox(width: 20),
+                            
+                            // User info
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Welcome back,',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 16,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                  Text(
+                                    user?.email?.split('@')[0] ?? 'Admin',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black87,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFFB703).withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Text(
+                                      'Admin',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        color: const Color(0xFFFFB703),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              Text(
-                                user?.email?.split('@')[0] ?? 'Admin',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 30),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Text(
-                      'Quick Actions',
-                      style: GoogleFonts.poppins(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: const Color(0xFFFFB703),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 15),
+                  
+                  // Quick Actions Header
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 30, 20, 20),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Quick Actions',
+                          style: GoogleFonts.poppins(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                       ],
+                    ),
+                  ),
+                  
+                  // Action Cards Grid
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: GridView.count(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       crossAxisCount: 2,
-                      childAspectRatio: 0.9,
-                      crossAxisSpacing: 15,
-                      mainAxisSpacing: 15,
+                      childAspectRatio: 0.85,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
                       children: [
                         _buildActionCard(
                           context,
                           title: 'Manage Menu',
+                          subtitle: 'Edit Menu',
                           icon: Icons.restaurant_menu,
                           color: Colors.orange,
                           onTap: () => Navigator.pushNamed(context, '/admin/menu'),
@@ -180,6 +259,7 @@ class AdminHome extends StatelessWidget {
                         _buildActionCard(
                           context,
                           title: 'Live Orders',
+                          subtitle: 'View and manage current orders',
                           icon: Icons.receipt_long,
                           color: Colors.red,
                           onTap: () => Navigator.pushNamed(context, '/admin/live-orders'),
@@ -187,6 +267,7 @@ class AdminHome extends StatelessWidget {
                         _buildActionCard(
                           context,
                           title: 'Order History',
+                          subtitle: 'View past orders',
                           icon: Icons.history,
                           color: Colors.blue,
                           onTap: () => Navigator.pushNamed(context, '/admin/admin-history'),
@@ -194,6 +275,7 @@ class AdminHome extends StatelessWidget {
                         _buildActionCard(
                           context,
                           title: 'Kitchen View',
+                          subtitle: 'Monitor kitchen operations',
                           icon: Icons.kitchen,
                           color: Colors.green,
                           onTap: () => Navigator.pushNamed(context, '/admin/admin-kitchen-view'),
@@ -201,9 +283,12 @@ class AdminHome extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Center(
+                  
+               
+                  // Version Footer
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
                       child: Text(
                         'Thintava Admin v1.0.0',
                         style: GoogleFonts.poppins(
@@ -213,8 +298,82 @@ class AdminHome extends StatelessWidget {
                       ),
                     ),
                   ),
+                  
+                  // Bottom Spacing
+                  const SizedBox(height: 20),
                 ],
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatCard({
+    required String title,
+    required String value,
+    required String subtitle,
+    required Color iconBgColor,
+    required Color iconColor,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            spreadRadius: 0,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: iconBgColor,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              icon,
+              size: 24,
+              color: iconColor,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                Text(
+                  value,
+                  style: GoogleFonts.poppins(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -225,23 +384,31 @@ class AdminHome extends StatelessWidget {
   Widget _buildActionCard(
     BuildContext context, {
     required String title,
+    required String subtitle,
     required IconData icon,
     required Color color,
     required VoidCallback onTap,
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Card(
-        elevation: 4,
-        shadowColor: color.withOpacity(0.3),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: color.withOpacity(0.2),
+              blurRadius: 10,
+              spreadRadius: 0,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(20),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
                 padding: const EdgeInsets.all(12),
@@ -255,19 +422,152 @@ class AdminHome extends StatelessWidget {
                   color: color,
                 ),
               ),
-              const SizedBox(height: 12),
+              const Spacer(),
               Text(
                 title,
                 style: GoogleFonts.poppins(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
                 ),
-                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const Spacer(),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Icon(
+                  Icons.arrow_forward,
+                  color: color,
+                  size: 20,
+                ),
               ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildActivityItem({
+    required String title,
+    required String time,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              icon,
+              size: 24,
+              color: color,
+            ),
+          ),
+          const SizedBox(width: 15),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  time,
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.more_horiz,
+            color: Colors.grey[400],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Custom Wave Painter for the background
+class WavePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withOpacity(0.1)
+      ..style = PaintingStyle.fill;
+      
+    final path = Path();
+    
+    // First wave
+    path.moveTo(0, size.height * 0.7);
+    path.quadraticBezierTo(
+      size.width * 0.25, 
+      size.height * 0.55, 
+      size.width * 0.5, 
+      size.height * 0.65
+    );
+    path.quadraticBezierTo(
+      size.width * 0.75, 
+      size.height * 0.75, 
+      size.width, 
+      size.height * 0.65
+    );
+    path.lineTo(size.width, size.height);
+    path.lineTo(0, size.height);
+    path.close();
+    
+    canvas.drawPath(path, paint);
+    
+    // Second wave
+    final path2 = Path();
+    paint.color = Colors.white.withOpacity(0.2);
+    
+    path2.moveTo(0, size.height * 0.8);
+    path2.quadraticBezierTo(
+      size.width * 0.25, 
+      size.height * 0.7, 
+      size.width * 0.5, 
+      size.height * 0.8
+    );
+    path2.quadraticBezierTo(
+      size.width * 0.75, 
+      size.height * 0.9, 
+      size.width, 
+      size.height * 0.8
+    );
+    path2.lineTo(size.width, size.height);
+    path2.lineTo(0, size.height);
+    path2.close();
+    
+    canvas.drawPath(path2, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) {
+    return false;
   }
 }
