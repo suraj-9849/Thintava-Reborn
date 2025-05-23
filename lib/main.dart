@@ -14,6 +14,7 @@ import 'package:canteen_app/config/route_config.dart';
 import 'package:canteen_app/screens/splash/splash_screen.dart';
 import 'package:canteen_app/services/notification_service.dart';
 import 'package:canteen_app/utils/firebase_utils.dart';
+import 'package:canteen_app/services/auth_service.dart';
 
 // Initialize global plugins
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = 
@@ -21,6 +22,9 @@ final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
 
 // Navigation key for accessing navigator from anywhere
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+// Auth service for global access
+final AuthService authService = AuthService();
 
 Future<void> main() async {
   // Ensure widgets are initialized
@@ -80,6 +84,50 @@ class ThintavaApp extends StatefulWidget {
 
 class _ThintavaAppState extends State<ThintavaApp> {
   final _appLoadingFuture = Future.delayed(const Duration(milliseconds: 500));
+  
+  @override
+  void initState() {
+    super.initState();
+    
+    // Set up a global session listener
+    authService.startSessionListener(() {
+      // This will be called if the user is logged out on another device
+      _handleForcedLogout();
+    });
+  }
+  
+  void _handleForcedLogout() {
+    // Show a notification and navigate to login screen
+    if (navigatorKey.currentContext != null) {
+      showDialog(
+        context: navigatorKey.currentContext!,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: Text('Logged Out', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+          content: Text(
+            'You have been logged out because your account was logged in on another device.',
+            style: GoogleFonts.poppins(),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                NavigationUtils.navigateToAndClearStack(context, '/auth');
+              },
+              child: Text('OK', style: GoogleFonts.poppins()),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+  
+  @override
+  void dispose() {
+    // Stop session listener
+    authService.stopSessionListener();
+    super.dispose();
+  }
   
   @override
   Widget build(BuildContext context) {

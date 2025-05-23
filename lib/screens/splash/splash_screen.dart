@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:canteen_app/constants/food_quotes.dart';
+import 'package:canteen_app/services/auth_service.dart'; // Import AuthService
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -19,6 +20,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   StreamSubscription<String>? _tokenRefreshSubscription;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
+  final AuthService _authService = AuthService(); // Create instance of AuthService
 
   @override
   void initState() {
@@ -26,6 +28,38 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     _setupAnimations();
     _setupFirebaseMessaging();
     _startListeningToAuth();
+    
+    // Set up session listener for forced logout
+    _authService.startSessionListener(() {
+      // This will be called if this device is logged out remotely
+      _handleForcedLogout();
+    });
+  }
+  
+  void _handleForcedLogout() {
+    // Show dialog notifying user they've been logged out
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: Text('Logged Out', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+          content: Text(
+            'You have been logged out because your account was logged in on another device.',
+            style: GoogleFonts.poppins(),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.pushReplacementNamed(context, '/auth');
+              },
+              child: Text('OK', style: GoogleFonts.poppins()),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   void _setupAnimations() {
@@ -83,7 +117,32 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       }
 
       print("🟢 User signed in: ${user.uid}");
+      
+      // Check if this is the active session for this user
+      bool isActiveSession = await _authService.checkActiveSession();
+      if (!isActiveSession) {
+        print("❌ This device is not the active session for this user");
+        // Force logout on this device
+        await _authService.logout();
+        
+        if (!mounted) return;
+        // Show message and redirect to login
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'You have been logged out because your account was logged in on another device',
+              style: GoogleFonts.poppins(),
+            ),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+        
+        // Navigate to auth screen
+        Navigator.pushReplacementNamed(context, '/auth');
+        return;
+      }
 
+      // If this is the active session, continue with normal flow
       // Important: START FCM Token Fetching
       await _fetchAndSaveFcmToken(user.uid);
 
@@ -164,6 +223,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     _authSubscription.cancel();
     _tokenRefreshSubscription?.cancel();
     _animationController.dispose();
+    _authService.stopSessionListener(); // Stop session listener
     super.dispose();
   }
 

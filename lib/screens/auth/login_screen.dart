@@ -19,6 +19,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   late Animation<double> _fadeAnimation;
   bool _obscurePassword = true;
   bool _isLoading = false;
+  bool _showDeviceLoginMessage = false; // Flag to show device login message
 
   @override
   void initState() {
@@ -45,12 +46,25 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   void handleLogin() async {
     setState(() {
       _isLoading = true;
+      _showDeviceLoginMessage = false; // Reset message flag
     });
 
     try {
       final user = await auth.login(emailController.text, passwordController.text);
       if (user != null && mounted) {
-        Navigator.pushReplacementNamed(context, '/splash');
+        // Show device login message before navigating away
+        setState(() {
+          _showDeviceLoginMessage = true;
+          _isLoading = false;
+        });
+        
+        // Brief delay to show the message
+        await Future.delayed(const Duration(seconds: 1));
+        
+        // Navigate to splash screen which will handle routing based on role
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/splash');
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -64,9 +78,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
             behavior: SnackBarBehavior.floating,
           ),
         );
-      }
-    } finally {
-      if (mounted) {
         setState(() {
           _isLoading = false;
         });
@@ -169,6 +180,33 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                 color: Colors.black54,
                               ),
                             ),
+                            // Show device login notice if applicable
+                            if (_showDeviceLoginMessage) ...[
+                              const SizedBox(height: 16),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.green),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.info_outline, color: Colors.green),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        "This is now your active login device. Any previous sessions have been terminated.",
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 14,
+                                          color: Colors.green,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                             const SizedBox(height: 24),
                             TextField(
                               controller: emailController,

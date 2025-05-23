@@ -133,7 +133,7 @@ class _CartScreenState extends State<CartScreen> {
     var options = {
       'key': 'rzp_live_FBnjPJmPGZ9JHo', // Replace with your Razorpay key
       'amount': (total * 100).toInt(), // Amount in paise
-      'name': 'Food Express',
+      'name': 'Thintava',
       'description': 'Food Order Payment',
       'prefill': {
         'contact': '',

@@ -1,11 +1,14 @@
 // lib/services/auth_service.dart
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_messaging/firebase_messaging.dart'; // Add this import
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/material.dart';
+import 'package:canteen_app/services/session_manager.dart'; // Import the SessionManager
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final SessionManager _sessionManager = SessionManager(); // Add SessionManager
 
   // Register User
   Future<User?> register(String email, String password, String role) async {
@@ -19,6 +22,9 @@ class AuthService {
         'role': role,
       });
 
+      // Register session for this device
+      await _sessionManager.registerSession(user);
+
       return user;
     } catch (e) {
       rethrow;
@@ -29,7 +35,22 @@ class AuthService {
   Future<User?> login(String email, String password) async {
     try {
       UserCredential result = await _auth.signInWithEmailAndPassword(email: email, password: password);
-      return result.user;
+      User? user = result.user;
+      
+      if (user != null) {
+        // Register session for this device (will terminate other sessions)
+        await _sessionManager.registerSession(user);
+        
+        // Update FCM token
+        String? token = await FirebaseMessaging.instance.getToken();
+        if (token != null) {
+          await _db.collection('users').doc(user.uid).update({
+            'fcmToken': token,
+          });
+        }
+      }
+      
+      return user;
     } catch (e) {
       rethrow;
     }
@@ -38,6 +59,9 @@ class AuthService {
   // Logout
   Future<void> logout() async {
     try {
+      // Clear session before signing out
+      await _sessionManager.clearSession();
+      
       // Remove FCM token before signing out
       User? user = _auth.currentUser;
       if (user != null) {
@@ -56,6 +80,21 @@ class AuthService {
       // Still attempt to sign out even if token removal fails
       await _auth.signOut();
     }
+  }
+
+  // Check if this device is still the active session
+  Future<bool> checkActiveSession() {
+    return _sessionManager.isActiveSession();
+  }
+  
+  // Start listening for session changes
+  void startSessionListener(VoidCallback onForcedLogout) {
+    _sessionManager.startSessionListener(onForcedLogout);
+  }
+  
+  // Stop listening for session changes
+  void stopSessionListener() {
+    _sessionManager.stopSessionListener();
   }
 
   // Get current user
