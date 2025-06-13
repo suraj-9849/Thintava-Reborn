@@ -168,43 +168,6 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> with SingleTick
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        actions: [
-          // Filter dropdown
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.filter_list, color: Colors.white),
-            onSelected: (value) {
-              setState(() {
-                _filterStatus = value;
-              });
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: "All",
-                child: Text("All Orders"),
-              ),
-              const PopupMenuItem(
-                value: "Placed",
-                child: Text("Placed"),
-              ),
-              const PopupMenuItem(
-                value: "Cooking",
-                child: Text("Cooking"),
-              ),
-              const PopupMenuItem(
-                value: "Cooked",
-                child: Text("Cooked"),
-              ),
-              const PopupMenuItem(
-                value: "Pick Up",
-                child: Text("Ready for Pickup"),
-              ),
-              const PopupMenuItem(
-                value: "PickedUp",
-                child: Text("Completed"),
-              ),
-            ],
-          ),
-        ],
       ),
       body: Container(
         decoration: const BoxDecoration(
@@ -229,11 +192,14 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> with SingleTick
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
-                            "Filtered by: $_filterStatus",
-                            style: GoogleFonts.poppins(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w500,
+                          Flexible(
+                            child: Text(
+                              "Filtered by: $_filterStatus",
+                              style: GoogleFonts.poppins(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -290,56 +256,61 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> with SingleTick
                               // Empty orders state
                               if (orders.isEmpty) {
                                 return Center(
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        Icons.receipt_long,
-                                        size: 80,
-                                        color: Colors.grey.withOpacity(0.6),
-                                      ),
-                                      const SizedBox(height: 16),
-                                      Text(
-                                        _filterStatus == "All"
-                                            ? "You have no orders yet"
-                                            : "No $_filterStatus orders found",
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.black87,
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(24.0),
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          Icons.receipt_long,
+                                          size: 80,
+                                          color: Colors.grey.withOpacity(0.6),
                                         ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        _filterStatus == "All"
-                                            ? "Your order history will appear here"
-                                            : "Try a different filter option",
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 14,
-                                          color: Colors.black54,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 24),
-                                      if (_filterStatus == "All")
-                                        ElevatedButton.icon(
-                                          onPressed: () {
-                                            Navigator.pushNamed(context, '/menu');
-                                          },
-                                          icon: const Icon(Icons.restaurant_menu),
-                                          label: Text(
-                                            "Browse Menu",
-                                            style: GoogleFonts.poppins(),
+                                        const SizedBox(height: 16),
+                                        Text(
+                                          _filterStatus == "All"
+                                              ? "You have no orders yet"
+                                              : "No $_filterStatus orders found",
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.black87,
                                           ),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: const Color(0xFFFFB703),
-                                            foregroundColor: Colors.black87,
-                                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(12),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          _filterStatus == "All"
+                                              ? "Your order history will appear here"
+                                              : "Try a different filter option",
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 14,
+                                            color: Colors.black54,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                        const SizedBox(height: 24),
+                                        if (_filterStatus == "All")
+                                          ElevatedButton.icon(
+                                            onPressed: () {
+                                              Navigator.pushNamed(context, '/menu');
+                                            },
+                                            icon: const Icon(Icons.restaurant_menu),
+                                            label: Text(
+                                              "Browse Menu",
+                                              style: GoogleFonts.poppins(),
+                                            ),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: const Color(0xFFFFB703),
+                                              foregroundColor: Colors.black87,
+                                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(12),
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
                                 );
                               }
@@ -432,45 +403,59 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> with SingleTick
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
                                             const SizedBox(height: 4),
+                                            // Date and status on separate lines to prevent overflow
+                                            Text(
+                                              formattedDate,
+                                              style: GoogleFonts.poppins(
+                                                fontSize: 12,
+                                                color: Colors.black54,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            const SizedBox(height: 4),
+                                            // Status and total in a row with proper constraints
                                             Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                               children: [
-                                                Expanded(
-                                                  child: Text(
-                                                    formattedDate,
-                                                    style: GoogleFonts.poppins(
-                                                      fontSize: 12,
-                                                      color: Colors.black54,
+                                                // Status badge with flexible sizing
+                                                Flexible(
+                                                  flex: 1,
+                                                  child: Container(
+                                                    padding: const EdgeInsets.symmetric(
+                                                      horizontal: 6, 
+                                                      vertical: 2,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: _getStatusColor(status).withOpacity(0.2),
+                                                      borderRadius: BorderRadius.circular(8),
+                                                    ),
+                                                    child: Text(
+                                                      status,
+                                                      style: GoogleFonts.poppins(
+                                                        fontSize: 11,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: _getStatusColor(status),
+                                                      ),
+                                                      overflow: TextOverflow.ellipsis,
                                                     ),
                                                   ),
                                                 ),
-                                                Container(
-                                                  padding: const EdgeInsets.symmetric(
-                                                    horizontal: 8, 
-                                                    vertical: 4,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    color: _getStatusColor(status).withOpacity(0.2),
-                                                    borderRadius: BorderRadius.circular(12),
-                                                  ),
+                                                const SizedBox(width: 8),
+                                                // Total amount
+                                                Flexible(
+                                                  flex: 1,
                                                   child: Text(
-                                                    status,
+                                                    "₹${total.toStringAsFixed(2)}",
                                                     style: GoogleFonts.poppins(
                                                       fontSize: 12,
                                                       fontWeight: FontWeight.w600,
-                                                      color: _getStatusColor(status),
+                                                      color: const Color(0xFFFFB703),
                                                     ),
+                                                    textAlign: TextAlign.end,
+                                                    overflow: TextOverflow.ellipsis,
                                                   ),
                                                 ),
                                               ],
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              "Total: ₹${total.toStringAsFixed(2)}",
-                                              style: GoogleFonts.poppins(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w600,
-                                                color: const Color(0xFFFFB703),
-                                              ),
                                             ),
                                           ],
                                         ),
@@ -480,64 +465,64 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> with SingleTick
                                           Column(
                                             crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
-                                              Row(
-                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                children: [
-                                                  Text(
-                                                    "Order Items",
-                                                    style: GoogleFonts.poppins(
-                                                      fontSize: 16,
-                                                      fontWeight: FontWeight.w600,
-                                                      color: Colors.black87,
-                                                    ),
-                                                  ),
-                                                ],
+                                              Text(
+                                                "Order Items",
+                                                style: GoogleFonts.poppins(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Colors.black87,
+                                                ),
                                               ),
                                               const SizedBox(height: 8),
                                               if (orderItems.isNotEmpty)
                                                 ...orderItems.entries.map((item) {
-                                                  return Padding(
-                                                    padding: const EdgeInsets.symmetric(vertical: 4),
-                                                    child: Row(
-                                                      children: [
-                                                        Container(
-                                                          padding: const EdgeInsets.all(8),
-                                                          decoration: BoxDecoration(
-                                                            color: const Color(0xFFFFB703).withOpacity(0.1),
-                                                            shape: BoxShape.circle,
-                                                          ),
-                                                          child: const Icon(
-                                                            Icons.restaurant,
-                                                            size: 16,
-                                                            color: Color(0xFFFFB703),
-                                                          ),
-                                                        ),
-                                                        const SizedBox(width: 12),
-                                                        Expanded(
-                                                          child: Text(
-                                                            item.key,
-                                                            style: GoogleFonts.poppins(
-                                                              fontSize: 14,
-                                                              color: Colors.black87,
+                                                  return Container(
+                                                    margin: const EdgeInsets.symmetric(vertical: 4),
+                                                    child: IntrinsicHeight(
+                                                      child: Row(
+                                                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                                                        children: [
+                                                          Container(
+                                                            padding: const EdgeInsets.all(6),
+                                                            decoration: BoxDecoration(
+                                                              color: const Color(0xFFFFB703).withOpacity(0.1),
+                                                              shape: BoxShape.circle,
+                                                            ),
+                                                            child: const Icon(
+                                                              Icons.restaurant,
+                                                              size: 14,
+                                                              color: Color(0xFFFFB703),
                                                             ),
                                                           ),
-                                                        ),
-                                                        Container(
-                                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                                          decoration: BoxDecoration(
-                                                            color: const Color(0xFFFFB703).withOpacity(0.2),
-                                                            borderRadius: BorderRadius.circular(8),
-                                                          ),
-                                                          child: Text(
-                                                            "x ${item.value}",
-                                                            style: GoogleFonts.poppins(
-                                                              fontSize: 14,
-                                                              fontWeight: FontWeight.w600,
-                                                              color: Colors.black87,
+                                                          const SizedBox(width: 8),
+                                                          // Item name in a column layout
+                                                          Expanded(
+                                                            child: Column(
+                                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                                              mainAxisAlignment: MainAxisAlignment.center,
+                                                              children: [
+                                                                Text(
+                                                                  item.key,
+                                                                  style: GoogleFonts.poppins(
+                                                                    fontSize: 13,
+                                                                    color: Colors.black87,
+                                                                  ),
+                                                                  overflow: TextOverflow.ellipsis,
+                                                                  maxLines: 1,
+                                                                ),
+                                                                Text(
+                                                                  "Quantity: ${item.value}",
+                                                                  style: GoogleFonts.poppins(
+                                                                    fontSize: 11,
+                                                                    color: Colors.black54,
+                                                                    fontWeight: FontWeight.w500,
+                                                                  ),
+                                                                ),
+                                                              ],
                                                             ),
                                                           ),
-                                                        ),
-                                                      ],
+                                                        ],
+                                                      ),
                                                     ),
                                                   );
                                                 }).toList()
