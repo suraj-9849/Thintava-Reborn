@@ -1,5 +1,4 @@
 // lib/services/session_manager.dart
-// This class manages user sessions to prevent multiple device logins
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -37,22 +36,45 @@ class SessionManager {
   Future<void> registerSession(User user) async {
     try {
       final String deviceId = await _getDeviceId();
-      final String? fcmToken = await FirebaseMessaging.instance.getToken();
+      String? fcmToken;
+      
+      try {
+        fcmToken = await FirebaseMessaging.instance.getToken();
+      } catch (e) {
+        print('Error getting FCM token: $e');
+        // Continue without FCM token
+      }
       
       // First, check if we need to terminate other sessions
       await _terminateOtherSessions(user.uid, deviceId);
       
-      // Then register the current session
-      await _db.collection(_sessionCollection).doc(user.uid).set({
-        'activeDeviceId': deviceId,
-        'activeDeviceFcmToken': fcmToken,
-        'lastLoginTime': FieldValue.serverTimestamp(),
-        'email': user.email,
-      });
-      
-      print('Session registered successfully for device: $deviceId');
+      // Then register the current session with retry logic
+      int retries = 3;
+      while (retries > 0) {
+        try {
+          await _db.collection(_sessionCollection).doc(user.uid).set({
+            'activeDeviceId': deviceId,
+            'activeDeviceFcmToken': fcmToken,
+            'lastLoginTime': FieldValue.serverTimestamp(),
+            'email': user.email,
+            'userId': user.uid,
+          });
+          
+          print('✅ Session registered successfully for device: $deviceId');
+          break;
+        } catch (e) {
+          retries--;
+          print('Error registering session (retries left: $retries): $e');
+          if (retries == 0) {
+            print('Failed to register session after 3 attempts');
+          } else {
+            await Future.delayed(const Duration(milliseconds: 500));
+          }
+        }
+      }
     } catch (e) {
-      print('Error registering session: $e');
+      print('Error in registerSession: $e');
+      // Don't throw error - session management shouldn't break login
     }
   }
   
@@ -62,7 +84,7 @@ class SessionManager {
       // Get the user's current session document
       DocumentSnapshot sessionDoc = await _db.collection(_sessionCollection).doc(userId).get();
       
-      if (sessionDoc.exists) {
+      if (sessionDoc.exists && sessionDoc.data() != null) {
         // If there's an existing session and it's not for this device
         final data = sessionDoc.data() as Map<String, dynamic>;
         final String? existingDeviceId = data['activeDeviceId'];
@@ -71,24 +93,27 @@ class SessionManager {
           final String? existingFcmToken = data['activeDeviceFcmToken'];
           
           // Store the terminated session in history
-          await _db.collection(_sessionCollection)
-              .doc(userId)
-              .collection('history')
-              .add({
-                'deviceId': existingDeviceId,
-                'fcmToken': existingFcmToken,
-                'loginTime': data['lastLoginTime'],
-                'logoutTime': FieldValue.serverTimestamp(),
-                'logoutReason': 'Logged in on another device',
-              });
-          
-          // Send notification to the other device if possible
-          if (existingFcmToken != null) {
-            // This would require a Cloud Function to send the notification
-            // Here we just log it - you'll need to implement a notification sender
-            print('Should notify device with token: $existingFcmToken');
+          try {
+            await _db.collection(_sessionCollection)
+                .doc(userId)
+                .collection('history')
+                .add({
+                  'deviceId': existingDeviceId,
+                  'fcmToken': existingFcmToken,
+                  'loginTime': data['lastLoginTime'],
+                  'logoutTime': FieldValue.serverTimestamp(),
+                  'logoutReason': 'Logged in on another device',
+                });
+          } catch (e) {
+            print('Error storing session history: $e');
           }
+          
+          print('🔄 Terminated session for device: $existingDeviceId');
+        } else {
+          print('🔄 Same device login or no existing device ID');
         }
+      } else {
+        print('🔄 No existing session found for user');
       }
     } catch (e) {
       print('Error terminating other sessions: $e');
@@ -99,20 +124,31 @@ class SessionManager {
   Future<bool> isActiveSession() async {
     try {
       final user = _auth.currentUser;
-      if (user == null) return false;
+      if (user == null) {
+        print('❌ No current user for session check');
+        return false;
+      }
       
       final String deviceId = await _getDeviceId();
+      print('🔍 Checking session for device: $deviceId');
+      
       DocumentSnapshot sessionDoc = await _db.collection(_sessionCollection).doc(user.uid).get();
       
-      if (!sessionDoc.exists) return false;
+      if (!sessionDoc.exists || sessionDoc.data() == null) {
+        print('❌ No session document exists');
+        return false;
+      }
       
       final data = sessionDoc.data() as Map<String, dynamic>;
       final String? activeDeviceId = data['activeDeviceId'];
       
-      return activeDeviceId == deviceId;
+      final isActive = activeDeviceId == deviceId;
+      print('🔍 Session check: activeDeviceId=$activeDeviceId, currentDeviceId=$deviceId, isActive=$isActive');
+      
+      return isActive;
     } catch (e) {
       print('Error checking session status: $e');
-      return false;
+      return true; // Default to true to avoid blocking user
     }
   }
   
@@ -127,26 +163,31 @@ class SessionManager {
       // Get current session
       DocumentSnapshot sessionDoc = await _db.collection(_sessionCollection).doc(user.uid).get();
       
-      if (sessionDoc.exists) {
+      if (sessionDoc.exists && sessionDoc.data() != null) {
         final data = sessionDoc.data() as Map<String, dynamic>;
         final String? activeDeviceId = data['activeDeviceId'];
         
         // Only clear if this is the active device
         if (activeDeviceId == deviceId) {
           // Add to history before clearing
-          await _db.collection(_sessionCollection)
-              .doc(user.uid)
-              .collection('history')
-              .add({
-                'deviceId': deviceId,
-                'fcmToken': data['activeDeviceFcmToken'],
-                'loginTime': data['lastLoginTime'],
-                'logoutTime': FieldValue.serverTimestamp(),
-                'logoutReason': 'Manual logout',
-              });
+          try {
+            await _db.collection(_sessionCollection)
+                .doc(user.uid)
+                .collection('history')
+                .add({
+                  'deviceId': deviceId,
+                  'fcmToken': data['activeDeviceFcmToken'],
+                  'loginTime': data['lastLoginTime'],
+                  'logoutTime': FieldValue.serverTimestamp(),
+                  'logoutReason': 'Manual logout',
+                });
+          } catch (e) {
+            print('Error storing logout history: $e');
+          }
           
           // Clear the active session
           await _db.collection(_sessionCollection).doc(user.uid).delete();
+          print('🗑️ Session cleared for device: $deviceId');
         }
       }
     } catch (e) {
@@ -158,36 +199,49 @@ class SessionManager {
   StreamSubscription<DocumentSnapshot>? _sessionListener;
   
   void startSessionListener(VoidCallback onForcedLogout) {
-    final user = _auth.currentUser;
-    if (user == null) return;
-    
-    _sessionListener = _db.collection(_sessionCollection)
-        .doc(user.uid)
-        .snapshots()
-        .listen((snapshot) async {
-      if (!snapshot.exists) {
-        // Session document was deleted
-        print('Session document no longer exists');
-        onForcedLogout();
-        return;
-      }
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
       
-      final data = snapshot.data() as Map<String, dynamic>;
-      final activeDeviceId = data['activeDeviceId'];
-      final deviceId = await _getDeviceId();
+      print('👂 Starting session listener for user: ${user.uid}');
       
-      if (activeDeviceId != deviceId) {
-        // Another device is now active
-        print('Another device is now the active session');
-        onForcedLogout();
-      }
-    }, onError: (error) {
-      print('Error in session listener: $error');
-    });
+      _sessionListener = _db.collection(_sessionCollection)
+          .doc(user.uid)
+          .snapshots()
+          .listen((snapshot) async {
+        try {
+          if (!snapshot.exists || snapshot.data() == null) {
+            // Session document was deleted
+            print('❌ Session document no longer exists - forced logout');
+            onForcedLogout();
+            return;
+          }
+          
+          final data = snapshot.data() as Map<String, dynamic>;
+          final activeDeviceId = data['activeDeviceId'];
+          final deviceId = await _getDeviceId();
+          
+          print('📱 Session listener: activeDeviceId=$activeDeviceId, currentDeviceId=$deviceId');
+          
+          if (activeDeviceId != deviceId) {
+            // Another device is now active
+            print('❌ Another device is now the active session - forced logout');
+            onForcedLogout();
+          }
+        } catch (e) {
+          print('Error in session listener callback: $e');
+        }
+      }, onError: (error) {
+        print('Error in session listener: $error');
+      });
+    } catch (e) {
+      print('Error starting session listener: $e');
+    }
   }
   
   void stopSessionListener() {
     _sessionListener?.cancel();
     _sessionListener = null;
+    print('🛑 Session listener stopped');
   }
 }

@@ -38,7 +38,7 @@ class ThemeConfig {
           ),
         ),
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         elevation: 8,
         shadowColor: Colors.black38,
         shape: RoundedRectangleBorder(

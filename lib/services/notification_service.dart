@@ -18,7 +18,15 @@ class NotificationService {
     FirebaseMessaging messaging = FirebaseMessaging.instance;
     
     // Request permission
-    await messaging.requestPermission();
+    await messaging.requestPermission(
+      alert: true,
+      announcement: false,
+      badge: true,
+      carPlay: false,
+      criticalAlert: false,
+      provisional: false,
+      sound: true,
+    );
 
     // Set background message handler
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
@@ -28,35 +36,77 @@ class NotificationService {
         AndroidInitializationSettings('@mipmap/ic_launcher');
 
     const DarwinInitializationSettings initializationSettingsIOS =
-      DarwinInitializationSettings();    
+        DarwinInitializationSettings(
+          requestAlertPermission: true,
+          requestBadgePermission: true,
+          requestSoundPermission: true,
+        );
 
     const InitializationSettings initializationSettings = InitializationSettings(
       android: initializationSettingsAndroid,
       iOS: initializationSettingsIOS,
     );
 
-    await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+    await flutterLocalNotificationsPlugin.initialize(
+      initializationSettings,
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        // Handle notification tap
+        print('Notification tapped: ${response.payload}');
+      },
+    );
+
+    // Create notification channel for Android
+    const AndroidNotificationChannel channel = AndroidNotificationChannel(
+      'thintava_channel',
+      'Thintava Notifications',
+      description: 'Notifications for Thintava app',
+      importance: Importance.high,
+      playSound: true,
+    );
+
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
 
     // Set up foreground message handler
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       RemoteNotification? notification = message.notification;
-      AndroidNotification? android = message.notification?.android;
 
-      if (notification != null && android != null) {
+      if (notification != null) {
         flutterLocalNotificationsPlugin.show(
           notification.hashCode,
           notification.title,
           notification.body,
-          const NotificationDetails(
+          NotificationDetails(
             android: AndroidNotificationDetails(
-              'thintava_channel',
-              'Thintava Notifications',
+              channel.id,
+              channel.name,
+              channelDescription: channel.description,
               importance: Importance.high,
               priority: Priority.high,
+              icon: '@mipmap/ic_launcher',
+              playSound: true,
+              enableVibration: true,
+            ),
+            iOS: const DarwinNotificationDetails(
+              presentAlert: true,
+              presentBadge: true,
+              presentSound: true,
             ),
           ),
+          payload: message.data.toString(),
         );
       }
     });
+  }
+
+  // Call this method when logging out to clean up notification resources
+  static Future<void> cleanupNotifications() async {
+    try {
+      // Clear all displayed notifications
+      await flutterLocalNotificationsPlugin.cancelAll();
+    } catch (e) {
+      print("Error cleaning up notifications: $e");
+    }
   }
 }

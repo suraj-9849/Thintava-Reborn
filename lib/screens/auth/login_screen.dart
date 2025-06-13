@@ -6,7 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
-  
+
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
@@ -19,7 +19,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   late Animation<double> _fadeAnimation;
   bool _obscurePassword = true;
   bool _isLoading = false;
-  bool _showDeviceLoginMessage = false; // Flag to show device login message
 
   @override
   void initState() {
@@ -44,44 +43,97 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   }
 
   void handleLogin() async {
+    // Validate input
+    if (emailController.text.trim().isEmpty || passwordController.text.trim().isEmpty) {
+      _showError("Please enter both email and password");
+      return;
+    }
+
     setState(() {
       _isLoading = true;
-      _showDeviceLoginMessage = false; // Reset message flag
     });
 
     try {
-      final user = await auth.login(emailController.text, passwordController.text);
+      print("🔑 Attempting login for: ${emailController.text.trim()}");
+
+      final user = await auth.login(
+        emailController.text.trim(),
+        passwordController.text.trim()
+      );
+
       if (user != null && mounted) {
-        // Show device login message before navigating away
-        setState(() {
-          _showDeviceLoginMessage = true;
-          _isLoading = false;
-        });
-        
-        // Brief delay to show the message
-        await Future.delayed(const Duration(seconds: 1));
-        
-        // Navigate to splash screen which will handle routing based on role
-        if (mounted) {
-          Navigator.pushReplacementNamed(context, '/splash');
-        }
-      }
-    } catch (e) {
-      if (mounted) {
+        print("✅ Login successful for user: ${user.uid}");
+
+        // Show success message briefly
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Login Failed: $e',
+              'Login successful! Redirecting...',
               style: GoogleFonts.poppins(),
             ),
-            backgroundColor: Colors.redAccent,
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 1),
             behavior: SnackBarBehavior.floating,
           ),
         );
+
+        // Small delay to show success message
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        if (mounted) {
+          // Navigate to splash screen which will handle role-based routing
+          Navigator.pushReplacementNamed(context, '/splash');
+        }
+      } else {
+        _showError("Login failed - no user returned");
+      }
+    } catch (e) {
+      print("❌ Login error: $e");
+      String errorMessage = _parseErrorMessage(e.toString());
+      _showError(errorMessage);
+    } finally {
+      if (mounted) {
         setState(() {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  String _parseErrorMessage(String error) {
+    // Handle common Firebase Auth errors
+    if (error.contains('user-not-found')) {
+      return 'No account found with this email';
+    } else if (error.contains('wrong-password') || error.contains('invalid-credential')) {
+      return 'Incorrect password';
+    } else if (error.contains('invalid-email')) {
+      return 'Please enter a valid email address';
+    } else if (error.contains('user-disabled')) {
+      return 'This account has been disabled';
+    } else if (error.contains('too-many-requests')) {
+      return 'Too many failed attempts. Please try again later';
+    } else if (error.contains('network-request-failed')) {
+      return 'Network error. Please check your connection';
+    } else if (error.contains('PigeonUserDetails') || error.contains('List<Object?>')) {
+      return 'Authentication error. Please try again';
+    } else {
+      return 'Login failed. Please try again';
+    }
+  }
+
+  void _showError(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            message,
+            style: GoogleFonts.poppins(),
+          ),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+        ),
+      );
     }
   }
 
@@ -91,7 +143,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(
-          "Login", 
+          "Login",
           style: GoogleFonts.poppins(
             color: Colors.white,
             fontWeight: FontWeight.w600,
@@ -141,7 +193,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                     ),
                   ),
                   const SizedBox(height: 24),
-                  
+
                   // Glass card for the form
                   ClipRRect(
                     borderRadius: BorderRadius.circular(20),
@@ -180,33 +232,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                 color: Colors.black54,
                               ),
                             ),
-                            // Show device login notice if applicable
-                            if (_showDeviceLoginMessage) ...[
-                              const SizedBox(height: 16),
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.green.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: Colors.green),
-                                ),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.info_outline, color: Colors.green),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        "This is now your active login device. Any previous sessions have been terminated.",
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 14,
-                                          color: Colors.green,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
                             const SizedBox(height: 24),
                             TextField(
                               controller: emailController,

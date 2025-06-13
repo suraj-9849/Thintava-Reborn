@@ -7,6 +7,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 // Import modularized components
 import 'package:canteen_app/config/theme_config.dart';
@@ -47,31 +48,111 @@ Future<void> main() async {
   // Initialize Firebase based on platform
   await _initializeFirebase();
   
-  // Initialize Firebase Messaging
-  await NotificationService.initializeNotifications();
-  
   // Run the application
   runApp(const ThintavaApp());
 }
 
 // Firebase initialization function
 Future<void> _initializeFirebase() async {
-  if (kIsWeb) {
-    await Firebase.initializeApp(
-      options: const FirebaseOptions(
-        apiKey: "AIzaSyCPsu2kuSKa9KezLhZNJWUF4B_n5kMqo4g",
-        authDomain: "thintava-ee4f4.firebaseapp.com",
-        projectId: "thintava-ee4f4",
-        storageBucket: "thintava-ee4f4.firebasestorage.app",
-        messagingSenderId: "626390741302",
-        appId: "1:626390741302:ios:0579424d3bba31c12ec397",
-        measurementId: "",
-      ),
+  try {
+    if (kIsWeb) {
+      await Firebase.initializeApp(
+        options: const FirebaseOptions(
+          apiKey: "AIzaSyCPsu2kuSKa9KezLhZNJWUF4B_n5kMqo4g",
+          authDomain: "thintava-ee4f4.firebaseapp.com",
+          projectId: "thintava-ee4f4",
+          storageBucket: "thintava-ee4f4.firebasestorage.app",
+          messagingSenderId: "626390741302",
+          appId: "1:626390741302:ios:0579424d3bba31c12ec397",
+          measurementId: "",
+        ),
+      );
+      await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
+    } else {
+      await Firebase.initializeApp();
+      
+      // Initialize FCM more safely
+      try {
+        await _initializeFCMSafely();
+      } catch (e) {
+        print('⚠️ FCM initialization failed: $e');
+        // Continue without FCM if it fails
+      }
+    }
+    print('✅ Firebase initialized successfully');
+  } catch (e) {
+    print('❌ Firebase initialization error: $e');
+    rethrow;
+  }
+}
+
+// Safe FCM initialization
+Future<void> _initializeFCMSafely() async {
+  try {
+    // Request permission first
+    final messaging = FirebaseMessaging.instance;
+    
+    await messaging.requestPermission(
+      alert: true,
+      announcement: false,
+      badge: true,
+      carPlay: false,
+      criticalAlert: false,
+      provisional: false,
+      sound: true,
     );
-    await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
-  } else {
-    await Firebase.initializeApp();
-    await saveInitialFCMToken();
+    
+    // Only get token after permission is granted
+    final token = await messaging.getToken();
+    if (token != null) {
+      print('✅ FCM Token obtained: ${token.substring(0, 20)}...');
+    } else {
+      print('⚠️ FCM Token is null');
+    }
+    
+    await NotificationService.initializeNotifications();
+  } catch (e) {
+    print('❌ FCM initialization error: $e');
+    throw e;
+  }
+}
+
+// Updated saveInitialFCMToken function
+Future<void> saveInitialFCMToken() async {
+  try {
+    // Add delay to ensure Firebase is fully initialized
+    await Future.delayed(const Duration(milliseconds: 500));
+    
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final messaging = FirebaseMessaging.instance;
+      
+      // Check if messaging is available
+      try {
+        final token = await messaging.getToken();
+        
+        if (token != null && token.isNotEmpty) {
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .update({
+            'fcmToken': token,
+            'tokenUpdatedAt': FieldValue.serverTimestamp(),
+          });
+          print('✅ Initial FCM token saved successfully');
+        } else {
+          print('⚠️ FCM token is null or empty');
+        }
+      } catch (tokenError) {
+        print('❌ Error getting FCM token: $tokenError');
+        // Don't save if token retrieval fails
+      }
+    } else {
+      print('⚠️ No authenticated user found for FCM token save');
+    }
+  } catch (e) {
+    print('❌ Error in saveInitialFCMToken: $e');
+    // Don't throw - this is not critical for app functionality
   }
 }
 
@@ -89,11 +170,12 @@ class _ThintavaAppState extends State<ThintavaApp> {
   void initState() {
     super.initState();
     
-    // Set up a global session listener
-    authService.startSessionListener(() {
-      // This will be called if the user is logged out on another device
-      _handleForcedLogout();
-    });
+    // TEMPORARILY DISABLE SESSION LISTENER TO FIX LOGIN ISSUES
+    // authService.startSessionListener(() {
+    //   // This will be called if the user is logged out on another device
+    //   _handleForcedLogout();
+    // });
+    print('🚀 Thintava App initialized - Session management temporarily disabled');
   }
   
   void _handleForcedLogout() {
@@ -124,8 +206,8 @@ class _ThintavaAppState extends State<ThintavaApp> {
   
   @override
   void dispose() {
-    // Stop session listener
-    authService.stopSessionListener();
+    // TEMPORARILY DISABLE SESSION LISTENER
+    // authService.stopSessionListener();
     super.dispose();
   }
   
@@ -322,7 +404,7 @@ class _ThintavaAppState extends State<ThintavaApp> {
           borderRadius: BorderRadius.circular(10),
         ),
       ),
-      dialogTheme: DialogTheme(
+      dialogTheme: DialogThemeData(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
         ),
@@ -336,7 +418,7 @@ class _ThintavaAppState extends State<ThintavaApp> {
           color: Colors.black87,
         ),
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         elevation: 4,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
