@@ -46,29 +46,33 @@ class _KitchenDashboardState extends State<KitchenDashboard> with SingleTickerPr
   }
 
   Future<void> updateOrderStatus(String orderId, String newStatus) async {
-    final db = FirebaseFirestore.instance;
-    final orderRef = db.collection('orders').doc(orderId);
+    try {
+      final db = FirebaseFirestore.instance;
+      final orderRef = db.collection('orders').doc(orderId);
 
-    final updates = <String, Object>{'status': newStatus};
-    if (newStatus == 'Cooked') {
-      updates['cookedTime'] = FieldValue.serverTimestamp();
-    }
-    if (newStatus == 'Pick Up') {
-      updates['pickedUpTime'] = FieldValue.serverTimestamp();
-    }
+      final updates = <String, Object>{'status': newStatus};
+      if (newStatus == 'Cooked') {
+        updates['cookedTime'] = FieldValue.serverTimestamp();
+      }
+      if (newStatus == 'Pick Up') {
+        updates['pickedUpTime'] = FieldValue.serverTimestamp();
+      }
 
-    await orderRef.update(updates);
-    
-    // Show confirmation
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Order $orderId updated to $newStatus'),
-          backgroundColor: const Color(0xFFFFB703),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      await orderRef.update(updates);
+      
+      // Show confirmation only if widget is still mounted
+      if (mounted && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Order ${orderId.substring(0, 6)} updated to $newStatus'),
+            backgroundColor: const Color(0xFFFFB703),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error updating order status: $e');
     }
   }
 
@@ -245,14 +249,18 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
     _timer?.cancel();
     final status = data['status'];
     final ts = data['pickedUpTime'] as Timestamp?;
-    if (status == 'Pick Up' && ts != null) {
+    if (status == 'Pick Up' && ts != null && mounted) {
       _lastPickedTs = ts;
       final expiry = ts.toDate().add(const Duration(minutes: 5));
       _remaining = expiry.difference(DateTime.now());
       _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-        final diff = expiry.difference(DateTime.now());
-        setState(() => _remaining = diff);
-        if (diff.isNegative) {
+        if (mounted) {
+          final diff = expiry.difference(DateTime.now());
+          setState(() => _remaining = diff);
+          if (diff.isNegative) {
+            _timer?.cancel();
+          }
+        } else {
           _timer?.cancel();
         }
       });
@@ -286,8 +294,62 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
     final status = capitalize(widget.data['status'] ?? '');
     final shortId = widget.orderId.substring(0, 6);
     
-    // Extract items with better formatting
-    final itemsMap = widget.data['items'] as Map<String, dynamic>? ?? {};
+    // Handle items properly - they come as JSON object from Firestore
+    final itemsData = widget.data['items'];
+    List<Map<String, dynamic>> parsedItems = [];
+    int totalItems = 0;
+    
+    if (itemsData != null) {
+      try {
+        if (itemsData is Map<String, dynamic>) {
+          // Handle the map format: {"itemName": quantity}
+          itemsData.forEach((key, value) {
+            parsedItems.add({
+              'name': key,
+              'quantity': int.tryParse(value.toString()) ?? 1,
+              'price': 0.0, // Default price if not available
+            });
+            totalItems += int.tryParse(value.toString()) ?? 1;
+          });
+        } else if (itemsData is String) {
+          // Handle string format like "quantity: 1, price: 1.0, subtotal: 1.0, name: dosa"
+          final parts = itemsData.split(',');
+          Map<String, String> itemInfo = {};
+          
+          for (String part in parts) {
+            final keyValue = part.trim().split(':');
+            if (keyValue.length == 2) {
+              itemInfo[keyValue[0].trim()] = keyValue[1].trim();
+            }
+          }
+          
+          parsedItems.add({
+            'name': itemInfo['name'] ?? 'Unknown Item',
+            'quantity': int.tryParse(itemInfo['quantity'] ?? '1') ?? 1,
+            'price': double.tryParse(itemInfo['price'] ?? '0') ?? 0.0,
+            'subtotal': double.tryParse(itemInfo['subtotal'] ?? '0') ?? 0.0,
+          });
+          totalItems = int.tryParse(itemInfo['quantity'] ?? '1') ?? 1;
+        } else if (itemsData is List) {
+          // Handle list format
+          for (var item in itemsData) {
+            if (item is Map) {
+              parsedItems.add({
+                'name': item['name'] ?? 'Unknown Item',
+                'quantity': int.tryParse(item['quantity'].toString()) ?? 1,
+                'price': double.tryParse(item['price'].toString()) ?? 0.0,
+                'subtotal': double.tryParse(item['subtotal'].toString()) ?? 0.0,
+              });
+              totalItems += int.tryParse(item['quantity'].toString()) ?? 1;
+            }
+          }
+        }
+      } catch (e) {
+        print('Error parsing items data: $e');
+        print('Items data: $itemsData');
+      }
+    }
+    
     final timestamp = widget.data['timestamp'] as Timestamp?;
     final orderTime = timestamp != null 
         ? DateTime.fromMillisecondsSinceEpoch(timestamp.millisecondsSinceEpoch)
@@ -300,21 +362,22 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
     if (status == 'Pick Up') {
       if (_remaining.isNegative) {
         timerWidget = Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
           decoration: BoxDecoration(
-            color: Colors.red.withOpacity(0.2),
-            borderRadius: BorderRadius.circular(12),
+            color: Colors.red.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: Colors.red.withOpacity(0.3)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: const [
-              Icon(Icons.timer_off, color: Colors.red, size: 16),
-              SizedBox(width: 4),
-              Text("EXPIRED", 
+              Icon(Icons.timer_off, color: Colors.red, size: 10),
+              SizedBox(width: 2),
+              Text("EXP", 
                 style: TextStyle(
                   color: Colors.red, 
                   fontWeight: FontWeight.bold,
-                  fontSize: 12,
+                  fontSize: 9,
                 ),
               ),
             ],
@@ -324,21 +387,22 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
         final m = _remaining.inMinutes.remainder(60).toString().padLeft(2, '0');
         final s = _remaining.inSeconds.remainder(60).toString().padLeft(2, '0');
         timerWidget = Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
           decoration: BoxDecoration(
-            color: const Color(0xFFFFB703).withOpacity(0.2),
-            borderRadius: BorderRadius.circular(12),
+            color: const Color(0xFFFFB703).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: const Color(0xFFFFB703).withOpacity(0.3)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.timer, color: Color(0xFFFFB703), size: 16),
-              const SizedBox(width: 4),
+              const Icon(Icons.timer, color: Color(0xFFFFB703), size: 10),
+              const SizedBox(width: 2),
               Text("$m:$s", 
                 style: const TextStyle(
                   color: Color(0xFFFFB703), 
                   fontWeight: FontWeight.bold,
-                  fontSize: 12,
+                  fontSize: 9,
                 ),
               ),
             ],
@@ -386,14 +450,16 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    "Order #$shortId",
-                    style: const TextStyle(
-                      fontSize: 16, 
-                      fontWeight: FontWeight.bold
+                  Expanded(
+                    child: Text(
+                      "Order #$shortId",
+                      style: const TextStyle(
+                        fontSize: 16, 
+                        fontWeight: FontWeight.bold
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  const Spacer(),
                   Text(
                     timeStr,
                     style: const TextStyle(
@@ -404,62 +470,109 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
                 ],
               ),
               const SizedBox(height: 12),
-              Row(
+              // Fixed layout to prevent overflow completely
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
+                  // Items info on its own row
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[300]!),
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
                           "Items",
                           style: TextStyle(
-                            fontSize: 14,
+                            fontSize: 12,
                             fontWeight: FontWeight.w500,
                             color: Colors.black54,
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 2),
                         Text(
-                          itemsMap.entries.length > 0 
-                              ? "${itemsMap.entries.length} item${itemsMap.entries.length > 1 ? 's' : ''}"
+                          totalItems > 0 
+                              ? "$totalItems item${totalItems > 1 ? 's' : ''}"
                               : "No items",
-                          style: const TextStyle(fontSize: 16),
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
                   ),
-                  DropdownButton<String>(
-                    value: status,
-                    underline: Container(),
-                    icon: const Icon(Icons.arrow_drop_down_circle, color: Color(0xFFFFB703)),
-                    borderRadius: BorderRadius.circular(12),
-                    onChanged: (newStatus) {
-                      if (newStatus != null) {
-                        widget.onUpdate(widget.orderId, newStatus);
-                      }
-                    },
-                    items: ['Placed', 'Cooking', 'Cooked', 'Pick Up']
-                        .map((s) => DropdownMenuItem(
-                              value: s,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(
-                                    width: 12,
-                                    height: 12,
-                                    decoration: BoxDecoration(
-                                      color: _getStatusColor(s),
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(s),
-                                ],
-                              ),
-                            ))
-                        .toList(),
+                  const SizedBox(height: 8),
+                  // Status update section - completely separate to avoid overflow
+                  Row(
+                    children: [
+                      // Status text
+                      const Text(
+                        "Status: ",
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black54,
+                        ),
+                      ),
+                      // Dropdown in container with fixed constraints
+                      Expanded(
+                        child: Container(
+                          height: 30,
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          decoration: BoxDecoration(
+                            color: _getStatusColor(status).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: _getStatusColor(status).withOpacity(0.3)),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: status,
+                              icon: const Icon(Icons.keyboard_arrow_down, size: 14),
+                              isDense: true,
+                              isExpanded: true,
+                              style: const TextStyle(fontSize: 11, color: Colors.black87),
+                              onChanged: (newStatus) {
+                                if (newStatus != null && mounted) {
+                                  widget.onUpdate(widget.orderId, newStatus);
+                                }
+                              },
+                              items: ['Placed', 'Cooking', 'Cooked', 'Pick Up']
+                                  .map((s) => DropdownMenuItem(
+                                        value: s,
+                                        child: Text(
+                                          s,
+                                          style: const TextStyle(fontSize: 11),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ))
+                                  .toList(),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  if (status == 'Pick Up') timerWidget,
+                  // Timer on separate line when present
+                  if (status == 'Pick Up') ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Text(
+                          "Timer: ",
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black54,
+                          ),
+                        ),
+                        timerWidget,
+                      ],
+                    ),
+                  ],
                 ],
               ),
               if (_isExpanded) ...[
@@ -472,38 +585,146 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                ...itemsMap.entries.map((entry) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    children: [
-                      Text(
-                        entry.key,
-                        style: const TextStyle(fontSize: 15),
-                      ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFB703).withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          'x${entry.value}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
+                if (parsedItems.isNotEmpty)
+                  ...parsedItems.map((item) {
+                    String itemName = item['name'].toString();
+                    int quantity = item['quantity'] ?? 1;
+                    double price = item['price'] ?? 0.0;
+                    double subtotal = item['subtotal'] ?? (price * quantity);
+                    
+                    // Ensure item name isn't too long
+                    if (itemName.length > 20) {
+                      itemName = '${itemName.substring(0, 17)}...';
+                    }
+                    
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey[300]!),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.grey.withOpacity(0.1),
+                            blurRadius: 2,
+                            offset: const Offset(0, 1),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
-                )).toList(),
-                if (itemsMap.isEmpty)
-                  const Text(
-                    "No items in this order",
-                    style: TextStyle(
-                      fontStyle: FontStyle.italic,
-                      color: Colors.black54,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Item name and quantity
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFB703).withOpacity(0.1),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.restaurant,
+                                  size: 14,
+                                  color: Color(0xFFFFB703),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  itemName,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFB703),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  'Qty: $quantity',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 11,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          // Price details
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              if (price > 0) ...[
+                                Text(
+                                  'Price: ₹${price.toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                Text(
+                                  'Total: ₹${subtotal.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFFFFB703),
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ] else ...[
+                                // If no price data, just show quantity info
+                                Text(
+                                  'Quantity: $quantity',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList()
+                else
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[300]!),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.inbox_outlined,
+                          size: 32,
+                          color: Colors.grey[400],
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          "No items in this order",
+                          style: TextStyle(
+                            fontStyle: FontStyle.italic,
+                            color: Colors.black54,
+                            fontSize: 13,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
                     ),
                   ),
               ],
