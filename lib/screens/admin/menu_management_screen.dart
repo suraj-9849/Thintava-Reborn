@@ -239,18 +239,9 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
         decoration: BoxDecoration(
           color: Colors.grey[100],
         ),
-        child: Column(
-          children: [
-            // Add form (conditionally displayed)
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              height: showAddForm ? null : 0,
-              child: showAddForm ? _buildAddItemForm() : const SizedBox.shrink(),
-            ),
-            
-            // Menu items list
-            Expanded(
-              child: StreamBuilder(
+        child: showAddForm 
+          ? _buildAddItemForm() // Show only the form when adding
+          : StreamBuilder<QuerySnapshot>( // Show only the list when not adding
                 stream: FirebaseFirestore.instance
                   .collection('menuItems')
                   .orderBy('name')
@@ -516,188 +507,175 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
                   );
                 },
               ),
-            ),
-          ],
-        ),
       ),
     );
   }
   
   Widget _buildAddItemForm() {
-    return Card(
-      elevation: 4,
-      margin: const EdgeInsets.all(16),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header with close button
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  "Add New Menu Item",
-                  style: GoogleFonts.poppins(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: resetForm,
-                  tooltip: "Cancel",
-                ),
-              ],
+    return Scaffold(
+      
+      body: Container(
+        decoration: BoxDecoration(
+          color: Colors.grey[100],
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Card(
+            elevation: 4,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
             ),
-            const SizedBox(height: 16),
-            
-            // Name field
-            TextField(
-              controller: nameController,
-              decoration: InputDecoration(
-                labelText: "Item Name *",
-                prefixIcon: const Icon(Icons.fastfood),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            
-            // Price field and Veg/Non-veg toggle
-            Row(
-              children: [
-                // Price field
-                Expanded(
-                  child: TextField(
-                    controller: priceController,
-                    keyboardType: TextInputType.number,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Name field
+                  TextField(
+                    controller: nameController,
                     decoration: InputDecoration(
-                      labelText: "Price (₹) *",
-                      prefixIcon: const Icon(Icons.currency_rupee),
+                      labelText: "Item Name *",
+                      prefixIcon: const Icon(Icons.fastfood),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 16),
-                
-                // Veg/Non-veg toggle
-                Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: Row(
+                  const SizedBox(height: 16),
+                  
+                  // Price field and Veg/Non-veg toggle
+                  Row(
                     children: [
-                      Text(
-                        "Veg",
-                        style: GoogleFonts.poppins(),
+                      // Price field
+                      Expanded(
+                        child: TextField(
+                          controller: priceController,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: "Price (₹) *",
+                            prefixIcon: const Icon(Icons.currency_rupee),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
                       ),
-                      Switch(
-                        value: isVeg,
-                        onChanged: (value) {
-                          setState(() {
-                            isVeg = value;
-                          });
-                        },
-                        activeColor: Colors.green,
-                        inactiveThumbColor: Colors.red,
+                      const SizedBox(width: 16),
+                      
+                      // Veg/Non-veg toggle
+                      Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              "Veg",
+                              style: GoogleFonts.poppins(fontSize: 14),
+                            ),
+                            Switch(
+                              value: isVeg,
+                              onChanged: (value) {
+                                setState(() {
+                                  isVeg = value;
+                                });
+                              },
+                              activeColor: Colors.green,
+                              inactiveThumbColor: Colors.red,
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            
-            // Description field
-            TextField(
-              controller: descriptionController,
-              maxLines: 2,
-              decoration: InputDecoration(
-                labelText: "Description (Optional)",
-                prefixIcon: const Icon(Icons.description),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            
-            // Image selector
-            Center(
-              child: _selectedImage == null
-                ? OutlinedButton.icon(
-                    onPressed: pickImage,
-                    icon: const Icon(Icons.image),
-                    label: const Text("Upload Image (Optional)"),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFFFFB703),
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    ),
-                  )
-                : Column(
-                    children: [
-                      ClipRRect(
+                  const SizedBox(height: 16),
+                  
+                  // Description field
+                  TextField(
+                    controller: descriptionController,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      labelText: "Description (Optional)",
+                      prefixIcon: const Icon(Icons.description),
+                      border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        child: Image.file(
-                          _selectedImage!,
-                          width: 150,
-                          height: 150,
-                          fit: BoxFit.cover,
-                        ),
                       ),
-                      TextButton.icon(
-                        onPressed: pickImage,
-                        icon: const Icon(Icons.edit),
-                        label: const Text("Change Image"),
-                      ),
-                    ],
-                  ),
-            ),
-            const SizedBox(height: 16),
-            
-            // Add button
-            Center(
-              child: SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton.icon(
-                  onPressed: isUploading ? null : addMenuItem,
-                  icon: isUploading 
-                    ? Container(
-                        width: 24,
-                        height: 24,
-                        padding: const EdgeInsets.all(2),
-                        child: const CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 3,
-                        ),
-                      )
-                    : const Icon(Icons.add),
-                  label: Text(
-                    isUploading ? "Adding..." : "Add to Menu",
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFFB703),
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: Colors.grey,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                ),
+                  const SizedBox(height: 16),
+                  
+                  // Image selector
+                  Center(
+                    child: _selectedImage == null
+                      ? OutlinedButton.icon(
+                          onPressed: pickImage,
+                          icon: const Icon(Icons.image),
+                          label: const Text("Upload Image (Optional)"),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFFFB703),
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          ),
+                        )
+                      : Column(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.file(
+                                _selectedImage!,
+                                width: 120,
+                                height: 120,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            TextButton.icon(
+                              onPressed: pickImage,
+                              icon: const Icon(Icons.edit),
+                              label: const Text("Change Image"),
+                            ),
+                          ],
+                        ),
+                  ),
+                  const SizedBox(height: 24),
+                  
+                  // Add button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      onPressed: isUploading ? null : addMenuItem,
+                      icon: isUploading 
+                        ? Container(
+                            width: 24,
+                            height: 24,
+                            padding: const EdgeInsets.all(2),
+                            child: const CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 3,
+                            ),
+                          )
+                        : const Icon(Icons.add),
+                      label: Text(
+                        isUploading ? "Adding..." : "Add to Menu",
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFFFB703),
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: Colors.grey,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
