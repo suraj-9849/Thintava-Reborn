@@ -250,6 +250,7 @@ class _AdminOrderHistoryScreenState extends State<AdminOrderHistoryScreen> {
                           child: ExpansionTile(
                             tilePadding: const EdgeInsets.all(16),
                             title: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _buildStatusIndicator(status),
                                 const SizedBox(width: 12),
@@ -257,27 +258,40 @@ class _AdminOrderHistoryScreenState extends State<AdminOrderHistoryScreen> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
+                                      // Order ID and Total on separate lines to prevent overflow
                                       Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
-                                          Text(
-                                            'Order #${doc.id.substring(0, 6)}',
-                                            style: GoogleFonts.poppins(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 16,
-                                            ),
-                                          ),
-                                          Text(
-                                            '₹$total',
-                                            style: GoogleFonts.poppins(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 16,
-                                              color: const Color(0xFFFFB703),
+                                          Expanded(
+                                            child: Text(
+                                              'Order #${doc.id.substring(0, 6)}',
+                                              style: GoogleFonts.poppins(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
                                         ],
                                       ),
                                       const SizedBox(height: 4),
+                                      // Total amount in a colored container
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFFFB703).withOpacity(0.2),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          '₹${total.toStringAsFixed(2)}',
+                                          style: GoogleFonts.poppins(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                            color: const Color(0xFFFFB703),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      // Customer email
                                       Row(
                                         children: [
                                           const Icon(Icons.person_outline, size: 14, color: Colors.grey),
@@ -286,7 +300,7 @@ class _AdminOrderHistoryScreenState extends State<AdminOrderHistoryScreen> {
                                             child: Text(
                                               email,
                                               style: GoogleFonts.poppins(
-                                                fontSize: 14,
+                                                fontSize: 13,
                                                 color: Colors.grey[700],
                                               ),
                                               overflow: TextOverflow.ellipsis,
@@ -295,17 +309,21 @@ class _AdminOrderHistoryScreenState extends State<AdminOrderHistoryScreen> {
                                         ],
                                       ),
                                       const SizedBox(height: 4),
+                                      // Timestamp
                                       Row(
                                         children: [
                                           const Icon(Icons.access_time, size: 14, color: Colors.grey),
                                           const SizedBox(width: 4),
-                                          Text(
-                                            timestamp != null
-                                                ? _formatDateTime(timestamp)
-                                                : 'Unknown time',
-                                            style: GoogleFonts.poppins(
-                                              fontSize: 14,
-                                              color: Colors.grey[700],
+                                          Expanded(
+                                            child: Text(
+                                              timestamp != null
+                                                  ? _formatDateTime(timestamp)
+                                                  : 'Unknown time',
+                                              style: GoogleFonts.poppins(
+                                                fontSize: 13,
+                                                color: Colors.grey[700],
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
                                         ],
@@ -338,21 +356,70 @@ class _AdminOrderHistoryScreenState extends State<AdminOrderHistoryScreen> {
                                       ),
                                     ),
                                     const SizedBox(height: 16),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    // Status and Order ID with proper styling
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Text(
-                                          'Status: $status',
-                                          style: GoogleFonts.poppins(
-                                            fontWeight: FontWeight.w500,
-                                          ),
+                                        // Status with colored background
+                                        Row(
+                                          children: [
+                                            Text(
+                                              'Status: ',
+                                              style: GoogleFonts.poppins(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                            Expanded(
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: _getStatusColor(status).withOpacity(0.2),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                ),
+                                                child: Text(
+                                                  status,
+                                                  style: GoogleFonts.poppins(
+                                                    fontWeight: FontWeight.w600,
+                                                    fontSize: 14,
+                                                    color: _getStatusColor(status),
+                                                  ),
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                        Text(
-                                          'Order ID: ${doc.id}',
-                                          style: GoogleFonts.poppins(
-                                            fontSize: 12,
-                                            color: Colors.grey[600],
-                                          ),
+                                        const SizedBox(height: 8),
+                                        // Order ID with subtle background
+                                        Row(
+                                          children: [
+                                            Text(
+                                              'Order ID: ',
+                                              style: GoogleFonts.poppins(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 12,
+                                                color: Colors.grey[600],
+                                              ),
+                                            ),
+                                            Expanded(
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.grey.withOpacity(0.1),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                child: Text(
+                                                  doc.id,
+                                                  style: GoogleFonts.robotoMono(
+                                                    fontSize: 12,
+                                                    color: Colors.grey[700],
+                                                  ),
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ],
                                     ),
@@ -391,11 +458,11 @@ class _AdminOrderHistoryScreenState extends State<AdminOrderHistoryScreen> {
         color = Colors.green;
         icon = Icons.restaurant_outlined;
         break;
-      case 'pick up':
+      case 'ready to pickup':
         color = Colors.purple;
         icon = Icons.takeout_dining_outlined;
         break;
-      case 'pickedup':
+      case 'completed':
         color = Colors.teal;
         icon = Icons.check_circle_outline;
         break;
@@ -415,17 +482,38 @@ class _AdminOrderHistoryScreenState extends State<AdminOrderHistoryScreen> {
         color: color.withOpacity(0.2),
         shape: BoxShape.circle,
       ),
-      child: Icon(icon, color: color),
+      child: Icon(icon, color: color, size: 20),
     );
   }
 
-  String _formatDateTime(DateTime dateTime) {
-    // Format date as DD/MM/YYYY
-    final date = '${dateTime.day.toString().padLeft(2, '0')}/${dateTime.month.toString().padLeft(2, '0')}/${dateTime.year}';
+    // Helper method to get status color
+    Color _getStatusColor(String status) {
+      switch (status.toLowerCase()) {
+        case 'placed':
+          return Colors.blue;
+        case 'cooking':
+          return Colors.orange;
+        case 'cooked':
+          return Colors.green;
+        case 'ready to pickup':
+          return Colors.purple;
+        case 'completed':
+          return Colors.teal;
+        case 'terminated':
+          return Colors.red;
+        default:
+          return Colors.grey;
+      }
+    }
     
-    // Format time as HH:MM
-    final time = '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
-    
-    return '$date, $time';
+    // Helper method to format date time
+    String _formatDateTime(DateTime dateTime) {
+      // Format date as DD/MM/YYYY
+      final date = '${dateTime.day.toString().padLeft(2, '0')}/${dateTime.month.toString().padLeft(2, '0')}/${dateTime.year}';
+      
+      // Format time as HH:MM
+      final time = '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+      
+      return '$date, $time';
+    }
   }
-}
