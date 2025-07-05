@@ -209,36 +209,174 @@ class _CartScreenState extends State<CartScreen> {
       // Close loading dialog
       Navigator.pop(context);
       
-      // Show success dialog
+      // Show success dialog with track order navigation
       showDialog(
         context: context,
         barrierDismissible: false,
         builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           title: Row(
             children: [
-              const Icon(Icons.check_circle, color: Colors.green, size: 30),
-              const SizedBox(width: 8),
-              const Text("Order Placed Successfully!")
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.check_circle, 
+                  color: Colors.green, 
+                  size: 30,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  "Order Placed Successfully!",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green.shade700,
+                  ),
+                ),
+              ),
             ],
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text("Your order has been placed successfully and will be prepared shortly."),
-              const SizedBox(height: 12),
-              Text("Order Total: ₹${total.toStringAsFixed(2)}"),
-              const SizedBox(height: 4),
-              Text("Payment ID: ${response.paymentId}"),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFB703).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFFFFB703).withOpacity(0.3),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Your order has been placed successfully and will be prepared shortly.",
+                      style: TextStyle(fontSize: 16),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          "Order Total:",
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        Text(
+                          "₹${total.toStringAsFixed(2)}",
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFFFB703),
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Payment ID:",
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            response.paymentId ?? 'N/A',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontFamily: 'monospace',
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.info_outline,
+                      color: Colors.blue,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "You can track your order status and get updates on preparation time.",
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.blue.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
           actions: [
             TextButton(
               onPressed: () {
-                Navigator.pop(context);
-                Navigator.popUntil(context, (route) => route.isFirst);
+                Navigator.pop(context); // Close success dialog
+                // Navigate to user home and clear navigation stack
+                Navigator.pushNamedAndRemoveUntil(
+                  context, 
+                  '/user/user-home',
+                  (route) => false,
+                );
               },
-              child: const Text("GO TO HOME"),
+              child: Text(
+                "GO TO HOME",
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pop(context); // Close success dialog
+                // Navigate to order tracking and clear navigation stack
+                Navigator.pushNamedAndRemoveUntil(
+                  context, 
+                  '/track',
+                  (route) => false,
+                );
+              },
+              icon: const Icon(Icons.track_changes),
+              label: const Text("TRACK ORDER"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFFB703),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
             ),
           ],
         ),
@@ -248,7 +386,10 @@ class _CartScreenState extends State<CartScreen> {
       Navigator.pop(context);
       
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error processing order: ${e.toString()}")),
+        SnackBar(
+          content: Text("Error processing order: ${e.toString()}"),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
@@ -261,6 +402,7 @@ class _CartScreenState extends State<CartScreen> {
           label: 'Retry',
           onPressed: startPayment,
         ),
+        backgroundColor: Colors.red,
       ),
     );
   }
