@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart'; // Add this import
 
 // Import modularized components
 import 'package:canteen_app/config/theme_config.dart';
@@ -16,6 +17,7 @@ import 'package:canteen_app/screens/splash/splash_screen.dart';
 import 'package:canteen_app/services/notification_service.dart';
 import 'package:canteen_app/utils/firebase_utils.dart';
 import 'package:canteen_app/services/auth_service.dart';
+import 'package:canteen_app/providers/cart_provider.dart'; // Add this import
 
 // Initialize global plugins
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = 
@@ -228,20 +230,24 @@ class _ThintavaAppState extends State<ThintavaApp> {
           );
         }
         
-        return MaterialApp(
-          title: 'Thintava',
-          debugShowCheckedModeBanner: false,
-          theme: _buildAppTheme(),
-          navigatorKey: navigatorKey,
-          home: const SplashScreen(),
-          routes: RouteConfig.routes,
-          builder: (context, child) {
-            return MediaQuery(
-              // Apply font scaling factor
-              data: MediaQuery.of(context).copyWith(textScaleFactor: 1.0),
-              child: child!,
-            );
-          },
+        // WRAP YOUR MATERIALAPP WITH CHANGENOTIFIERPROVIDER
+        return ChangeNotifierProvider(
+          create: (context) => CartProvider()..loadFromStorage(), // Load cart on app start
+          child: MaterialApp(
+            title: 'Thintava',
+            debugShowCheckedModeBanner: false,
+            theme: _buildAppTheme(),
+            navigatorKey: navigatorKey,
+            home: const SplashScreen(),
+            routes: RouteConfig.routes,
+            builder: (context, child) {
+              return MediaQuery(
+                // Apply font scaling factor
+                data: MediaQuery.of(context).copyWith(textScaleFactor: 1.0),
+                child: child!,
+              );
+            },
+          ),
         );
       },
     );
