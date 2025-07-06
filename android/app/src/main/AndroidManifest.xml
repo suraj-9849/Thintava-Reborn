@@ -1,8 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     
-    <!-- Essential permissions only -->
+    <!-- Essential permissions for order notifications -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.VIBRATE"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <uses-permission android:name="android.permission.CAMERA" />
@@ -33,7 +35,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Firebase messaging - essential for notifications -->
+        <!-- Simple Firebase messaging service for order notifications -->
         <service
             android:name="com.google.firebase.messaging.FirebaseMessagingService"
             android:exported="false">
@@ -42,13 +44,22 @@
             </intent-filter>
         </service>
 
-        <!-- Flutter embedding -->
+        <!-- Flutter embedding metadata -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- Use default notification settings -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher" />
+        
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="thintava_orders" />
     </application>
 
-    <!-- Required queries -->
+    <!-- Required queries for notification functionality -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>

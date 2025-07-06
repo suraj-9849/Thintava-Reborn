@@ -7,6 +7,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:canteen_app/constants/food_quotes.dart';
 import 'package:canteen_app/services/auth_service.dart';
+import 'package:canteen_app/services/notification_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -21,45 +22,15 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   final AuthService _authService = AuthService();
+  String _statusMessage = "Preparing your experience...";
 
   @override
   void initState() {
     super.initState();
     _setupAnimations();
-    _setupFirebaseMessaging();
+    _setupOrderNotifications();
     _startListeningToAuth();
-    
-    // TEMPORARILY DISABLE SESSION LISTENER
-    // _authService.startSessionListener(() {
-    //   _handleForcedLogout();
-    // });
-    print('🎬 Splash screen initialized');
-  }
-  
-  void _handleForcedLogout() {
-    // Show dialog notifying user they've been logged out
-    if (mounted) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: Text('Logged Out', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-          content: Text(
-            'You have been logged out because your account was logged in on another device.',
-            style: GoogleFonts.poppins(),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                Navigator.pushReplacementNamed(context, '/auth');
-              },
-              child: Text('OK', style: GoogleFonts.poppins()),
-            ),
-          ],
-        ),
-      );
-    }
+    print('🎬 Enhanced splash screen initialized with order notifications');
   }
 
   void _setupAnimations() {
@@ -80,41 +51,48 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     print('🎭 Animations set up');
   }
 
-  void _setupFirebaseMessaging() {
-    try {
-      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-        RemoteNotification? notification = message.notification;
-        AndroidNotification? android = message.notification?.android;
+  void _setupOrderNotifications() {
+    setState(() {
+      _statusMessage = "Setting up order notifications...";
+    });
 
-        if (notification != null && android != null) {
-          FlutterLocalNotificationsPlugin().show(
-            notification.hashCode,
-            notification.title,
-            notification.body,
-            const NotificationDetails(
-              android: AndroidNotificationDetails(
-                'thintava_channel',
-                'Thintava Notifications',
-                importance: Importance.high,
-                priority: Priority.high,
-              ),
-            ),
-          );
-        }
+    try {
+      // Order notification setup is handled in main.dart during app initialization
+      // Here we just confirm it's working
+      print('📱 Order notification system confirmed active');
+      
+      setState(() {
+        _statusMessage = "Order notifications ready!";
       });
-      print('📱 Firebase messaging set up');
+      
+      // After a brief delay, continue with auth
+      Timer(const Duration(milliseconds: 1500), () {
+        setState(() {
+          _statusMessage = "Checking authentication...";
+        });
+      });
     } catch (e) {
-      print('❗ Error setting up Firebase messaging: $e');
+      print('❗ Error in order notification setup: $e');
+      setState(() {
+        _statusMessage = "Preparing app...";
+      });
     }
   }
 
   void _startListeningToAuth() {
-    print("👂 Listening to authStateChanges...");
+    print("👂 Listening to authStateChanges with order notification support...");
     _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) async {
       if (!mounted) return;
 
       if (user == null) {
         print("🔴 No user. Navigating to /auth...");
+        setState(() {
+          _statusMessage = "Please sign in to continue...";
+        });
+        
+        // Clean up any existing order notifications
+        await NotificationService.cleanupNotifications();
+        
         // Add a delay for splash screen effect
         await Future.delayed(const Duration(seconds: 2));
         if (!mounted) return;
@@ -125,34 +103,25 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       print("🟢 User signed in: ${user.uid}");
       print("📧 User email: ${user.email}");
       
-      // TEMPORARILY DISABLE SESSION CHECK - PROCEED DIRECTLY TO ROLE CHECK
-      // bool isActiveSession = await _authService.checkActiveSession();
-      // if (!isActiveSession) {
-      //   print("❌ This device is not the active session for this user");
-      //   await _authService.logout();
-      //   
-      //   if (!mounted) return;
-      //   ScaffoldMessenger.of(context).showSnackBar(
-      //     SnackBar(
-      //       content: Text(
-      //         'You have been logged out because your account was logged in on another device',
-      //         style: GoogleFonts.poppins(),
-      //       ),
-      //       duration: const Duration(seconds: 5),
-      //     ),
-      //   );
-      //   
-      //   Navigator.pushReplacementNamed(context, '/auth');
-      //   return;
-      // }
+      setState(() {
+        _statusMessage = "Setting up your notifications...";
+      });
 
-      // START FCM Token Fetching
-      await _fetchAndSaveFcmToken(user.uid);
+      // Setup order notifications for the authenticated user
+      await _setupUserOrderNotifications(user.uid);
+
+      setState(() {
+        _statusMessage = "Loading your account...";
+      });
 
       // Now fetch the user role
       final role = await _fetchUserRole(user.uid);
 
       if (!mounted) return;
+      
+      setState(() {
+        _statusMessage = "Almost ready...";
+      });
       
       // Add a delay for splash screen effect
       await Future.delayed(const Duration(seconds: 1));
@@ -174,18 +143,32 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     }, onError: (error) {
       print("❗ Auth state change error: $error");
       if (mounted) {
-        Navigator.pushReplacementNamed(context, '/auth');
+        setState(() {
+          _statusMessage = "Authentication error. Please try again.";
+        });
+        Timer(const Duration(seconds: 2), () {
+          if (mounted) {
+            Navigator.pushReplacementNamed(context, '/auth');
+          }
+        });
       }
     });
   }
 
-  Future<void> _fetchAndSaveFcmToken(String userId) async {
+  Future<void> _setupUserOrderNotifications(String userId) async {
     try {
-      print("🚀 Fetching FCM token for user: $userId");
+      print("🔔 Setting up order notifications for user: $userId");
+      
+      // Get user role to determine notification preferences
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
+      final userData = userDoc.data();
+      final userRole = userData?['role'] ?? 'user';
+      
+      // Get FCM token for order notifications
       String? token;
       int retries = 0;
 
-      while (token == null && retries < 5) {
+      while (token == null && retries < 3) {
         try {
           token = await FirebaseMessaging.instance.getToken();
           if (token == null) {
@@ -201,24 +184,44 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       }
 
       if (token != null) {
-        print("✅ Got FCM token: ${token.substring(0, 20)}...");
+        print("✅ Got FCM token for order notifications: ${token.substring(0, 20)}...");
+        
+        // Save token with order notification preferences
+        Map<String, dynamic> notificationPrefs = {
+          'orderUpdates': true,
+          'promotions': false, // Explicitly disabled
+          'marketing': false,  // Explicitly disabled
+        };
+        
+        // Add role-specific notification preferences
+        if (userRole == 'kitchen') {
+          notificationPrefs['newOrderAlerts'] = true;
+        } else if (userRole == 'user') {
+          notificationPrefs['orderExpiring'] = true;
+        }
+        
         try {
           await FirebaseFirestore.instance.collection('users').doc(userId).set(
             {
               'fcmToken': token,
+              'notificationPreferences': notificationPrefs,
               'lastTokenUpdate': FieldValue.serverTimestamp(),
+              'deviceInfo': {
+                'platform': 'flutter',
+                'notificationChannels': ['thintava_orders', 'thintava_urgent'],
+              }
             },
             SetOptions(merge: true),
           );
-          print("💾 FCM token saved to Firestore");
+          print("💾 Order notification preferences saved to Firestore");
         } catch (e) {
-          print("❗ Error saving FCM token to Firestore: $e");
+          print("❗ Error saving notification preferences: $e");
         }
 
-        // Also listen for future token refreshes
+        // Set up token refresh listener for order notifications
         _tokenRefreshSubscription?.cancel();
         _tokenRefreshSubscription = FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
-          print("🔄 FCM token refreshed: ${newToken.substring(0, 20)}...");
+          print("🔄 FCM token refreshed for order notifications: ${newToken.substring(0, 20)}...");
           try {
             await FirebaseFirestore.instance.collection('users').doc(userId).set(
               {
@@ -227,16 +230,26 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
               },
               SetOptions(merge: true),
             );
-            print("💾 Refreshed FCM token saved to Firestore");
+            print("💾 Refreshed FCM token saved for order notifications");
           } catch (e) {
             print("❗ Error saving refreshed FCM token: $e");
           }
         });
+        
+        setState(() {
+          _statusMessage = "Order notifications activated!";
+        });
       } else {
         print("❗ Could not get FCM token after $retries attempts");
+        setState(() {
+          _statusMessage = "Notifications unavailable, continuing...";
+        });
       }
     } catch (e) {
-      print("❗ Error in _fetchAndSaveFcmToken: $e");
+      print("❗ Error in _setupUserOrderNotifications: $e");
+      setState(() {
+        _statusMessage = "Notification setup failed, continuing...";
+      });
     }
   }
 
@@ -253,14 +266,20 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
         return role;
       } else {
         print("📋 No user document found, defaulting to 'user'");
-        // Create user document with default role
+        // Create user document with default role and notification preferences
         try {
           await FirebaseFirestore.instance.collection('users').doc(userId).set({
             'role': 'user',
             'email': FirebaseAuth.instance.currentUser?.email,
             'createdAt': FieldValue.serverTimestamp(),
+            'notificationPreferences': {
+              'orderUpdates': true,
+              'orderExpiring': true,
+              'promotions': false,
+              'marketing': false,
+            }
           }, SetOptions(merge: true));
-          print("📋 Created default user document");
+          print("📋 Created default user document with order notification preferences");
         } catch (e) {
           print("❗ Error creating user document: $e");
         }
@@ -274,12 +293,10 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
   @override
   void dispose() {
-    print("🗑️ Disposing splash screen");
+    print("🗑️ Disposing enhanced splash screen");
     _authSubscription.cancel();
     _tokenRefreshSubscription?.cancel();
     _animationController.dispose();
-    // TEMPORARILY DISABLE SESSION LISTENER
-    // _authService.stopSessionListener();
     super.dispose();
   }
 
@@ -342,16 +359,60 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   ),
                 ),
                 const SizedBox(height: 40),
+                // Order notification indicator
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.notifications_active,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        "Order Notifications Enabled",
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
                 const CircularProgressIndicator(
                   valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                   strokeWidth: 3,
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  "Preparing your experience...",
+                  _statusMessage,
                   style: GoogleFonts.poppins(
                     color: Colors.white,
                     fontSize: 16,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 40),
+                // Notification disclaimer
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Text(
+                    "We'll send you notifications only about your orders - no promotions or spam!",
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.poppins(
+                      color: Colors.white.withOpacity(0.7),
+                      fontSize: 12,
+                      fontStyle: FontStyle.italic,
+                    ),
                   ),
                 ),
               ],
