@@ -89,6 +89,7 @@ class _KitchenHomeState extends State<KitchenHome> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => const KitchenDashboard(),
+        settings: const RouteSettings(name: '/kitchen/dashboard'),
       ),
     );
   }
