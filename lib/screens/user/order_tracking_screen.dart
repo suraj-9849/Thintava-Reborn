@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart'; // Make sure this is included in your pubspec.yaml
+import 'package:google_fonts/google_fonts.dart';
 
 class OrderTrackingScreen extends StatefulWidget {
   const OrderTrackingScreen({Key? key}) : super(key: key);
@@ -201,29 +201,22 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
           final statusColor = _getStatusColor(status);
           final statusIcon = _getStatusIcon(status);
           
-          // Process items data
-          final itemsMap = data['items'] as Map<String, dynamic>?;
+          // Process items data - FIXED TO HANDLE LIST FORMAT
+          final itemsList = data['items'] as List<dynamic>?;
           final orderItems = <Map<String, dynamic>>[];
           
-          if (itemsMap != null) {
-            itemsMap.forEach((itemId, itemData) {
-              if (itemData is Map<String, dynamic>) {
+          if (itemsList != null) {
+            for (var item in itemsList) {
+              if (item is Map<String, dynamic>) {
                 orderItems.add({
-                  'name': itemData['name'] ?? 'Unknown Item',
-                  'price': itemData['price'] ?? 0.0,
-                  'quantity': itemData['quantity'] ?? 1,
-                  'subtotal': itemData['subtotal'] ?? 0.0,
-                });
-              } else {
-                // Handle the case where itemData is not a Map
-                orderItems.add({
-                  'name': itemId,
-                  'quantity': itemData,
-                  'price': 0.0,
-                  'subtotal': 0.0,
+                  'id': item['id'] ?? '',
+                  'name': item['name'] ?? 'Unknown Item',
+                  'price': item['price'] ?? 0.0,
+                  'quantity': item['quantity'] ?? 1,
+                  'subtotal': item['subtotal'] ?? 0.0,
                 });
               }
-            });
+            }
           }
 
           // Countdown timer
@@ -469,7 +462,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
                               ),
                               const SizedBox(height: 8),
                               
-                              // Items list
+                              // Items list - UPDATED TO HANDLE LIST FORMAT
                               if (orderItems.isEmpty)
                                 Padding(
                                   padding: const EdgeInsets.symmetric(vertical: 8),
@@ -513,7 +506,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
                                               crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
                                                 Text(
-                                                  item['name'],
+                                                  item['name'] ?? 'Unknown Item',
                                                   style: GoogleFonts.poppins(
                                                     fontWeight: FontWeight.w500,
                                                   ),

@@ -184,9 +184,26 @@ class _AdminOrderHistoryScreenState extends State<AdminOrderHistoryScreen> {
                   
                   final data = doc.data() as Map<String, dynamic>;
                   final orderId = doc.id.toLowerCase();
-                  final items = (data['items'] as Map<String, dynamic>?)?.keys.join(' ').toLowerCase() ?? '';
                   
-                  return orderId.contains(_searchQuery) || items.contains(_searchQuery);
+                  // Search in items - FIXED to handle List format
+                  final itemsData = data['items'];
+                  String itemsText = '';
+                  
+                  if (itemsData != null) {
+                    if (itemsData is List<dynamic>) {
+                      // Handle new List format
+                      for (var item in itemsData) {
+                        if (item is Map<String, dynamic>) {
+                          itemsText += (item['name'] ?? '').toString().toLowerCase() + ' ';
+                        }
+                      }
+                    } else if (itemsData is Map<String, dynamic>) {
+                      // Handle old Map format
+                      itemsText = itemsData.keys.join(' ').toLowerCase();
+                    }
+                  }
+                  
+                  return orderId.contains(_searchQuery) || itemsText.contains(_searchQuery);
                 }).toList();
 
                 if (filteredOrders.isEmpty) {
@@ -227,10 +244,40 @@ class _AdminOrderHistoryScreenState extends State<AdminOrderHistoryScreen> {
                   itemBuilder: (context, index) {
                     final doc = filteredOrders[index];
                     final data = doc.data() as Map<String, dynamic>;
-                    final items = (data['items'] as Map<String, dynamic>?)?.entries
-                            .map((e) => '${e.key} × ${e.value}')
-                            .join(', ') ??
-                        'No items';
+                    
+                    // FIXED: Process items data to handle List format
+                    final itemsData = data['items'];
+                    final List<Map<String, dynamic>> orderItems = [];
+                    String itemsDisplayText = '';
+                    
+                    if (itemsData != null) {
+                      if (itemsData is List<dynamic>) {
+                        // Handle new List format from cart_screen.dart
+                        for (var item in itemsData) {
+                          if (item is Map<String, dynamic>) {
+                            orderItems.add({
+                              'name': item['name'] ?? 'Unknown Item',
+                              'quantity': item['quantity'] ?? 1,
+                              'price': item['price'] ?? 0.0,
+                              'subtotal': item['subtotal'] ?? 0.0,
+                            });
+                          }
+                        }
+                        itemsDisplayText = orderItems.map((item) => '${item['name']} × ${item['quantity']}').join(', ');
+                      } else if (itemsData is Map<String, dynamic>) {
+                        // Handle old Map format (for backward compatibility)
+                        itemsData.forEach((key, value) {
+                          orderItems.add({
+                            'name': key,
+                            'quantity': value is int ? value : (int.tryParse(value.toString()) ?? 1),
+                            'price': 0.0,
+                            'subtotal': 0.0,
+                          });
+                        });
+                        itemsDisplayText = itemsData.entries.map((e) => '${e.key} × ${e.value}').join(', ');
+                      }
+                    }
+                    
                     final status = data['status'] ?? 'Unknown';
                     final timestamp = (data['timestamp'] as Timestamp?)?.toDate();
                     final total = data['total'] ?? 0.0;
@@ -349,13 +396,87 @@ class _AdminOrderHistoryScreenState extends State<AdminOrderHistoryScreen> {
                                       ),
                                     ),
                                     const SizedBox(height: 8),
-                                    Text(
-                                      items,
-                                      style: GoogleFonts.poppins(
-                                        fontSize: 14,
+                                    
+                                    // IMPROVED: Display items with better formatting
+                                    if (orderItems.isNotEmpty)
+                                      ...orderItems.map((item) {
+                                        return Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 4),
+                                          child: Row(
+                                            children: [
+                                              Container(
+                                                padding: const EdgeInsets.all(6),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFFFB703).withOpacity(0.1),
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(
+                                                  Icons.restaurant,
+                                                  size: 12,
+                                                  color: Color(0xFFFFB703),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      item['name'] ?? 'Unknown Item',
+                                                      style: GoogleFonts.poppins(
+                                                        fontSize: 13,
+                                                        fontWeight: FontWeight.w500,
+                                                        color: Colors.black87,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 2),
+                                                    Row(
+                                                      children: [
+                                                        Text(
+                                                          'Qty: ${item['quantity']}',
+                                                          style: GoogleFonts.poppins(
+                                                            fontSize: 11,
+                                                            color: Colors.grey[600],
+                                                          ),
+                                                        ),
+                                                        if (item['price'] != null && item['price'] > 0) ...[
+                                                          const SizedBox(width: 8),
+                                                          Text(
+                                                            '₹${item['price'].toStringAsFixed(2)} each',
+                                                            style: GoogleFonts.poppins(
+                                                              fontSize: 11,
+                                                              color: Colors.grey[600],
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ],
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              if (item['subtotal'] != null && item['subtotal'] > 0)
+                                                Text(
+                                                  '₹${item['subtotal'].toStringAsFixed(2)}',
+                                                  style: GoogleFonts.poppins(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: const Color(0xFFFFB703),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        );
+                                      }).toList()
+                                    else
+                                      Text(
+                                        itemsDisplayText.isNotEmpty ? itemsDisplayText : 'No items',
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 14,
+                                        ),
                                       ),
-                                    ),
+                                    
                                     const SizedBox(height: 16),
+                                    
                                     // Status and Order ID with proper styling
                                     Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -486,34 +607,34 @@ class _AdminOrderHistoryScreenState extends State<AdminOrderHistoryScreen> {
     );
   }
 
-    // Helper method to get status color
-    Color _getStatusColor(String status) {
-      switch (status.toLowerCase()) {
-        case 'placed':
-          return Colors.blue;
-        case 'cooking':
-          return Colors.orange;
-        case 'cooked':
-          return Colors.green;
-        case 'ready to pickup':
-          return Colors.purple;
-        case 'completed':
-          return Colors.teal;
-        case 'terminated':
-          return Colors.red;
-        default:
-          return Colors.grey;
-      }
-    }
-    
-    // Helper method to format date time
-    String _formatDateTime(DateTime dateTime) {
-      // Format date as DD/MM/YYYY
-      final date = '${dateTime.day.toString().padLeft(2, '0')}/${dateTime.month.toString().padLeft(2, '0')}/${dateTime.year}';
-      
-      // Format time as HH:MM
-      final time = '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
-      
-      return '$date, $time';
+  // Helper method to get status color
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'placed':
+        return Colors.blue;
+      case 'cooking':
+        return Colors.orange;
+      case 'cooked':
+        return Colors.green;
+      case 'ready to pickup':
+        return Colors.purple;
+      case 'completed':
+        return Colors.teal;
+      case 'terminated':
+        return Colors.red;
+      default:
+        return Colors.grey;
     }
   }
+  
+  // Helper method to format date time
+  String _formatDateTime(DateTime dateTime) {
+    // Format date as DD/MM/YYYY
+    final date = '${dateTime.day.toString().padLeft(2, '0')}/${dateTime.month.toString().padLeft(2, '0')}/${dateTime.year}';
+    
+    // Format time as HH:MM
+    final time = '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+    
+    return '$date, $time';
+  }
+}

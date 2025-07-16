@@ -324,8 +324,36 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> with SingleTick
                                   final orderId = orderDoc.id;
                                   final data = orderDoc.data() as Map<String, dynamic>;
                                   
-                                  // Extract order details
-                                  final orderItems = (data['items'] as Map<String, dynamic>?) ?? {};
+                                  // FIXED: Process items data to handle List format
+                                  final itemsData = data['items'];
+                                  final List<Map<String, dynamic>> orderItems = [];
+                                  
+                                  if (itemsData != null) {
+                                    if (itemsData is List<dynamic>) {
+                                      // Handle new List format from cart_screen.dart
+                                      for (var item in itemsData) {
+                                        if (item is Map<String, dynamic>) {
+                                          orderItems.add({
+                                            'name': item['name'] ?? 'Unknown Item',
+                                            'quantity': item['quantity'] ?? 1,
+                                            'price': item['price'] ?? 0.0,
+                                            'subtotal': item['subtotal'] ?? 0.0,
+                                          });
+                                        }
+                                      }
+                                    } else if (itemsData is Map<String, dynamic>) {
+                                      // Handle old Map format (for backward compatibility)
+                                      itemsData.forEach((key, value) {
+                                        orderItems.add({
+                                          'name': key,
+                                          'quantity': value is int ? value : (int.tryParse(value.toString()) ?? 1),
+                                          'price': 0.0, // Price not available in old format
+                                          'subtotal': 0.0,
+                                        });
+                                      });
+                                    }
+                                  }
+                                  
                                   final status = data['status'] ?? 'Unknown';
                                   
                                   DateTime timestamp;
@@ -475,7 +503,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> with SingleTick
                                               ),
                                               const SizedBox(height: 8),
                                               if (orderItems.isNotEmpty)
-                                                ...orderItems.entries.map((item) {
+                                                ...orderItems.map((item) {
                                                   return Container(
                                                     margin: const EdgeInsets.symmetric(vertical: 4),
                                                     child: IntrinsicHeight(
@@ -495,32 +523,58 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> with SingleTick
                                                             ),
                                                           ),
                                                           const SizedBox(width: 8),
-                                                          // Item name in a column layout
+                                                          // Item details in a column layout
                                                           Expanded(
                                                             child: Column(
                                                               crossAxisAlignment: CrossAxisAlignment.start,
                                                               mainAxisAlignment: MainAxisAlignment.center,
                                                               children: [
                                                                 Text(
-                                                                  item.key,
+                                                                  item['name'] ?? 'Unknown Item',
                                                                   style: GoogleFonts.poppins(
                                                                     fontSize: 13,
                                                                     color: Colors.black87,
+                                                                    fontWeight: FontWeight.w500,
                                                                   ),
                                                                   overflow: TextOverflow.ellipsis,
                                                                   maxLines: 1,
                                                                 ),
-                                                                Text(
-                                                                  "Quantity: ${item.value}",
-                                                                  style: GoogleFonts.poppins(
-                                                                    fontSize: 11,
-                                                                    color: Colors.black54,
-                                                                    fontWeight: FontWeight.w500,
-                                                                  ),
+                                                                const SizedBox(height: 2),
+                                                                Row(
+                                                                  children: [
+                                                                    Text(
+                                                                      "Qty: ${item['quantity']}",
+                                                                      style: GoogleFonts.poppins(
+                                                                        fontSize: 11,
+                                                                        color: Colors.black54,
+                                                                        fontWeight: FontWeight.w500,
+                                                                      ),
+                                                                    ),
+                                                                    if (item['price'] != null && item['price'] > 0) ...[
+                                                                      const SizedBox(width: 8),
+                                                                      Text(
+                                                                        "₹${item['price'].toStringAsFixed(2)} each",
+                                                                        style: GoogleFonts.poppins(
+                                                                          fontSize: 11,
+                                                                          color: Colors.black54,
+                                                                        ),
+                                                                      ),
+                                                                    ],
+                                                                  ],
                                                                 ),
                                                               ],
                                                             ),
                                                           ),
+                                                          // Subtotal (if available)
+                                                          if (item['subtotal'] != null && item['subtotal'] > 0)
+                                                            Text(
+                                                              "₹${item['subtotal'].toStringAsFixed(2)}",
+                                                              style: GoogleFonts.poppins(
+                                                                fontSize: 12,
+                                                                fontWeight: FontWeight.w600,
+                                                                color: const Color(0xFFFFB703),
+                                                              ),
+                                                            ),
                                                         ],
                                                       ),
                                                     ),

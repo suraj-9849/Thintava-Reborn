@@ -282,12 +282,12 @@ final order = {
             ElevatedButton.icon(
               onPressed: () {
                 Navigator.pop(context); // Close success dialog
-                // Navigate to order tracking and clear navigation stack
+                // Navigate to order tracking
                 Navigator.pushNamedAndRemoveUntil(
-                  context, 
-                  '/track',
-                  (route) => false,
-                );
+  context, 
+  '/track',
+  (route) => route.settings.name == '/user/user-home',
+);
               },
               icon: const Icon(Icons.track_changes),
               label: const Text("TRACK ORDER"),
