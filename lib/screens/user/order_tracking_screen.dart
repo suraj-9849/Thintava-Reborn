@@ -1,8 +1,9 @@
-import 'dart:async';
+// lib/screens/user/order_tracking_screen.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:canteen_app/widgets/order_expiry_timer.dart'; // Import the new timer widget
 
 class OrderTrackingScreen extends StatefulWidget {
   const OrderTrackingScreen({Key? key}) : super(key: key);
@@ -12,9 +13,6 @@ class OrderTrackingScreen extends StatefulWidget {
 }
 
 class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTickerProviderStateMixin {
-  Timer? _timer;
-  Duration _remaining = Duration.zero;
-  DateTime? _expiry;
   late AnimationController _animationController;
   late Animation<double> _progressAnimation;
 
@@ -43,19 +41,8 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
         .map((snap) => snap.docs.isNotEmpty ? snap.docs.first : null);
   }
 
-  void _startCountdown(DateTime pickedAt) {
-    _expiry = pickedAt.add(const Duration(minutes: 5));
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      final diff = _expiry!.difference(DateTime.now());
-      setState(() => _remaining = diff);
-      if (diff.isNegative) timer.cancel();
-    });
-  }
-
   @override
   void dispose() {
-    _timer?.cancel();
     _animationController.dispose();
     super.dispose();
   }
@@ -91,6 +78,21 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
         return Icons.done_all;
       default:
         return Icons.help_outline;
+    }
+  }
+
+  void _handleTimerExpired() {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Your order has expired! Please contact support.',
+            style: GoogleFonts.poppins(),
+          ),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+        ),
+      );
     }
   }
 
@@ -219,65 +221,8 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
             }
           }
 
-          // Countdown timer
-          Widget countdown = const SizedBox();
-          if (status == 'Pick Up' && data['pickedUpTime'] != null) {
-            final pickedAt = (data['pickedUpTime'] as Timestamp).toDate();
-            if (_expiry == null || _expiry!.difference(pickedAt).inMinutes < 5) {
-              _startCountdown(pickedAt);
-            }
-            
-            if (_remaining.isNegative) {
-              countdown = Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.red, width: 1),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.timer_off, color: Colors.red),
-                    const SizedBox(width: 8),
-                    Text(
-                      "Order expired",
-                      style: GoogleFonts.poppins(
-                        color: Colors.red,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            } else {
-              final m = _remaining.inMinutes.remainder(60).toString().padLeft(2, '0');
-              final s = _remaining.inSeconds.remainder(60).toString().padLeft(2, '0');
-              
-              countdown = Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.green, width: 1),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.timer, color: Colors.green),
-                    const SizedBox(width: 8),
-                    Text(
-                      "Time remaining: $m:$s",
-                      style: GoogleFonts.poppins(
-                        color: Colors.green,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }
-          }
+          // Get pickup time for timer
+          final pickedUpTime = data['pickedUpTime'] as Timestamp?;
 
           // If terminated, redirect to history
           if (status == 'Terminated') {
@@ -406,9 +351,15 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
                         ),
                       ),
                       
-                      // Countdown timer
-                      if (countdown != const SizedBox())
-                        Center(child: countdown),
+                      // Timer widget - only show if status is "Pick Up" and we have pickup time
+                      if (status == 'Pick Up' && pickedUpTime != null)
+                        Center(
+                          child: OrderExpiryTimer(
+                            pickedUpTime: pickedUpTime.toDate(),
+                            onExpired: _handleTimerExpired,
+                            expiryDuration: const Duration(minutes: 5),
+                          ),
+                        ),
                       
                       const SizedBox(height: 24),
                       

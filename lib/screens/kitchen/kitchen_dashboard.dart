@@ -2,7 +2,8 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:canteen_app/services/auth_service.dart'; // Add this import
+import 'package:canteen_app/services/auth_service.dart';
+import 'package:canteen_app/widgets/order_expiry_timer.dart'; // Import the new timer widget
 
 // Capitalize helper
 String capitalize(String s) =>
@@ -19,7 +20,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> with SingleTickerPr
   late TabController _tabController;
   final List<String> _statusFilters = ['All', 'Placed', 'Cooking', 'Cooked', 'Pick Up'];
   String _currentFilter = 'All';
-  final _authService = AuthService(); // Add this line
+  final _authService = AuthService();
 
   @override
   void initState() {
@@ -94,7 +95,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> with SingleTickerPr
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.black87),
             onPressed: () async {
-              // Use AuthService instead of FirebaseAuth directly
               await _authService.logout();
               Navigator.pushReplacementNamed(context, '/auth');
             },
@@ -114,7 +114,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> with SingleTickerPr
         backgroundColor: const Color(0xFFFFB703),
         foregroundColor: Colors.black87,
         onPressed: () {
-          // Refresh by rebuilding the widget
           setState(() {});
         },
         child: const Icon(Icons.refresh),
@@ -225,51 +224,20 @@ class EnhancedOrderCard extends StatefulWidget {
 }
 
 class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
-  Timer? _timer;
-  Duration _remaining = Duration.zero;
-  Timestamp? _lastPickedTs;
   bool _isExpanded = false;
 
   @override
   void initState() {
     super.initState();
-    _maybeStartTimer(widget.data);
   }
 
   @override
   void didUpdateWidget(covariant EnhancedOrderCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final newTs = widget.data['pickedUpTime'] as Timestamp?;
-    if (widget.data['status'] == 'Pick Up' && newTs != null && newTs != _lastPickedTs) {
-      _maybeStartTimer(widget.data);
-    }
-  }
-
-  void _maybeStartTimer(Map<String, dynamic> data) {
-    _timer?.cancel();
-    final status = data['status'];
-    final ts = data['pickedUpTime'] as Timestamp?;
-    if (status == 'Pick Up' && ts != null && mounted) {
-      _lastPickedTs = ts;
-      final expiry = ts.toDate().add(const Duration(minutes: 5));
-      _remaining = expiry.difference(DateTime.now());
-      _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) {
-          final diff = expiry.difference(DateTime.now());
-          setState(() => _remaining = diff);
-          if (diff.isNegative) {
-            _timer?.cancel();
-          }
-        } else {
-          _timer?.cancel();
-        }
-      });
-    }
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
     super.dispose();
   }
 
@@ -281,7 +249,7 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
       case 'Cooking':
         return Colors.orange;
       case 'Cooked':
-        return const Color(0xFFFFB703);  // Using yellow for cooked
+        return const Color(0xFFFFB703);
       case 'Pick Up':
         return Colors.purple;
       default:
@@ -294,43 +262,43 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
     final status = capitalize(widget.data['status'] ?? '');
     final shortId = widget.orderId.substring(0, 6);
     
-// Get order data
-final itemsData = widget.data['items'];
-final userEmail = widget.data['userEmail'] as String? ?? 'Unknown';
-final total = widget.data['total'] ?? 0.0;
+    // Get order data
+    final itemsData = widget.data['items'];
+    final userEmail = widget.data['userEmail'] as String? ?? 'Unknown';
+    final total = widget.data['total'] ?? 0.0;
 
-List<Map<String, dynamic>> parsedItems = [];
-int totalItems = 0;
+    List<Map<String, dynamic>> parsedItems = [];
+    int totalItems = 0;
 
-if (itemsData != null) {
-  if (itemsData is List) {
-    // New format: List of items
-    for (var item in itemsData) {
-      if (item is Map<String, dynamic>) {
-        parsedItems.add({
-          'name': item['name'] ?? 'Unknown Item',
-          'quantity': item['quantity'] ?? 1,
-          'price': item['price'] ?? 0.0,
-          'subtotal': item['subtotal'] ?? 0.0,
+    if (itemsData != null) {
+      if (itemsData is List) {
+        // New format: List of items
+        for (var item in itemsData) {
+          if (item is Map<String, dynamic>) {
+            parsedItems.add({
+              'name': item['name'] ?? 'Unknown Item',
+              'quantity': item['quantity'] ?? 1,
+              'price': item['price'] ?? 0.0,
+              'subtotal': item['subtotal'] ?? 0.0,
+            });
+            totalItems += (item['quantity'] as num?)?.toInt() ?? 1;
+          }
+        }
+      } else if (itemsData is Map<String, dynamic>) {
+        // Old format: Map of items
+        itemsData.forEach((itemId, itemData) {
+          if (itemData is Map<String, dynamic>) {
+            parsedItems.add({
+              'name': itemData['name'] ?? 'Unknown Item',
+              'quantity': itemData['quantity'] ?? 1,
+              'price': itemData['price'] ?? 0.0,
+              'subtotal': itemData['subtotal'] ?? 0.0,
+            });
+            totalItems += (itemData['quantity'] as num?)?.toInt() ?? 1;
+          }
         });
-        totalItems += (item['quantity'] as num?)?.toInt() ?? 1;
       }
     }
-  } else if (itemsData is Map<String, dynamic>) {
-    // Old format: Map of items
-    itemsData.forEach((itemId, itemData) {
-      if (itemData is Map<String, dynamic>) {
-        parsedItems.add({
-          'name': itemData['name'] ?? 'Unknown Item',
-          'quantity': itemData['quantity'] ?? 1,
-          'price': itemData['price'] ?? 0.0,
-          'subtotal': itemData['subtotal'] ?? 0.0,
-        });
-        totalItems += (itemData['quantity'] as num?)?.toInt() ?? 1;
-      }
-    });
-  }
-}
     
     final timestamp = widget.data['timestamp'] as Timestamp?;
     final orderTime = timestamp != null 
@@ -340,58 +308,8 @@ if (itemsData != null) {
     // Format time
     final timeStr = '${orderTime.hour.toString().padLeft(2, '0')}:${orderTime.minute.toString().padLeft(2, '0')}';
     
-    Widget timerWidget = const SizedBox();
-    if (status == 'Pick Up') {
-      if (_remaining.isNegative) {
-        timerWidget = Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-          decoration: BoxDecoration(
-            color: Colors.red.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: Colors.red.withOpacity(0.3)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              Icon(Icons.timer_off, color: Colors.red, size: 10),
-              SizedBox(width: 2),
-              Text("EXP", 
-                style: TextStyle(
-                  color: Colors.red, 
-                  fontWeight: FontWeight.bold,
-                  fontSize: 9,
-                ),
-              ),
-            ],
-          ),
-        );
-      } else {
-        final m = _remaining.inMinutes.remainder(60).toString().padLeft(2, '0');
-        final s = _remaining.inSeconds.remainder(60).toString().padLeft(2, '0');
-        timerWidget = Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFB703).withOpacity(0.1),
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: const Color(0xFFFFB703).withOpacity(0.3)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.timer, color: Color(0xFFFFB703), size: 10),
-              const SizedBox(width: 2),
-              Text("$m:$s", 
-                style: const TextStyle(
-                  color: Color(0xFFFFB703), 
-                  fontWeight: FontWeight.bold,
-                  fontSize: 9,
-                ),
-              ),
-            ],
-          ),
-        );
-      }
-    }
+    // Get pickup time for timer
+    final pickedUpTime = widget.data['pickedUpTime'] as Timestamp?;
 
     return Card(
       elevation: 4,
@@ -452,6 +370,7 @@ if (itemsData != null) {
                 ],
               ),
               const SizedBox(height: 12),
+              
               // Fixed layout to prevent overflow completely
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -488,6 +407,7 @@ if (itemsData != null) {
                     ),
                   ),
                   const SizedBox(height: 8),
+                  
                   // User email section
                   Row(
                     children: [
@@ -506,6 +426,7 @@ if (itemsData != null) {
                     ],
                   ),
                   const SizedBox(height: 4),
+                  
                   // Total amount section
                   Row(
                     children: [
@@ -522,6 +443,7 @@ if (itemsData != null) {
                     ],
                   ),
                   const SizedBox(height: 8),
+                  
                   // Status update section - completely separate to avoid overflow
                   Row(
                     children: [
@@ -572,8 +494,9 @@ if (itemsData != null) {
                       ),
                     ],
                   ),
-                  // Timer on separate line when present
-                  if (status == 'Pick Up') ...[
+                  
+                  // Timer widget - only show if status is "Pick Up" and we have pickup time
+                  if (status == 'Pick Up' && pickedUpTime != null) ...[
                     const SizedBox(height: 8),
                     Row(
                       children: [
@@ -585,12 +508,16 @@ if (itemsData != null) {
                             color: Colors.black54,
                           ),
                         ),
-                        timerWidget,
+                        SimpleCountdownTimer(
+                          startTime: pickedUpTime.toDate(),
+                          duration: const Duration(minutes: 5),
+                        ),
                       ],
                     ),
                   ],
                 ],
               ),
+              
               if (_isExpanded) ...[
                 const Divider(height: 24),
                 const Text(
