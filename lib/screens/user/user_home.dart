@@ -110,6 +110,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
       child: Scaffold(
         extendBodyBehindAppBar: true,
         appBar: AppBar(
+          automaticallyImplyLeading: false,
           elevation: 0,
           backgroundColor: Colors.transparent,
           title: Text(
