@@ -115,30 +115,31 @@ class _CartScreenState extends State<CartScreen> {
       if (user == null) return;
 
       final cartProvider = Provider.of<CartProvider>(context, listen: false);
-      final Map<String, dynamic> orderItems = {};
+      final List<Map<String, dynamic>> orderItems = [];
 
-      cartProvider.cart.forEach((itemId, qty) {
-        final itemData = menuMap[itemId];
-        if (itemData != null) {
-          orderItems[itemId] = {
-            'name': itemData['name'] ?? 'Unknown',
-            'price': itemData['price'] ?? 0,
-            'quantity': qty,
-            'subtotal': (itemData['price'] ?? 0) * qty,
-          };
-        }
-      });
+cartProvider.cart.forEach((itemId, qty) {
+  final itemData = menuMap[itemId];
+  if (itemData != null) {
+    orderItems.add({
+      'id': itemId,
+      'name': itemData['name'] ?? 'Unknown',
+      'price': itemData['price'] ?? 0,
+      'quantity': qty,
+      'subtotal': (itemData['price'] ?? 0) * qty,
+    });
+  }
+});
 
-      final order = {
-        'userId': user.uid,
-        'userEmail': user.email,
-        'items': orderItems,
-        'status': 'Placed',
-        'timestamp': Timestamp.now(),
-        'total': total,
-        'paymentId': response.paymentId,
-        'paymentStatus': 'success',
-      };
+final order = {
+  'userId': user.uid,
+  'userEmail': user.email,
+  'items': orderItems,
+  'status': 'Placed',
+  'timestamp': Timestamp.now(),
+  'total': total,
+  'paymentId': response.paymentId,
+  'paymentStatus': 'success',
+};
 
       await FirebaseFirestore.instance.collection('orders').add(order);
       

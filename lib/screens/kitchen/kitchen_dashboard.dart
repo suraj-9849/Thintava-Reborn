@@ -294,61 +294,43 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
     final status = capitalize(widget.data['status'] ?? '');
     final shortId = widget.orderId.substring(0, 6);
     
-    // Handle items properly - they come as JSON object from Firestore
-    final itemsData = widget.data['items'];
-    List<Map<String, dynamic>> parsedItems = [];
-    int totalItems = 0;
-    
-    if (itemsData != null) {
-      try {
-        if (itemsData is Map<String, dynamic>) {
-          // Handle the map format: {"itemName": quantity}
-          itemsData.forEach((key, value) {
-            parsedItems.add({
-              'name': key,
-              'quantity': int.tryParse(value.toString()) ?? 1,
-              'price': 0.0, // Default price if not available
-            });
-            totalItems += int.tryParse(value.toString()) ?? 1;
-          });
-        } else if (itemsData is String) {
-          // Handle string format like "quantity: 1, price: 1.0, subtotal: 1.0, name: dosa"
-          final parts = itemsData.split(',');
-          Map<String, String> itemInfo = {};
-          
-          for (String part in parts) {
-            final keyValue = part.trim().split(':');
-            if (keyValue.length == 2) {
-              itemInfo[keyValue[0].trim()] = keyValue[1].trim();
-            }
-          }
-          
-          parsedItems.add({
-            'name': itemInfo['name'] ?? 'Unknown Item',
-            'quantity': int.tryParse(itemInfo['quantity'] ?? '1') ?? 1,
-            'price': double.tryParse(itemInfo['price'] ?? '0') ?? 0.0,
-            'subtotal': double.tryParse(itemInfo['subtotal'] ?? '0') ?? 0.0,
-          });
-          totalItems = int.tryParse(itemInfo['quantity'] ?? '1') ?? 1;
-        } else if (itemsData is List) {
-          // Handle list format
-          for (var item in itemsData) {
-            if (item is Map) {
-              parsedItems.add({
-                'name': item['name'] ?? 'Unknown Item',
-                'quantity': int.tryParse(item['quantity'].toString()) ?? 1,
-                'price': double.tryParse(item['price'].toString()) ?? 0.0,
-                'subtotal': double.tryParse(item['subtotal'].toString()) ?? 0.0,
-              });
-              totalItems += int.tryParse(item['quantity'].toString()) ?? 1;
-            }
-          }
-        }
-      } catch (e) {
-        print('Error parsing items data: $e');
-        print('Items data: $itemsData');
+// Get order data
+final itemsData = widget.data['items'];
+final userEmail = widget.data['userEmail'] as String? ?? 'Unknown';
+final total = widget.data['total'] ?? 0.0;
+
+List<Map<String, dynamic>> parsedItems = [];
+int totalItems = 0;
+
+if (itemsData != null) {
+  if (itemsData is List) {
+    // New format: List of items
+    for (var item in itemsData) {
+      if (item is Map<String, dynamic>) {
+        parsedItems.add({
+          'name': item['name'] ?? 'Unknown Item',
+          'quantity': item['quantity'] ?? 1,
+          'price': item['price'] ?? 0.0,
+          'subtotal': item['subtotal'] ?? 0.0,
+        });
+        totalItems += (item['quantity'] as num?)?.toInt() ?? 1;
       }
     }
+  } else if (itemsData is Map<String, dynamic>) {
+    // Old format: Map of items
+    itemsData.forEach((itemId, itemData) {
+      if (itemData is Map<String, dynamic>) {
+        parsedItems.add({
+          'name': itemData['name'] ?? 'Unknown Item',
+          'quantity': itemData['quantity'] ?? 1,
+          'price': itemData['price'] ?? 0.0,
+          'subtotal': itemData['subtotal'] ?? 0.0,
+        });
+        totalItems += (itemData['quantity'] as num?)?.toInt() ?? 1;
+      }
+    });
+  }
+}
     
     final timestamp = widget.data['timestamp'] as Timestamp?;
     final orderTime = timestamp != null 
@@ -506,6 +488,40 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
                     ),
                   ),
                   const SizedBox(height: 8),
+                  // User email section
+                  Row(
+                    children: [
+                      const Icon(Icons.person, size: 16, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          userEmail,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.black54,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  // Total amount section
+                  Row(
+                    children: [
+                      const Icon(Icons.currency_rupee, size: 16, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Total: ₹${total.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFFFFB703),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
                   // Status update section - completely separate to avoid overflow
                   Row(
                     children: [
@@ -587,16 +603,6 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
                 const SizedBox(height: 8),
                 if (parsedItems.isNotEmpty)
                   ...parsedItems.map((item) {
-                    String itemName = item['name'].toString();
-                    int quantity = item['quantity'] ?? 1;
-                    double price = item['price'] ?? 0.0;
-                    double subtotal = item['subtotal'] ?? (price * quantity);
-                    
-                    // Ensure item name isn't too long
-                    if (itemName.length > 20) {
-                      itemName = '${itemName.substring(0, 17)}...';
-                    }
-                    
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8),
                       padding: const EdgeInsets.all(12),
@@ -604,95 +610,38 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: Colors.grey[300]!),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.grey.withOpacity(0.1),
-                            blurRadius: 2,
-                            offset: const Offset(0, 1),
-                          ),
-                        ],
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          // Item name and quantity
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFFB703).withOpacity(0.1),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.restaurant,
-                                  size: 14,
-                                  color: Color(0xFFFFB703),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  itemName,
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item['name'],
                                   style: const TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.black87,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFFB703),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  'Qty: $quantity',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 11,
-                                    color: Colors.white,
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          // Price details
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              if (price > 0) ...[
                                 Text(
-                                  'Price: ₹${price.toStringAsFixed(2)}',
+                                  'Qty: ${item['quantity']} × ₹${item['price'].toStringAsFixed(2)}',
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey[600],
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                Text(
-                                  'Total: ₹${subtotal.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xFFFFB703),
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ] else ...[
-                                // If no price data, just show quantity info
-                                Text(
-                                  'Quantity: $quantity',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[600],
-                                    fontWeight: FontWeight.w500,
                                   ),
                                 ),
                               ],
-                            ],
+                            ),
+                          ),
+                          Text(
+                            '₹${item['subtotal'].toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFFFB703),
+                            ),
                           ),
                         ],
                       ),
