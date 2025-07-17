@@ -3,131 +3,193 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:canteen_app/services/session_manager.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final GoogleSignIn _googleSignIn = GoogleSignIn();
   final SessionManager _sessionManager = SessionManager();
 
-  // Register User
-  Future<User?> register(String email, String password, String role) async {
+  // Sign in with Google
+  Future<UserAuthResult> signInWithGoogle() async {
     try {
-      UserCredential result = await _auth.createUserWithEmailAndPassword(
-        email: email, 
-        password: password
-      );
-      User? user = result.user;
-
-      if (user != null) {
-        // Save role in Firestore
-        await _db.collection('users').doc(user.uid).set({
-          'email': email,
-          'role': role,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-
-        // TEMPORARILY COMMENT OUT SESSION MANAGEMENT
-        // await _sessionManager.registerSession(user);
-        
-        // Update FCM token with better error handling
-        await _updateFCMTokenSafely(user.uid, isRegistration: true);
-      }
-
-      return user;
-    } on FirebaseAuthException catch (e) {
-      String errorMessage;
-      switch (e.code) {
-        case 'weak-password':
-          errorMessage = 'The password provided is too weak.';
-          break;
-        case 'email-already-in-use':
-          errorMessage = 'The account already exists for that email.';
-          break;
-        case 'invalid-email':
-          errorMessage = 'The email address is not valid.';
-          break;
-        default:
-          errorMessage = e.message ?? 'An unknown error occurred';
-      }
-      throw Exception(errorMessage);
-    } catch (e) {
-      print('❌ Registration error: $e');
-      throw Exception('Registration failed: ${e.toString()}');
-    }
-  }
-
-  // Login User
-  Future<User?> login(String email, String password) async {
-    try {
-      print('🔑 Starting login process for: $email');
+      print('🔑 Starting Google Sign-In process...');
       
-      UserCredential result = await _auth.signInWithEmailAndPassword(
-        email: email, 
-        password: password
+      // Trigger the authentication flow
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      
+      if (googleUser == null) {
+        // User canceled the sign-in
+        throw Exception('Sign-in was canceled');
+      }
+      
+      print('✅ Google account selected: ${googleUser.email}');
+      
+      // Obtain the auth details from the request
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      
+      // Create a new credential
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
       );
+      
+      // Sign in to Firebase with the Google credential
+      UserCredential result = await _auth.signInWithCredential(credential);
       User? user = result.user;
       
       if (user != null) {
         print('✅ Firebase Auth successful for: ${user.email}');
         
-        // TEMPORARILY COMMENT OUT SESSION MANAGEMENT
-        // await _sessionManager.registerSession(user);
+        // Check if this is a new user or existing user
+        bool isNewUser = await _checkIfNewUser(user.uid);
         
-        // Update FCM token with better error handling
-        await _updateFCMTokenSafely(user.uid, isLogin: true);
-        
-        print('✅ Login completed successfully');
+        if (isNewUser) {
+          print('🆕 New user detected, needs username setup');
+          
+          // Create basic user document with Google info
+          await _db.collection('users').doc(user.uid).set({
+            'email': user.email,
+            'displayName': user.displayName,
+            'photoURL': user.photoURL,
+            'role': 'user', // Default role
+            'createdAt': FieldValue.serverTimestamp(),
+            'provider': 'google',
+            'needsUsernameSetup': true,
+          });
+          
+          return UserAuthResult(
+            user: user,
+            isNewUser: true,
+            needsUsernameSetup: true,
+          );
+        } else {
+          print('👤 Existing user, checking username setup status');
+          
+          // Get user document to check username setup status
+          final userDoc = await _db.collection('users').doc(user.uid).get();
+          final userData = userDoc.data();
+          final needsUsernameSetup = userData?['needsUsernameSetup'] ?? false;
+          
+          if (needsUsernameSetup) {
+            return UserAuthResult(
+              user: user,
+              isNewUser: false,
+              needsUsernameSetup: true,
+            );
+          } else {
+            // Update FCM token for returning user
+            await _updateFCMTokenSafely(user.uid, isLogin: true);
+            
+            return UserAuthResult(
+              user: user,
+              isNewUser: false,
+              needsUsernameSetup: false,
+            );
+          }
+        }
+      } else {
+        throw Exception('Google sign-in failed - no user returned');
       }
-      
-      return user;
     } on FirebaseAuthException catch (e) {
       print('❌ FirebaseAuthException: ${e.code} - ${e.message}');
       String errorMessage;
       switch (e.code) {
-        case 'user-not-found':
-          errorMessage = 'No user found for that email.';
+        case 'account-exists-with-different-credential':
+          errorMessage = 'An account already exists with a different sign-in method.';
           break;
-        case 'wrong-password':
-          errorMessage = 'Wrong password provided.';
+        case 'invalid-credential':
+          errorMessage = 'The credential is invalid or expired.';
           break;
-        case 'invalid-email':
-          errorMessage = 'The email address is not valid.';
+        case 'operation-not-allowed':
+          errorMessage = 'Google sign-in is not enabled.';
           break;
         case 'user-disabled':
           errorMessage = 'This user account has been disabled.';
           break;
-        case 'too-many-requests':
-          errorMessage = 'Too many failed login attempts. Please try again later.';
+        case 'user-not-found':
+          errorMessage = 'No user found.';
           break;
-        case 'invalid-credential':
-          errorMessage = 'Invalid email or password.';
+        case 'wrong-password':
+          errorMessage = 'Wrong password provided.';
           break;
         default:
-          errorMessage = e.message ?? 'Login failed';
+          errorMessage = e.message ?? 'Google sign-in failed';
       }
       throw Exception(errorMessage);
     } catch (e) {
-      print('❌ Login error: $e');
-      // Check if this is the FCM token error
-      if (e.toString().contains('PigeonUserDetails') || 
-          e.toString().contains('List<Object?>')) {
-        print('⚠️ FCM Token error detected, proceeding without token update');
-        // Try to get the user without FCM token operations
-        final user = _auth.currentUser;
-        if (user != null) {
-          print('✅ Login successful despite FCM error');
-          return user;
-        }
+      print('❌ Google Sign-In error: $e');
+      throw Exception('Google sign-in failed: ${e.toString()}');
+    }
+  }
+
+  // Set up username for new users
+  Future<bool> setupUsername(String username) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('No authenticated user');
       }
-      throw Exception('Login failed: ${e.toString()}');
+      
+      print('📝 Setting up username: $username for user: ${user.uid}');
+      
+      // Check if username is already taken
+      final usernameExists = await _checkUsernameExists(username);
+      if (usernameExists) {
+        throw Exception('Username is already taken');
+      }
+      
+      // Update user document with username
+      await _db.collection('users').doc(user.uid).update({
+        'username': username,
+        'needsUsernameSetup': false,
+        'usernameSetupAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      
+      // Update FCM token
+      await _updateFCMTokenSafely(user.uid, isLogin: true);
+      
+      print('✅ Username setup completed successfully');
+      return true;
+    } catch (e) {
+      print('❌ Error setting up username: $e');
+      throw Exception('Failed to setup username: ${e.toString()}');
+    }
+  }
+
+  // Check if username already exists
+  Future<bool> _checkUsernameExists(String username) async {
+    try {
+      final query = await _db
+          .collection('users')
+          .where('username', isEqualTo: username)
+          .limit(1)
+          .get();
+      
+      return query.docs.isNotEmpty;
+    } catch (e) {
+      print('❌ Error checking username existence: $e');
+      return false; // Default to false to allow the attempt
+    }
+  }
+
+  // Check if user is new (doesn't exist in Firestore)
+  Future<bool> _checkIfNewUser(String uid) async {
+    try {
+      final doc = await _db.collection('users').doc(uid).get();
+      return !doc.exists;
+    } catch (e) {
+      print('❌ Error checking if new user: $e');
+      return true; // Default to true to be safe
     }
   }
 
   // Safe FCM Token update method
   Future<void> _updateFCMTokenSafely(String uid, {bool isRegistration = false, bool isLogin = false}) async {
     try {
-      // Add a small delay to ensure Firebase is fully initialized
       await Future.delayed(const Duration(milliseconds: 100));
       
       String? token = await FirebaseMessaging.instance.getToken();
@@ -152,28 +214,25 @@ class AuthService {
       }
     } catch (e) {
       print('❌ Error updating FCM token: $e');
-      // Don't rethrow - FCM token update failure shouldn't break login/registration
     }
   }
 
   // Logout
   Future<void> logout() async {
     try {
-      // TEMPORARILY COMMENT OUT SESSION MANAGEMENT
-      // await _sessionManager.clearSession();
-      
-      // Remove FCM token before signing out
       User? user = _auth.currentUser;
       if (user != null) {
         await _clearFCMTokenSafely(user.uid);
       }
+      
+      // Sign out from Google
+      await _googleSignIn.signOut();
       
       // Sign out from Firebase Auth
       await _auth.signOut();
       print('✅ User logged out successfully');
     } catch (e) {
       print('❌ Error during logout: $e');
-      // Still attempt to sign out even if other operations fail
       try {
         await _auth.signOut();
         print('✅ Force sign out successful');
@@ -192,40 +251,25 @@ class AuthService {
         'lastLogoutTime': FieldValue.serverTimestamp(),
       });
       
-      // Delete the FCM token from Firebase Messaging
       await FirebaseMessaging.instance.deleteToken();
       print('✅ FCM token cleared successfully');
     } catch (e) {
       print('❌ Error clearing FCM token: $e');
-      // Continue with logout even if token cleanup fails
     }
   }
 
   // Check if this device is still the active session
   Future<bool> checkActiveSession() async {
-    // TEMPORARILY RETURN TRUE TO DISABLE SESSION CHECKS
-    return true;
-    
-    // COMMENT OUT THE ACTUAL SESSION CHECK FOR NOW
-    // try {
-    //   return await _sessionManager.isActiveSession();
-    // } catch (e) {
-    //   print('Error checking active session: $e');
-    //   return false;
-    // }
+    return true; // Temporarily disabled
   }
   
   // Start listening for session changes
   void startSessionListener(VoidCallback onForcedLogout) {
-    // TEMPORARILY DISABLE SESSION LISTENER
-    // _sessionManager.startSessionListener(onForcedLogout);
     print('📱 Session listener temporarily disabled');
   }
   
   // Stop listening for session changes
   void stopSessionListener() {
-    // TEMPORARILY DISABLE SESSION LISTENER
-    // _sessionManager.stopSessionListener();
     print('🛑 Session listener stop temporarily disabled');
   }
 
@@ -257,6 +301,20 @@ class AuthService {
     return 'user';
   }
 
+  // Get user data from Firestore
+  Future<Map<String, dynamic>?> getUserData(String uid) async {
+    try {
+      DocumentSnapshot doc = await _db.collection('users').doc(uid).get();
+      if (doc.exists && doc.data() != null) {
+        return doc.data() as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      print('Error getting user data: $e');
+      return null;
+    }
+  }
+
   // Check if user is logged in
   bool get isLoggedIn => _auth.currentUser != null;
 
@@ -277,7 +335,6 @@ class AuthService {
         await user.updateDisplayName(displayName);
         await user.updatePhotoURL(photoURL);
         
-        // Also update in Firestore
         await _db.collection('users').doc(user.uid).update({
           'displayName': displayName,
           'photoURL': photoURL,
@@ -287,41 +344,6 @@ class AuthService {
     } catch (e) {
       print('Error updating user profile: $e');
       throw Exception('Failed to update profile: ${e.toString()}');
-    }
-  }
-
-  // Send password reset email
-  Future<void> sendPasswordResetEmail(String email) async {
-    try {
-      await _auth.sendPasswordResetEmail(email: email);
-    } on FirebaseAuthException catch (e) {
-      String errorMessage;
-      switch (e.code) {
-        case 'user-not-found':
-          errorMessage = 'No user found for that email.';
-          break;
-        case 'invalid-email':
-          errorMessage = 'The email address is not valid.';
-          break;
-        default:
-          errorMessage = e.message ?? 'Failed to send password reset email';
-      }
-      throw Exception(errorMessage);
-    } catch (e) {
-      throw Exception('Failed to send password reset email: ${e.toString()}');
-    }
-  }
-
-  // Verify email
-  Future<void> sendEmailVerification() async {
-    try {
-      final user = _auth.currentUser;
-      if (user != null && !user.emailVerified) {
-        await user.sendEmailVerification();
-      }
-    } catch (e) {
-      print('Error sending email verification: $e');
-      throw Exception('Failed to send email verification: ${e.toString()}');
     }
   }
 
@@ -342,6 +364,9 @@ class AuthService {
         // Delete user data from Firestore
         await _db.collection('users').doc(user.uid).delete();
         
+        // Sign out from Google
+        await _googleSignIn.signOut();
+        
         // Delete the user account
         await user.delete();
         
@@ -361,4 +386,17 @@ class AuthService {
       throw Exception('Failed to delete account: ${e.toString()}');
     }
   }
+}
+
+// Result class for authentication
+class UserAuthResult {
+  final User user;
+  final bool isNewUser;
+  final bool needsUsernameSetup;
+
+  UserAuthResult({
+    required this.user,
+    required this.isNewUser,
+    required this.needsUsernameSetup,
+  });
 }

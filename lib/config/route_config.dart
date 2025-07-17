@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:canteen_app/screens/auth/auth_menu.dart';
-import 'package:canteen_app/screens/auth/login_screen.dart';
-import 'package:canteen_app/screens/auth/register_screen.dart';
+import 'package:canteen_app/screens/auth/username_setup_screen.dart';
 import 'package:canteen_app/screens/user/menu_screen.dart';
 import 'package:canteen_app/screens/user/cart_screen.dart';
 import 'package:canteen_app/screens/user/order_tracking_screen.dart';
@@ -19,21 +18,31 @@ import 'package:canteen_app/screens/splash/splash_screen.dart';
 class RouteConfig {
   static Map<String, WidgetBuilder> get routes {
     return {
+      // Authentication routes
       '/auth': (_) => const AuthMenu(),
+      '/username-setup': (_) => const UsernameSetupScreen(),
+      
+      // User routes
       '/menu': (_) => const MenuScreen(),
-      '/cart': (_) => const CartScreen(), // REMOVED THE CART PARAMETER
-      '/splash': (context) => const SplashScreen(),
+      '/cart': (_) => const CartScreen(),
       '/track': (_) => const OrderTrackingScreen(),
+      '/history': (_) => const OrderHistoryScreen(),
+      '/user/user-home': (_) => const UserHome(),
+      
+      // Admin routes
+      '/admin/home': (_) => const AdminHome(),
+      '/admin/menu': (_) => const MenuManagementScreen(),
+      '/admin/live-orders': (_) => const AdminLiveOrdersScreen(),
+      '/admin/admin-history': (_) => const AdminOrderHistoryScreen(),
+      '/admin/admin-kitchen-view': (_) => const AdminKitchenViewScreen(),
+      
+      // Kitchen routes
       '/kitchen': (_) => const KitchenDashboard(),
       '/kitchen-menu': (_) => const KitchenHome(),
       '/kitchen-dashboard': (_) => const KitchenDashboard(),
-      '/admin/menu': (_) => const MenuManagementScreen(),
-      '/admin/home': (_) => const AdminHome(),
-      '/admin/live-orders': (_) => const AdminLiveOrdersScreen(),
-      '/history': (_) => const OrderHistoryScreen(),
-      '/admin/admin-history': (_) => const AdminOrderHistoryScreen(),
-      '/admin/admin-kitchen-view': (_) => const AdminKitchenViewScreen(),
-      '/user/user-home': (_) => const UserHome(),
+      
+      // App routes
+      '/splash': (context) => const SplashScreen(),
     };
   }
 }

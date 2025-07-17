@@ -30,7 +30,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     _setupAnimations();
     _setupOrderNotifications();
     _startListeningToAuth();
-    print('🎬 Enhanced splash screen initialized with order notifications');
+    print('🎬 Enhanced splash screen initialized with Google Auth support');
   }
 
   void _setupAnimations() {
@@ -80,7 +80,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   }
 
   void _startListeningToAuth() {
-    print("👂 Listening to authStateChanges with order notification support...");
+    print("👂 Listening to authStateChanges with Google Auth support...");
     _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) async {
       if (!mounted) return;
 
@@ -109,6 +109,24 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
       // Setup order notifications for the authenticated user
       await _setupUserOrderNotifications(user.uid);
+
+      setState(() {
+        _statusMessage = "Checking account setup...";
+      });
+
+      // Check if user needs username setup
+      final userData = await _authService.getUserData(user.uid);
+      
+      if (userData != null && (userData['needsUsernameSetup'] ?? false)) {
+        print("📝 User needs username setup");
+        setState(() {
+          _statusMessage = "Username setup required...";
+        });
+        await Future.delayed(const Duration(seconds: 1));
+        if (!mounted) return;
+        Navigator.pushReplacementNamed(context, '/username-setup');
+        return;
+      }
 
       setState(() {
         _statusMessage = "Loading your account...";
@@ -256,22 +274,24 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   Future<String> _fetchUserRole(String userId) async {
     try {
       print("🔍 Fetching user role for: $userId");
-      final doc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
       
-      if (doc.exists && doc.data() != null) {
-        final data = doc.data()!;
-        final role = data['role'] ?? 'user';
+      // Use AuthService to get user data
+      final userData = await _authService.getUserData(userId);
+      
+      if (userData != null) {
+        final role = userData['role'] ?? 'user';
         print("📋 User role found: $role");
-        print("📋 User data: ${data.keys.toList()}");
+        print("📋 User data keys: ${userData.keys.toList()}");
         return role;
       } else {
-        print("📋 No user document found, defaulting to 'user'");
+        print("📋 No user document found, creating default user");
         // Create user document with default role and notification preferences
         try {
           await FirebaseFirestore.instance.collection('users').doc(userId).set({
             'role': 'user',
             'email': FirebaseAuth.instance.currentUser?.email,
             'createdAt': FieldValue.serverTimestamp(),
+            'needsUsernameSetup': false, // Since they completed Google auth flow
             'notificationPreferences': {
               'orderUpdates': true,
               'orderExpiring': true,
@@ -359,6 +379,35 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   ),
                 ),
                 const SizedBox(height: 40),
+                // Google Auth indicator
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.security,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        "Secure Google Authentication",
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
                 // Order notification indicator
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -402,7 +451,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 40),
-                // Notification disclaimer
+                // Privacy notice
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Text(
