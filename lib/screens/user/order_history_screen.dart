@@ -124,7 +124,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> with SingleTick
                   Navigator.pushReplacementNamed(context, '/auth');
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFFB703),
+                  backgroundColor: Colors.grey[50],
                   foregroundColor: Colors.black87,
                   padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
                   shape: RoundedRectangleBorder(
@@ -162,21 +162,15 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> with SingleTick
         title: Text(
           "Order History",
           style: GoogleFonts.poppins(
-            color: Colors.white,
+            color: Colors.black,
             fontWeight: FontWeight.w600,
           ),
         ),
-        backgroundColor: Colors.transparent,
+        backgroundColor: const Color(0xFFFFB703),
         elevation: 0,
       ),
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFFFFB703), Color(0xFFFFC107)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
+        color: Colors.grey[50],
         child: SafeArea(
           child: FadeTransition(
             opacity: _fadeAnimation,
@@ -289,26 +283,6 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> with SingleTick
                                           ),
                                           textAlign: TextAlign.center,
                                         ),
-                                        const SizedBox(height: 24),
-                                        if (_filterStatus == "All")
-                                          ElevatedButton.icon(
-                                            onPressed: () {
-                                              Navigator.pushNamed(context, '/menu');
-                                            },
-                                            icon: const Icon(Icons.restaurant_menu),
-                                            label: Text(
-                                              "Browse Menu",
-                                              style: GoogleFonts.poppins(),
-                                            ),
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: const Color(0xFFFFB703),
-                                              foregroundColor: Colors.black87,
-                                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius: BorderRadius.circular(12),
-                                              ),
-                                            ),
-                                          ),
                                       ],
                                     ),
                                   ),

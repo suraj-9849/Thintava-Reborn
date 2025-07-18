@@ -171,22 +171,6 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
                       color: Colors.grey[600],
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.pushNamed(context, '/menu');
-                    },
-                    icon: const Icon(Icons.restaurant_menu),
-                    label: const Text("Browse Menu"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFFFB703),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
                 ],
               ),
             );

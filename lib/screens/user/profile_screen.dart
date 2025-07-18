@@ -155,7 +155,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           slivers: [
             // Custom App Bar with Profile Header
             SliverAppBar(
-              expandedHeight: 280,
+              expandedHeight: 220,
               floating: false,
               pinned: true,
               backgroundColor: const Color(0xFFFFB703),
@@ -170,26 +170,27 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   ),
                   child: SafeArea(
                     child: Padding(
-                      padding: const EdgeInsets.all(20),
+                      padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
                       child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const SizedBox(height: 40),
+                          const SizedBox(height: 20),
                           // Profile Avatar
                           Container(
-                            padding: const EdgeInsets.all(4),
+                            padding: const EdgeInsets.all(3),
                             decoration: BoxDecoration(
                               color: Colors.white,
                               shape: BoxShape.circle,
                               boxShadow: [
                                 BoxShadow(
                                   color: Colors.black.withOpacity(0.2),
-                                  blurRadius: 20,
-                                  offset: const Offset(0, 8),
+                                  blurRadius: 15,
+                                  offset: const Offset(0, 6),
                                 ),
                               ],
                             ),
                             child: CircleAvatar(
-                              radius: 50,
+                              radius: 35,
                               backgroundColor: Colors.white,
                               backgroundImage: user?.photoURL != null 
                                 ? NetworkImage(user!.photoURL!) 
@@ -198,7 +199,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                 ? Text(
                                     user?.email?.substring(0, 1).toUpperCase() ?? 'U',
                                     style: GoogleFonts.poppins(
-                                      fontSize: 36,
+                                      fontSize: 28,
                                       fontWeight: FontWeight.bold,
                                       color: const Color(0xFFFFB703),
                                     ),
@@ -206,36 +207,41 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                 : null,
                             ),
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 12),
                           
                           // User Info
                           Text(
-                            user?.displayName ?? 'User',
+                            user?.displayName ?? user?.email?.split('@')[0] ?? 'User',
                             style: GoogleFonts.poppins(
-                              fontSize: 24,
+                              fontSize: 20,
                               fontWeight: FontWeight.bold,
                               color: Colors.white,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
+                          const SizedBox(height: 4),
                           Text(
                             user?.email ?? 'No email',
                             style: GoogleFonts.poppins(
-                              fontSize: 16,
+                              fontSize: 14,
                               color: Colors.white.withOpacity(0.9),
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 8),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                             decoration: BoxDecoration(
                               color: Colors.white.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(20),
+                              borderRadius: BorderRadius.circular(15),
                               border: Border.all(color: Colors.white.withOpacity(0.3)),
                             ),
                             child: Text(
-                              'Premium Member',
+                              'Member',
                               style: GoogleFonts.poppins(
-                                fontSize: 14,
+                                fontSize: 12,
                                 fontWeight: FontWeight.w600,
                                 color: Colors.white,
                               ),
@@ -249,7 +255,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               ),
               actions: [
                 IconButton(
-                  icon: const Icon(Icons.edit, color: Colors.white),
+                  icon: const Icon(Icons.edit, color: Colors.white, size: 20),
                   onPressed: () => _showEditProfileDialog(),
                 ),
               ],
@@ -264,15 +270,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   children: [
                     // Quick Stats Card
                     Container(
-                      padding: const EdgeInsets.all(24),
+                      padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
+                            color: Colors.black.withOpacity(0.08),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
                           ),
                         ],
                       ),
@@ -288,42 +294,42 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                 child: _buildStatItem(
                                   icon: Icons.shopping_bag_outlined,
                                   value: totalOrders.toString(),
-                                  label: "Total Orders",
+                                  label: "Orders",
                                 ),
                               ),
                               Container(
                                 width: 1,
-                                height: 60,
+                                height: 50,
                                 color: Colors.grey[300],
                               ),
                               Expanded(
                                 child: _buildStatItem(
                                   icon: Icons.currency_rupee,
                                   value: "₹${totalSpent.toStringAsFixed(0)}",
-                                  label: "Total Spent",
+                                  label: "Spent",
                                 ),
                               ),
                               Container(
                                 width: 1,
-                                height: 60,
+                                height: 50,
                                 color: Colors.grey[300],
                               ),
                               Expanded(
                                 child: _buildStatItem(
                                   icon: Icons.star_outline,
                                   value: "${avgRating}★",
-                                  label: "Avg Rating",
+                                  label: "Rating",
                                 ),
                               ),
                             ],
                           ),
                     ),
                     
-                    const SizedBox(height: 30),
+                    const SizedBox(height: 25),
                     
                     // Account Settings Section
                     _buildSectionHeader("Account Settings"),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     
                     _buildMenuOption(
                       icon: Icons.person_outline,
@@ -339,25 +345,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       onTap: () => _showComingSoonSnackBar("Favorites"),
                     ),
                     
-                    _buildMenuOption(
-                      icon: Icons.location_on_outlined,
-                      title: "Delivery Addresses",
-                      subtitle: "Manage your saved addresses",
-                      onTap: () => _showComingSoonSnackBar("Address Management"),
-                    ),
-                    
-                    _buildMenuOption(
-                      icon: Icons.payment_outlined,
-                      title: "Payment Methods",
-                      subtitle: "Manage cards and payment options",
-                      onTap: () => _showComingSoonSnackBar("Payment Methods"),
-                    ),
-                    
-                    const SizedBox(height: 30),
+                    const SizedBox(height: 25),
                     
                     // Orders Section
                     _buildSectionHeader("Orders"),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     
                     _buildMenuOption(
                       icon: Icons.track_changes,
@@ -373,45 +365,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       onTap: () => Navigator.pushNamed(context, '/history'),
                     ),
                     
-                    _buildMenuOption(
-                      icon: Icons.receipt_long,
-                      title: "Download Invoice",
-                      subtitle: "Get receipts for your orders",
-                      onTap: () => _showComingSoonSnackBar("Invoice Download"),
-                    ),
-                    
-                    const SizedBox(height: 30),
-                    
-                    // Preferences Section
-                    _buildSectionHeader("Preferences"),
-                    const SizedBox(height: 16),
-                    
-                    _buildMenuOption(
-                      icon: Icons.notifications_outlined,
-                      title: "Notification Settings",
-                      subtitle: "Manage your notification preferences",
-                      onTap: () => _showNotificationSettings(),
-                    ),
-                    
-                    _buildMenuOption(
-                      icon: Icons.language,
-                      title: "Language",
-                      subtitle: "Choose your preferred language",
-                      onTap: () => _showLanguageOptions(),
-                    ),
-                    
-                    _buildMenuOption(
-                      icon: Icons.dark_mode_outlined,
-                      title: "Theme",
-                      subtitle: "Switch between light and dark mode",
-                      onTap: () => _showComingSoonSnackBar("Theme Settings"),
-                    ),
-                    
-                    const SizedBox(height: 30),
+                    const SizedBox(height: 25),
                     
                     // Support Section
                     _buildSectionHeader("Support & Legal"),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     
                     _buildMenuOption(
                       icon: Icons.help_outline,
@@ -423,13 +381,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     _buildMenuOption(
                       icon: Icons.feedback_outlined,
                       title: "Send Feedback",
-                      subtitle: "Help us improve Thintava",
+                      subtitle: "Help us improve our service",
                       onTap: () => _showFeedbackDialog(),
                     ),
                     
                     _buildMenuOption(
                       icon: Icons.info_outline,
-                      title: "About Thintava",
+                      title: "About App",
                       subtitle: "Learn more about our app",
                       onTap: () => _showAboutDialog(),
                     ),
@@ -448,7 +406,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       onTap: () => _showComingSoonSnackBar("Terms of Service"),
                     ),
                     
-                    const SizedBox(height: 30),
+                    const SizedBox(height: 25),
                     
                     // Logout Section
                     _buildMenuOption(
@@ -459,20 +417,20 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       isDestructive: true,
                     ),
                     
-                    const SizedBox(height: 40),
+                    const SizedBox(height: 30),
                     
                     // App Version
                     Center(
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
                           color: Colors.grey[100],
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(15),
                         ),
                         child: Text(
-                          "Thintava v1.0.0",
+                          "v1.0.0",
                           style: GoogleFonts.poppins(
-                            fontSize: 12,
+                            fontSize: 11,
                             color: Colors.grey[600],
                             fontWeight: FontWeight.w500,
                           ),
@@ -502,19 +460,19 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: const Color(0xFFFFB703).withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
           ),
           child: Icon(
             icon,
             color: const Color(0xFFFFB703),
-            size: 20,
+            size: 18,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Text(
           value,
           style: GoogleFonts.poppins(
-            fontSize: 18,
+            fontSize: 16,
             fontWeight: FontWeight.bold,
             color: const Color(0xFFFFB703),
           ),
@@ -522,7 +480,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         Text(
           label,
           style: GoogleFonts.poppins(
-            fontSize: 12,
+            fontSize: 11,
             color: Colors.grey[600],
           ),
           textAlign: TextAlign.center,
@@ -535,7 +493,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     return Text(
       title,
       style: GoogleFonts.poppins(
-        fontSize: 20,
+        fontSize: 18,
         fontWeight: FontWeight.bold,
         color: Colors.black87,
       ),
@@ -550,24 +508,24 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     bool isDestructive = false,
   }) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 10),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           child: Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(
                 color: isDestructive ? Colors.red.withOpacity(0.2) : Colors.grey[200]!,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 8,
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 6,
                   offset: const Offset(0, 2),
                 ),
               ],
@@ -575,20 +533,20 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: isDestructive 
                       ? Colors.red.withOpacity(0.1)
                       : const Color(0xFFFFB703).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(
                     icon,
                     color: isDestructive ? Colors.red : const Color(0xFFFFB703),
-                    size: 22,
+                    size: 20,
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -596,16 +554,16 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       Text(
                         title,
                         style: GoogleFonts.poppins(
-                          fontSize: 16,
+                          fontSize: 15,
                           fontWeight: FontWeight.w600,
                           color: isDestructive ? Colors.red : Colors.black87,
                         ),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 1),
                       Text(
                         subtitle,
                         style: GoogleFonts.poppins(
-                          fontSize: 13,
+                          fontSize: 12,
                           color: Colors.grey[600],
                         ),
                       ),
@@ -614,7 +572,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 ),
                 Icon(
                   Icons.arrow_forward_ios,
-                  size: 16,
+                  size: 14,
                   color: Colors.grey[400],
                 ),
               ],
@@ -731,128 +689,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  void _showNotificationSettings() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Icon(Icons.notifications, color: const Color(0xFFFFB703)),
-            const SizedBox(width: 8),
-            Text(
-              'Notification Settings',
-              style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildNotificationToggle('Order Updates', true),
-            _buildNotificationToggle('Promotional Offers', false),
-            _buildNotificationToggle('App Updates', true),
-            _buildNotificationToggle('Email Notifications', false),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: GoogleFonts.poppins()),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              _showComingSoonSnackBar('Notification Settings');
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFFB703),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: Text('Save', style: GoogleFonts.poppins()),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNotificationToggle(String title, bool value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            title,
-            style: GoogleFonts.poppins(fontSize: 14),
-          ),
-          Switch(
-            value: value,
-            onChanged: (newValue) {
-              // Handle toggle
-            },
-            activeColor: const Color(0xFFFFB703),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showLanguageOptions() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Icon(Icons.language, color: const Color(0xFFFFB703)),
-            const SizedBox(width: 8),
-            Text(
-              'Choose Language',
-              style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildLanguageOption('English', true),
-            _buildLanguageOption('हिंदी (Hindi)', false),
-            _buildLanguageOption('తెలుగు (Telugu)', false),
-            _buildLanguageOption('தமிழ் (Tamil)', false),
-          ],
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFFB703),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: Text('Close', style: GoogleFonts.poppins()),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLanguageOption(String language, bool isSelected) {
-    return ListTile(
-      title: Text(
-        language,
-        style: GoogleFonts.poppins(fontSize: 14),
-      ),
-      trailing: isSelected 
-        ? Icon(Icons.check_circle, color: const Color(0xFFFFB703))
-        : null,
-      onTap: () {
-        if (!isSelected) {
-          _showComingSoonSnackBar('Language Selection');
-        }
-      },
-    );
-  }
-
   void _showHelpDialog() {
     showDialog(
       context: context,
@@ -951,7 +787,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'We value your feedback! Help us improve Thintava.',
+              'We value your feedback! Help us improve our service.',
               style: GoogleFonts.poppins(),
             ),
             const SizedBox(height: 16),
@@ -1004,7 +840,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             Icon(Icons.restaurant_menu, color: const Color(0xFFFFB703)),
             const SizedBox(width: 8),
             Text(
-              'About Thintava',
+              'About App',
               style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
             ),
           ],
@@ -1014,7 +850,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Thintava - Your Ultimate Food Companion',
+              'Your Ultimate Food Companion',
               style: GoogleFonts.poppins(
                 fontWeight: FontWeight.w600,
                 fontSize: 16,
@@ -1022,7 +858,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             ),
             const SizedBox(height: 12),
             Text(
-              'Thintava brings you the best dining experience with easy ordering, real-time tracking, and delicious food delivered right to your doorstep.',
+              'Easy ordering, real-time tracking, and delicious food delivered right to your doorstep.',
               style: GoogleFonts.poppins(),
             ),
             const SizedBox(height: 16),
@@ -1032,12 +868,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             ),
             const SizedBox(height: 8),
             Text(
-              '• Browse extensive menu with real-time availability\n'
-              '• Secure and fast payment processing\n'
+              '• Browse extensive menu\n'
+              '• Secure payment processing\n'
               '• Real-time order tracking\n'
               '• Order history and favorites\n'
-              '• 24/7 customer support\n'
-              '• Regular updates and new features',
+              '• 24/7 customer support',
               style: GoogleFonts.poppins(fontSize: 14),
             ),
             const SizedBox(height: 16),

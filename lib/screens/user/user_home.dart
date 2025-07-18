@@ -8,6 +8,7 @@ import 'package:canteen_app/services/auth_service.dart';
 import 'package:canteen_app/providers/cart_provider.dart';
 import 'package:canteen_app/screens/user/order_tracking_screen.dart';
 import 'package:canteen_app/screens/user/order_history_screen.dart';
+import 'package:canteen_app/screens/user/profile_screen.dart';
 
 class UserHome extends StatefulWidget {
   const UserHome({Key? key}) : super(key: key);
@@ -25,16 +26,16 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
   int _currentIndex = 0;
   final PageController _pageController = PageController();
 
-  // User stats
-  int totalOrders = 0;
-  double totalSpent = 0.0;
-  bool isLoadingStats = true;
+  // Search and filter
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  String _selectedFilter = 'All';
+  List<String> _filterOptions = ['All', 'Veg', 'Non-Veg'];
 
   @override
   void initState() {
     super.initState();
     _initializeAnimations();
-    _loadUserStats();
     
     // Start listening for session changes
     _authService.startSessionListener(() {
@@ -62,42 +63,6 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
     );
 
     _fadeController.forward();
-  }
-
-  Future<void> _loadUserStats() async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        // Add a small delay for better UX
-        await Future.delayed(const Duration(milliseconds: 800));
-        
-        final ordersSnapshot = await FirebaseFirestore.instance
-            .collection('orders')
-            .where('userId', isEqualTo: user.uid)
-            .get();
-        
-        double total = 0.0;
-        for (var doc in ordersSnapshot.docs) {
-          final data = doc.data();
-          total += (data['total'] ?? 0.0);
-        }
-        
-        if (mounted) {
-          setState(() {
-            totalOrders = ordersSnapshot.docs.length;
-            totalSpent = total;
-            isLoadingStats = false;
-          });
-        }
-      }
-    } catch (e) {
-      print('Error loading user stats: $e');
-      if (mounted) {
-        setState(() {
-          isLoadingStats = false;
-        });
-      }
-    }
   }
 
   void logout(BuildContext context, {bool forceLogout = false}) async {
@@ -143,7 +108,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
               ),
               const SizedBox(height: 20),
               Text(
-                'Thank you for visiting Thintava!',
+                'Thank you for visiting!',
                 style: GoogleFonts.poppins(
                   fontWeight: FontWeight.w500,
                   color: Colors.grey[700],
@@ -175,6 +140,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
     _fadeController.dispose();
     _shimmerController.dispose();
     _pageController.dispose();
+    _searchController.dispose();
     _authService.stopSessionListener();
     super.dispose();
   }
@@ -193,7 +159,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
           _buildHomePage(),
           const OrderTrackingScreen(),
           const OrderHistoryScreen(),
-          _buildProfilePage(),
+          const ProfileScreen(),
         ],
       ),
       bottomNavigationBar: _buildModernBottomNav(),
@@ -369,6 +335,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
           child: Column(
             children: [
               _buildEnhancedHeader(),
+              _buildSearchAndFilter(),
               _buildMenuSection(),
             ],
           ),
@@ -380,121 +347,141 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
   Widget _buildEnhancedHeader() {
     final user = FirebaseAuth.instance.currentUser;
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 30),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 15),
+      child: Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Hello ${user?.displayName?.split(' ')[0] ?? user?.email?.split('@')[0] ?? 'Friend'}! 👋",
-                      style: GoogleFonts.poppins(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white.withOpacity(0.9),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      "Welcome to Thintava",
-                      style: GoogleFonts.poppins(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        height: 1.2,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.white.withOpacity(0.3)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.restaurant_rounded,
-                            color: Colors.white,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            "Explore our delicious menu",
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+          Expanded(
+            child: Text(
+              "Hello ${user?.displayName?.split(' ')[0] ?? user?.email?.split('@')[0] ?? 'Friend'}! 👋",
+              style: GoogleFonts.poppins(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: Colors.white.withOpacity(0.9),
               ),
-              Row(
-                children: [
-                  _buildHeaderButton(
-                    icon: Icons.notifications_rounded,
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Row(
-                            children: [
-                              Icon(Icons.info_outline, color: Colors.white),
-                              const SizedBox(width: 8),
-                              Text(
-                                'No new notifications!',
-                                style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
-                              ),
-                            ],
-                          ),
-                          backgroundColor: Colors.black87,
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                          margin: const EdgeInsets.all(16),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  _buildHeaderButton(
-                    icon: Icons.logout_rounded,
-                    onTap: () => logout(context),
-                  ),
-                ],
-              ),
-            ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildHeaderButton({required IconData icon, required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.2),
-          borderRadius: BorderRadius.circular(15),
-          border: Border.all(color: Colors.white.withOpacity(0.3)),
-        ),
-        child: Icon(
-          icon,
-          color: Colors.white,
-          size: 20,
-        ),
+  Widget _buildSearchAndFilter() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 15),
+      child: Row(
+        children: [
+          // Search Bar
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(25),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: TextField(
+                controller: _searchController,
+                onChanged: (value) {
+                  setState(() {
+                    _searchQuery = value.toLowerCase();
+                  });
+                },
+                decoration: InputDecoration(
+                  hintText: 'Search for dishes...',
+                  hintStyle: GoogleFonts.poppins(
+                    color: Colors.grey[500],
+                    fontSize: 14,
+                  ),
+                  prefixIcon: Icon(
+                    Icons.search_rounded,
+                    color: Colors.grey[500],
+                  ),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() {
+                              _searchQuery = '';
+                            });
+                          },
+                          icon: Icon(
+                            Icons.clear_rounded,
+                            color: Colors.grey[500],
+                          ),
+                        )
+                      : null,
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 16,
+                  ),
+                ),
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+          
+          const SizedBox(width: 8),
+          
+          // Filter Dropdown
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _selectedFilter,
+                icon: Icon(
+                  Icons.filter_list_rounded,
+                  color: const Color(0xFFFFB703),
+                  size: 16,
+                ),
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFFFFB703),
+                ),
+                isDense: true,
+                onChanged: (String? newValue) {
+                  if (newValue != null) {
+                    setState(() {
+                      _selectedFilter = newValue;
+                    });
+                  }
+                },
+                items: _filterOptions.map<DropdownMenuItem<String>>((String value) {
+                  return DropdownMenuItem<String>(
+                    value: value,
+                    child: Text(
+                      value,
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -521,7 +508,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
 
   Widget _buildMenuHeader() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(24, 30, 24, 20),
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 15),
       child: Row(
         children: [
           Container(
@@ -538,56 +525,13 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
           ),
           const SizedBox(width: 16),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "Our Menu",
-                  style: GoogleFonts.poppins(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.black87,
-                  ),
-                ),
-                Text(
-                  "Fresh & delicious food awaits",
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.green.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.green.withOpacity(0.3)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: const BoxDecoration(
-                    color: Colors.green,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  "Live",
-                  style: GoogleFonts.poppins(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.green,
-                  ),
-                ),
-              ],
+            child: Text(
+              "Our Menu",
+              style: GoogleFonts.poppins(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: Colors.black87,
+              ),
             ),
           ),
         ],
@@ -615,9 +559,107 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
             return _buildEmptyState();
           }
 
-          final items = snapshot.data!.docs;
-          return _buildMenuList(items);
+          // Filter items based on search query and veg/non-veg filter
+          final allItems = snapshot.data!.docs;
+          final filteredItems = allItems.where((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            final name = (data['name'] ?? '').toLowerCase();
+            final isVeg = data['isVeg'] ?? false;
+            
+            final matchesSearch = _searchQuery.isEmpty || name.contains(_searchQuery);
+            final matchesFilter = _selectedFilter == 'All' || 
+                                  (_selectedFilter == 'Veg' && isVeg) ||
+                                  (_selectedFilter == 'Non-Veg' && !isVeg);
+            
+            return matchesSearch && matchesFilter;
+          }).toList();
+
+          if (filteredItems.isEmpty) {
+            return _buildNoResultsState();
+          }
+
+          return _buildMenuList(filteredItems);
         },
+      ),
+    );
+  }
+
+  Widget _buildNoResultsState() {
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(25),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.grey.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.search_off_rounded,
+                size: 48,
+                color: Colors.grey[400],
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              "No items found",
+              style: GoogleFonts.poppins(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Try adjusting your search or filter to find what you're looking for.",
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                color: Colors.grey[600],
+                height: 1.5,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: () {
+                _searchController.clear();
+                setState(() {
+                  _searchQuery = '';
+                  _selectedFilter = 'All';
+                });
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFFB703),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                elevation: 0,
+              ),
+              icon: const Icon(Icons.clear_all_rounded),
+              label: Text(
+                "Clear Filters",
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -894,27 +936,27 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
               child: Opacity(
                 opacity: value,
                 child: Container(
-                  margin: const EdgeInsets.only(bottom: 20),
+                  margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(25),
+                    borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.08),
-                        blurRadius: 20,
-                        offset: const Offset(0, 8),
+                        color: Colors.black.withOpacity(0.06),
+                        blurRadius: 15,
+                        offset: const Offset(0, 6),
                       ),
                     ],
                   ),
                   child: Stack(
                     children: [
                       Padding(
-                        padding: const EdgeInsets.all(20),
+                        padding: const EdgeInsets.all(16),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             _buildFoodImage(imageUrl, isVeg, isOutOfStock, isUnavailable),
-                            const SizedBox(width: 20),
+                            const SizedBox(width: 16),
                             Expanded(
                               child: _buildFoodDetails(
                                 name, price, description, quantity, 
@@ -942,21 +984,21 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
     return Stack(
       children: [
         Container(
-          width: 100,
-          height: 100,
+          width: 85,
+          height: 85,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
               ),
             ],
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-                              child: imageUrl != null && imageUrl.isNotEmpty
+            borderRadius: BorderRadius.circular(16),
+            child: imageUrl != null && imageUrl.isNotEmpty
               ? ColorFiltered(
                   colorFilter: (isOutOfStock || isUnavailable)
                     ? const ColorFilter.mode(Colors.grey, BlendMode.saturation)
@@ -972,23 +1014,23 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
         ),
         // Veg/Non-veg indicator
         Positioned(
-          top: 8,
-          left: 8,
+          top: 6,
+          left: 6,
           child: Container(
-            padding: const EdgeInsets.all(6),
+            padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(6),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.1),
-                  blurRadius: 4,
+                  blurRadius: 3,
                 ),
               ],
             ),
             child: Container(
-              width: 12,
-              height: 12,
+              width: 10,
+              height: 10,
               decoration: BoxDecoration(
                 color: isVeg ? Colors.green : Colors.red,
                 shape: isVeg ? BoxShape.rectangle : BoxShape.circle,
@@ -1283,644 +1325,6 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
           borderRadius: BorderRadius.circular(15),
         ),
         margin: const EdgeInsets.all(16),
-      ),
-    );
-  }
-
-  Widget _buildProfilePage() {
-    final user = FirebaseAuth.instance.currentUser;
-    
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Color(0xFFFFB703),
-            Color(0xFFFFC107),
-            Color(0xFFFFD54F),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          stops: [0.0, 0.6, 1.0],
-        ),
-      ),
-      child: SafeArea(
-        child: Column(
-          children: [
-            _buildProfileHeader(user),
-            _buildProfileContent(user),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProfileHeader(User? user) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 30),
-      child: Row(
-        children: [
-          // Enhanced Profile Avatar
-          Hero(
-            tag: 'profile_avatar',
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: CircleAvatar(
-                radius: 40,
-                backgroundColor: Colors.white,
-                backgroundImage: user?.photoURL != null 
-                  ? NetworkImage(user!.photoURL!) 
-                  : null,
-                child: user?.photoURL == null 
-                  ? Text(
-                      user?.email?.substring(0, 1).toUpperCase() ?? 'U',
-                      style: GoogleFonts.poppins(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        color: const Color(0xFFFFB703),
-                      ),
-                    )
-                  : null,
-              ),
-            ),
-          ),
-          const SizedBox(width: 20),
-          
-          // Enhanced User Info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  user?.displayName ?? user?.email?.split('@')[0] ?? 'User',
-                  style: GoogleFonts.poppins(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    height: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  user?.email ?? 'No email',
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    color: Colors.white.withOpacity(0.8),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Thintava Member',
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProfileContent(User? user) {
-    return Expanded(
-      child: Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFFF8F9FA),
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(35),
-            topRight: Radius.circular(35),
-          ),
-        ),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildStatsCard(),
-              const SizedBox(height: 30),
-              _buildProfileSection("Account Settings", [
-                _buildProfileOption(
-                  icon: Icons.person_outline_rounded,
-                  title: "Edit Profile",
-                  subtitle: "Update your personal information",
-                  onTap: () => _showEditProfileDialog(),
-                ),
-                _buildProfileOption(
-                  icon: Icons.favorite_outline_rounded,
-                  title: "Favorite Items",
-                  subtitle: "View your favorite menu items",
-                  onTap: () => _showComingSoon("Favorites"),
-                ),
-                _buildProfileOption(
-                  icon: Icons.location_on_outlined,
-                  title: "Delivery Address",
-                  subtitle: "Manage your delivery addresses",
-                  onTap: () => _showComingSoon("Address Management"),
-                ),
-                _buildProfileOption(
-                  icon: Icons.payment_outlined,
-                  title: "Payment Methods",
-                  subtitle: "Manage your payment options",
-                  onTap: () => _showComingSoon("Payment Methods"),
-                ),
-              ]),
-              const SizedBox(height: 30),
-              _buildProfileSection("Support & Settings", [
-                _buildProfileOption(
-                  icon: Icons.info_outline_rounded,
-                  title: "About Thintava",
-                  subtitle: "Learn more about our app",
-                  onTap: () => _showAboutDialog(),
-                ),
-                _buildProfileOption(
-                  icon: Icons.logout_rounded,
-                  title: "Logout",
-                  subtitle: "Sign out of your account",
-                  onTap: () => logout(context),
-                  isDestructive: true,
-                ),
-              ]),
-              const SizedBox(height: 40),
-              _buildVersionInfo(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatsCard() {
-    final user = FirebaseAuth.instance.currentUser;
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(25),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFB703).withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: const Icon(
-                  Icons.analytics_rounded,
-                  color: Color(0xFFFFB703),
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Text(
-                "Your Stats",
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.black87,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(child: _buildStatItem("Total Orders", isLoadingStats ? "--" : totalOrders.toString(), Icons.receipt_long_rounded)),
-              Container(width: 1, height: 50, color: Colors.grey[200]),
-              Expanded(child: _buildStatItem("Total Spent", isLoadingStats ? "--" : "₹${totalSpent.toStringAsFixed(0)}", Icons.currency_rupee_rounded)),
-              Container(width: 1, height: 50, color: Colors.grey[200]),
-              Expanded(child: _buildStatItem("Status", user != null ? "Active" : "Inactive", Icons.circle_rounded)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatItem(String label, String value, IconData icon) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFB703).withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(
-            icon,
-            color: const Color(0xFFFFB703),
-            size: 20,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          value,
-          style: GoogleFonts.poppins(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            color: const Color(0xFFFFB703),
-          ),
-        ),
-        Text(
-          label,
-          style: GoogleFonts.poppins(
-            fontSize: 12,
-            color: Colors.grey[600],
-            fontWeight: FontWeight.w500,
-          ),
-          textAlign: TextAlign.center,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildProfileSection(String title, List<Widget> options) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: GoogleFonts.poppins(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            color: Colors.black87,
-          ),
-        ),
-        const SizedBox(height: 16),
-        ...options,
-      ],
-    );
-  }
-
-  Widget _buildProfileOption({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-    bool isDestructive = false,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(20),
-          child: Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: isDestructive 
-                  ? Colors.red.withOpacity(0.2) 
-                  : Colors.grey[200]!,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isDestructive 
-                      ? Colors.red.withOpacity(0.1)
-                      : const Color(0xFFFFB703).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                  child: Icon(
-                    icon,
-                    color: isDestructive ? Colors.red : const Color(0xFFFFB703),
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: isDestructive ? Colors.red : Colors.black87,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: GoogleFonts.poppins(
-                          fontSize: 13,
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(
-                  Icons.arrow_forward_ios_rounded,
-                  size: 16,
-                  color: Colors.grey[400],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildVersionInfo() {
-    return Center(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.grey[200]!),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.info_outline_rounded,
-              size: 16,
-              color: Colors.grey[500],
-            ),
-            const SizedBox(width: 8),
-            Text(
-              "Thintava v1.0.0",
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                color: Colors.grey[500],
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showEditProfileDialog() {
-    final user = FirebaseAuth.instance.currentUser;
-    final nameController = TextEditingController(text: user?.displayName ?? '');
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-        backgroundColor: Colors.white,
-        elevation: 20,
-        title: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFB703).withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.edit_rounded,
-                color: Color(0xFFFFB703),
-                size: 32,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Edit Profile',
-              style: GoogleFonts.poppins(
-                fontWeight: FontWeight.w800,
-                fontSize: 20,
-                color: Colors.black87,
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: InputDecoration(
-                labelText: 'Display Name',
-                labelStyle: GoogleFonts.poppins(fontWeight: FontWeight.w500),
-                prefixIcon: const Icon(Icons.person_rounded, color: Color(0xFFFFB703)),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: const BorderSide(color: Color(0xFFFFB703), width: 2),
-                ),
-                filled: true,
-                fillColor: Colors.grey[50],
-              ),
-              style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(15),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.email_rounded, color: Colors.grey[600]),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Email Address',
-                          style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        Text(
-                          user?.email ?? 'No email',
-                          style: GoogleFonts.poppins(
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black87,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.poppins(
-                color: Colors.grey[600],
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              _showComingSoon('Profile Update');
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFFB703),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              elevation: 0,
-            ),
-            child: Text(
-              'Save Changes',
-              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showComingSoon(String feature) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.construction_rounded, color: Colors.white),
-            const SizedBox(width: 12),
-            Text(
-              '$feature feature coming soon!',
-              style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
-            ),
-          ],
-        ),
-        backgroundColor: const Color(0xFFFFB703),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(15),
-        ),
-        margin: const EdgeInsets.all(16),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
-  void _showAboutDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            const Icon(Icons.restaurant_menu, color: Color(0xFFFFB703)),
-            const SizedBox(width: 8),
-            Text(
-              'About Thintava',
-              style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Thintava is your go-to food ordering app that brings delicious meals right to your doorstep.',
-              style: GoogleFonts.poppins(),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Features:',
-              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '• Browse our extensive menu\n• Real-time order tracking\n• Secure payments\n• Order history\n• Customer support',
-              style: GoogleFonts.poppins(fontSize: 14),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Version: 1.0.0',
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFFB703),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: Text('Close', style: GoogleFonts.poppins()),
-          ),
-        ],
       ),
     );
   }
