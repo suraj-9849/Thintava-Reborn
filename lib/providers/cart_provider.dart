@@ -1,16 +1,25 @@
-// lib/providers/cart_provider.dart - ENHANCED WITH ACTIVE ORDER CHECKING
+// lib/providers/cart_provider.dart - UPDATED WITH RESERVATION SUPPORT
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:canteen_app/services/stock_management_service.dart';
+import 'package:canteen_app/services/reservation_service.dart';
+import 'package:canteen_app/models/reservation_model.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:convert';
+import 'dart:async';
 
 class CartProvider extends ChangeNotifier {
   Map<String, int> _cart = {};
   bool _isValidatingStock = false;
   bool _hasActiveOrder = false;
   String? _activeOrderId;
+  
+  // Reservation-related fields
+  List<StockReservation> _activeReservations = [];
+  bool _isReserving = false;
+  CartReservationState _reservationState = CartReservationState();
+  StreamSubscription<List<StockReservation>>? _reservationSubscription;
   
   Map<String, int> get cart => Map.unmodifiable(_cart);
   int get itemCount => _cart.values.fold(0, (sum, quantity) => sum + quantity);
@@ -19,6 +28,18 @@ class CartProvider extends ChangeNotifier {
   bool get isValidatingStock => _isValidatingStock;
   bool get hasActiveOrder => _hasActiveOrder;
   String? get activeOrderId => _activeOrderId;
+  
+  // Reservation getters
+  List<StockReservation> get activeReservations => List.unmodifiable(_activeReservations);
+  bool get isReserving => _isReserving;
+  CartReservationState get reservationState => _reservationState;
+  bool get hasActiveReservations => _reservationState.hasActiveReservations;
+  
+  @override
+  void dispose() {
+    _reservationSubscription?.cancel();
+    super.dispose();
+  }
   
   // Check for active orders
   Future<bool> _checkActiveOrder() async {
@@ -49,6 +70,52 @@ class CartProvider extends ChangeNotifier {
     }
   }
   
+  // Start listening to reservation changes
+  void _startReservationListener() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    
+    _reservationSubscription?.cancel();
+    _reservationSubscription = ReservationService
+        .watchUserReservations(user.uid)
+        .listen((reservations) {
+      _activeReservations = reservations;
+      _updateReservationState();
+      notifyListeners();
+    });
+  }
+  
+  void _updateReservationState() {
+    if (_activeReservations.isEmpty) {
+      _reservationState = CartReservationState();
+      return;
+    }
+    
+    final activeReservations = _activeReservations.where((r) => r.isActive).toList();
+    
+    if (activeReservations.isEmpty) {
+      _reservationState = CartReservationState();
+      return;
+    }
+    
+    final earliestExpiry = activeReservations
+        .map((r) => r.expiresAt)
+        .reduce((a, b) => a.isBefore(b) ? a : b);
+    
+    final reservedQuantities = <String, int>{};
+    for (var reservation in activeReservations) {
+      reservedQuantities[reservation.itemId] = 
+          (reservedQuantities[reservation.itemId] ?? 0) + reservation.quantity;
+    }
+    
+    _reservationState = CartReservationState(
+      hasActiveReservations: true,
+      reservations: activeReservations,
+      earliestExpiry: earliestExpiry,
+      reservedQuantities: reservedQuantities,
+    );
+  }
+  
   // Add item to cart with stock validation and active order check
   Future<bool> addItem(String itemId, {int quantity = 1}) async {
     // Check for active order first
@@ -59,7 +126,7 @@ class CartProvider extends ChangeNotifier {
     
     final currentQuantity = _cart[itemId] ?? 0;
     
-    // Check if we can add this quantity
+    // Check if we can add this quantity (considering reservations)
     final canAdd = await StockManagementService.canAddToCart(
       itemId, 
       currentQuantity, 
@@ -117,7 +184,7 @@ class CartProvider extends ChangeNotifier {
       return true;
     }
     
-    // Check if the new quantity is valid
+    // Check if the new quantity is valid (considering reservations)
     final canAdd = await StockManagementService.canAddToCart(itemId, 0, quantity);
     
     if (canAdd) {
@@ -140,13 +207,130 @@ class CartProvider extends ChangeNotifier {
     print('Cart cleared');
   }
   
-  // Clear active order status (call after successful order placement or when order is completed)
+  // Clear active order status
   void clearActiveOrderStatus() {
     _hasActiveOrder = false;
     _activeOrderId = null;
     notifyListeners();
     print('Active order status cleared');
   }
+  
+  // ======================== RESERVATION METHODS ========================
+  
+  /// Reserve items in cart before payment
+  Future<ReservationResult> reserveCartItems({Duration? duration}) async {
+    if (_cart.isEmpty) {
+      return ReservationResult.failure('Cart is empty');
+    }
+    
+    // Check for active order first
+    if (await _checkActiveOrder()) {
+      return ReservationResult.failure('You have an active order. Complete it before placing a new one.');
+    }
+    
+    _isReserving = true;
+    notifyListeners();
+    
+    try {
+      final result = await ReservationService.reserveCartItems(_cart, reservationDuration: duration);
+      
+      if (result.success && result.reservations != null) {
+        _activeReservations = result.reservations!;
+        _updateReservationState();
+        print('✅ Successfully reserved ${result.reservations!.length} items');
+      }
+      
+      return result;
+    } catch (e) {
+      print('❌ Error reserving cart items: $e');
+      return ReservationResult.failure('Failed to reserve items: $e');
+    } finally {
+      _isReserving = false;
+      notifyListeners();
+    }
+  }
+  
+  /// Release current reservations
+  Future<bool> releaseReservations({ReservationStatus status = ReservationStatus.cancelled}) async {
+    if (_activeReservations.isEmpty) return true;
+    
+    final reservationIds = _activeReservations
+        .where((r) => r.isActive)
+        .map((r) => r.id)
+        .toList();
+    
+    if (reservationIds.isEmpty) return true;
+    
+    final success = await ReservationService.releaseReservations(reservationIds, status: status);
+    
+    if (success) {
+      _activeReservations.clear();
+      _updateReservationState();
+      notifyListeners();
+      print('✅ Released ${reservationIds.length} reservations');
+    }
+    
+    return success;
+  }
+  
+  /// Confirm reservations (called after successful payment)
+  Future<bool> confirmReservations(String orderId) async {
+    if (_activeReservations.isEmpty) return true;
+    
+    final reservationIds = _activeReservations
+        .where((r) => r.isActive)
+        .map((r) => r.id)
+        .toList();
+    
+    if (reservationIds.isEmpty) return true;
+    
+    final success = await ReservationService.confirmReservations(reservationIds, orderId);
+    
+    if (success) {
+      _activeReservations.clear();
+      _updateReservationState();
+      clearCart(); // Clear cart after successful confirmation
+      clearStorage();
+      notifyListeners();
+      print('✅ Confirmed ${reservationIds.length} reservations for order $orderId');
+    }
+    
+    return success;
+  }
+  
+  /// Check if cart can be reserved before payment
+  Future<Map<String, dynamic>> checkCartReservability() async {
+    if (_cart.isEmpty) {
+      return {'canReserve': false, 'error': 'Cart is empty'};
+    }
+    
+    // Check for active order
+    if (await _checkActiveOrder()) {
+      return {
+        'canReserve': false, 
+        'error': 'You have an active order. Complete it before placing a new one.'
+      };
+    }
+    
+    return await ReservationService.checkCartReservability(_cart);
+  }
+  
+  /// Get items that are currently reserved by this user
+  List<String> getReservedItemIds() {
+    return _reservationState.reservedQuantities.keys.toList();
+  }
+  
+  /// Check if specific item is reserved
+  bool isItemReserved(String itemId) {
+    return _reservationState.isItemReserved(itemId);
+  }
+  
+  /// Get reserved quantity for specific item
+  int getReservedQuantity(String itemId) {
+    return _reservationState.getReservedQuantity(itemId);
+  }
+  
+  // ======================== EXISTING METHODS (Updated) ========================
   
   // Get quantity of specific item
   int getQuantity(String itemId) {
@@ -225,10 +409,16 @@ class CartProvider extends ChangeNotifier {
     return await StockManagementService.checkStockAvailability(_cart);
   }
   
-  // Check if can proceed to checkout (no active order and cart not empty)
+  // Check if can proceed to checkout
   Future<bool> canProceedToCheckout() async {
     if (_cart.isEmpty) return false;
-    return !(await _checkActiveOrder());
+    
+    // Check for active order
+    if (await _checkActiveOrder()) return false;
+    
+    // Check if stock is available
+    final stockCheck = await checkStockAvailability();
+    return stockCheck.isValid;
   }
   
   // Save cart to local storage
@@ -256,6 +446,9 @@ class CartProvider extends ChangeNotifier {
         // Check for active order on load
         await _checkActiveOrder();
         
+        // Start reservation listener
+        _startReservationListener();
+        
         // Validate loaded cart against current stock
         final validationResult = await validateCartStock();
         if (!validationResult.isValid) {
@@ -267,11 +460,13 @@ class CartProvider extends ChangeNotifier {
         print('📱 No cart data found in storage');
         // Still check for active order even if no cart data
         await _checkActiveOrder();
+        _startReservationListener();
       }
     } catch (e) {
       print('❌ Error loading cart from storage: $e');
       _cart = {};
       await _checkActiveOrder();
+      _startReservationListener();
     }
     notifyListeners();
   }
@@ -321,13 +516,10 @@ class CartProvider extends ChangeNotifier {
     final currentCartQuantity = getQuantity(itemId);
     
     try {
-      // This is a simplified check - in reality you'd want to check against current stock
-      final canAdd = await StockManagementService.canAddToCart(itemId, currentCartQuantity, 1);
-      if (!canAdd) return 0;
-      
-      // For now, we'll return a high number if unlimited stock
-      // In a real implementation, you'd fetch the actual available stock
-      return 99; // Placeholder
+      // Get available stock (considering reservations)
+      final availableStock = await ReservationService.getAvailableStock(itemId);
+      final maxAddable = availableStock - currentCartQuantity;
+      return maxAddable > 0 ? maxAddable : 0;
     } catch (e) {
       print('Error getting max addable quantity: $e');
       return 0;
@@ -346,6 +538,7 @@ class CartProvider extends ChangeNotifier {
       print('Total items: $itemCount');
     }
     print('Active Order: $_hasActiveOrder');
+    print('Active Reservations: ${_activeReservations.length}');
     print('====================');
   }
   
@@ -385,7 +578,7 @@ class CartProvider extends ChangeNotifier {
             itemId: itemId,
             issueType: StockIssueType.lowStock,
             currentQuantity: quantity,
-            availableQuantity: null, // Would need to fetch actual quantity
+            availableQuantity: null,
             message: 'This item has low stock',
           ));
           break;
@@ -404,6 +597,27 @@ class CartProvider extends ChangeNotifier {
     });
     
     return issues;
+  }
+  
+  // Handle reservation expiry
+  void handleReservationExpiry() {
+    print('⏰ Reservations have expired');
+    _activeReservations.clear();
+    _updateReservationState();
+    notifyListeners();
+  }
+  
+  // Cleanup method (call on logout)
+  Future<void> cleanup() async {
+    await releaseReservations();
+    _reservationSubscription?.cancel();
+    _cart.clear();
+    _hasActiveOrder = false;
+    _activeOrderId = null;
+    _activeReservations.clear();
+    _updateReservationState();
+    await clearStorage();
+    notifyListeners();
   }
 }
 

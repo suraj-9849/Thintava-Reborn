@@ -1,12 +1,12 @@
-// lib/services/stock_management_service.dart
+// lib/services/stock_management_service.dart - UPDATED WITH RESERVATION SUPPORT
 import 'dart:ui';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:canteen_app/services/reservation_service.dart';
 
 class StockManagementService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  /// Check if items are available in required quantities
+  /// Check if items are available in required quantities (considering reservations)
   static Future<StockCheckResult> checkStockAvailability(Map<String, int> cartItems) async {
     List<String> outOfStockItems = [];
     List<String> insufficientStockItems = [];
@@ -22,21 +22,33 @@ class StockManagementService {
         if (doc.exists) {
           final data = doc.data()!;
           final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
-          final currentStock = data['quantity'] ?? 0;
+          final available = data['available'] ?? false;
           final itemName = data['name'] ?? 'Unknown Item';
           
-          availableStock[itemId] = currentStock;
-          
+          if (!available) {
+            outOfStockItems.add(itemName);
+            isValid = false;
+            continue;
+          }
+
           if (!hasUnlimitedStock) {
-            if (currentStock <= 0) {
+            final totalStock = data['quantity'] ?? 0;
+            final reservedQuantity = data['reservedQuantity'] ?? 0;
+            final availableQuantity = totalStock - reservedQuantity;
+            
+            availableStock[itemId] = availableQuantity;
+
+            if (availableQuantity <= 0) {
               outOfStockItems.add(itemName);
               isValid = false;
-            } else if (currentStock < requestedQuantity) {
+            } else if (availableQuantity < requestedQuantity) {
               insufficientStockItems.add(
-                '$itemName (Available: $currentStock, Requested: $requestedQuantity)'
+                '$itemName (Available: $availableQuantity, Requested: $requestedQuantity)'
               );
               isValid = false;
             }
+          } else {
+            availableStock[itemId] = 999999; // Unlimited stock
           }
         } else {
           outOfStockItems.add('Item not found');
@@ -56,8 +68,12 @@ class StockManagementService {
     );
   }
 
-  /// Update stock quantities after order placement
+  /// Update stock quantities after order placement (now handled by reservation confirmation)
   static Future<bool> updateStockAfterOrder(Map<String, int> orderItems) async {
+    // NOTE: This is now handled by ReservationService.confirmReservations()
+    // Keeping for backward compatibility
+    print('⚠️ updateStockAfterOrder called - consider using ReservationService.confirmReservations() instead');
+    
     try {
       WriteBatch batch = _firestore.batch();
       
@@ -65,7 +81,6 @@ class StockManagementService {
         final orderedQuantity = orderItems[itemId] ?? 0;
         final docRef = _firestore.collection('menuItems').doc(itemId);
         
-        // Get current data
         final doc = await docRef.get();
         if (doc.exists) {
           final data = doc.data()!;
@@ -75,7 +90,6 @@ class StockManagementService {
             final currentStock = data['quantity'] ?? 0;
             final newStock = currentStock - orderedQuantity;
             
-            // Update the stock quantity
             batch.update(docRef, {
               'quantity': newStock >= 0 ? newStock : 0,
               'updatedAt': FieldValue.serverTimestamp(),
@@ -86,7 +100,6 @@ class StockManagementService {
         }
       }
       
-      // Commit all updates atomically
       await batch.commit();
       print('✅ All stock quantities updated successfully');
       return true;
@@ -105,7 +118,6 @@ class StockManagementService {
         final restoredQuantity = orderItems[itemId] ?? 0;
         final docRef = _firestore.collection('menuItems').doc(itemId);
         
-        // Get current data
         final doc = await docRef.get();
         if (doc.exists) {
           final data = doc.data()!;
@@ -115,7 +127,6 @@ class StockManagementService {
             final currentStock = data['quantity'] ?? 0;
             final newStock = currentStock + restoredQuantity;
             
-            // Update the stock quantity
             batch.update(docRef, {
               'quantity': newStock,
               'updatedAt': FieldValue.serverTimestamp(),
@@ -126,7 +137,6 @@ class StockManagementService {
         }
       }
       
-      // Commit all updates atomically
       await batch.commit();
       print('✅ All stock quantities restored successfully');
       return true;
@@ -136,7 +146,7 @@ class StockManagementService {
     }
   }
 
-  /// Get current stock status for a single item
+  /// Get current stock status for a single item (considering reservations)
   static Future<ItemStockStatus> getItemStockStatus(String itemId) async {
     try {
       final doc = await _firestore.collection('menuItems').doc(itemId).get();
@@ -144,16 +154,18 @@ class StockManagementService {
       if (doc.exists) {
         final data = doc.data()!;
         final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
-        final quantity = data['quantity'] ?? 0;
+        final totalQuantity = data['quantity'] ?? 0;
+        final reservedQuantity = data['reservedQuantity'] ?? 0;
         final available = data['available'] ?? false;
+        final availableQuantity = totalQuantity - reservedQuantity;
         
         if (!available) {
           return ItemStockStatus.unavailable;
         } else if (hasUnlimitedStock) {
           return ItemStockStatus.unlimited;
-        } else if (quantity <= 0) {
+        } else if (availableQuantity <= 0) {
           return ItemStockStatus.outOfStock;
-        } else if (quantity <= 5) {
+        } else if (availableQuantity <= 5) {
           return ItemStockStatus.lowStock;
         } else {
           return ItemStockStatus.inStock;
@@ -167,22 +179,33 @@ class StockManagementService {
     }
   }
 
-  /// Get low stock items (for admin notifications)
+  /// Get low stock items (for admin notifications) - considering reservations
   static Future<List<Map<String, dynamic>>> getLowStockItems({int threshold = 5}) async {
     try {
       final snapshot = await _firestore
           .collection('menuItems')
           .where('hasUnlimitedStock', isEqualTo: false)
-          .where('quantity', isLessThanOrEqualTo: threshold)
           .where('available', isEqualTo: true)
           .get();
 
-      return snapshot.docs.map((doc) {
+      return snapshot.docs.where((doc) {
         final data = doc.data();
+        final totalQuantity = data['quantity'] ?? 0;
+        final reservedQuantity = data['reservedQuantity'] ?? 0;
+        final availableQuantity = totalQuantity - reservedQuantity;
+        return availableQuantity <= threshold;
+      }).map((doc) {
+        final data = doc.data();
+        final totalQuantity = data['quantity'] ?? 0;
+        final reservedQuantity = data['reservedQuantity'] ?? 0;
+        final availableQuantity = totalQuantity - reservedQuantity;
+        
         return {
           'id': doc.id,
           'name': data['name'] ?? 'Unknown Item',
-          'quantity': data['quantity'] ?? 0,
+          'totalQuantity': totalQuantity,
+          'reservedQuantity': reservedQuantity,
+          'availableQuantity': availableQuantity,
           'price': data['price'] ?? 0.0,
         };
       }).toList();
@@ -192,21 +215,28 @@ class StockManagementService {
     }
   }
 
-  /// Get out of stock items
+  /// Get out of stock items - considering reservations
   static Future<List<Map<String, dynamic>>> getOutOfStockItems() async {
     try {
       final snapshot = await _firestore
           .collection('menuItems')
           .where('hasUnlimitedStock', isEqualTo: false)
-          .where('quantity', isEqualTo: 0)
           .where('available', isEqualTo: true)
           .get();
 
-      return snapshot.docs.map((doc) {
+      return snapshot.docs.where((doc) {
+        final data = doc.data();
+        final totalQuantity = data['quantity'] ?? 0;
+        final reservedQuantity = data['reservedQuantity'] ?? 0;
+        final availableQuantity = totalQuantity - reservedQuantity;
+        return availableQuantity <= 0;
+      }).map((doc) {
         final data = doc.data();
         return {
           'id': doc.id,
           'name': data['name'] ?? 'Unknown Item',
+          'totalQuantity': data['quantity'] ?? 0,
+          'reservedQuantity': data['reservedQuantity'] ?? 0,
           'price': data['price'] ?? 0.0,
         };
       }).toList();
@@ -216,7 +246,7 @@ class StockManagementService {
     }
   }
 
-  /// Validate cart against current stock (real-time check)
+  /// Validate cart against current stock (real-time check with reservations)
   static Future<CartValidationResult> validateCart(Map<String, int> cartItems) async {
     List<String> itemsToRemove = [];
     Map<String, int> itemsToUpdate = {};
@@ -230,16 +260,18 @@ class StockManagementService {
         if (doc.exists) {
           final data = doc.data()!;
           final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
-          final currentStock = data['quantity'] ?? 0;
+          final totalStock = data['quantity'] ?? 0;
+          final reservedQuantity = data['reservedQuantity'] ?? 0;
           final available = data['available'] ?? false;
+          final availableStock = totalStock - reservedQuantity;
           
           if (!available) {
             itemsToRemove.add(itemId);
           } else if (!hasUnlimitedStock) {
-            if (currentStock <= 0) {
+            if (availableStock <= 0) {
               itemsToRemove.add(itemId);
-            } else if (currentStock < cartQuantity) {
-              itemsToUpdate[itemId] = currentStock;
+            } else if (availableStock < cartQuantity) {
+              itemsToUpdate[itemId] = availableStock;
             }
           }
         } else {
@@ -257,7 +289,7 @@ class StockManagementService {
     );
   }
 
-  /// Check if specific quantity can be added to cart
+  /// Check if specific quantity can be added to cart (considering reservations)
   static Future<bool> canAddToCart(String itemId, int currentCartQuantity, int additionalQuantity) async {
     try {
       final doc = await _firestore.collection('menuItems').doc(itemId).get();
@@ -265,8 +297,10 @@ class StockManagementService {
       if (doc.exists) {
         final data = doc.data()!;
         final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
-        final availableStock = data['quantity'] ?? 0;
+        final totalStock = data['quantity'] ?? 0;
+        final reservedQuantity = data['reservedQuantity'] ?? 0;
         final available = data['available'] ?? false;
+        final availableStock = totalStock - reservedQuantity;
         
         if (!available) return false;
         if (hasUnlimitedStock) return true;
@@ -277,6 +311,63 @@ class StockManagementService {
       return false;
     } catch (e) {
       print('Error checking if can add to cart: $e');
+      return false;
+    }
+  }
+
+  /// Get detailed stock information including reservations (for admin)
+  static Future<Map<String, dynamic>> getDetailedStockInfo(String itemId) async {
+    try {
+      final doc = await _firestore.collection('menuItems').doc(itemId).get();
+      
+      if (doc.exists) {
+        final data = doc.data()!;
+        final totalQuantity = data['quantity'] ?? 0;
+        final reservedQuantity = data['reservedQuantity'] ?? 0;
+        final availableQuantity = totalQuantity - reservedQuantity;
+        
+        return {
+          'itemId': itemId,
+          'name': data['name'] ?? 'Unknown Item',
+          'hasUnlimitedStock': data['hasUnlimitedStock'] ?? false,
+          'totalQuantity': totalQuantity,
+          'reservedQuantity': reservedQuantity,
+          'availableQuantity': availableQuantity,
+          'available': data['available'] ?? false,
+          'price': data['price'] ?? 0.0,
+          'lastStockUpdate': data['lastStockUpdate'],
+          'lastReservationUpdate': data['lastReservationUpdate'],
+        };
+      }
+      
+      return {'error': 'Item not found'};
+    } catch (e) {
+      print('Error getting detailed stock info: $e');
+      return {'error': 'Error retrieving stock info'};
+    }
+  }
+
+  /// Initialize reserved quantity field for existing items (migration helper)
+  static Future<bool> initializeReservedQuantityField() async {
+    try {
+      final snapshot = await _firestore.collection('menuItems').get();
+      WriteBatch batch = _firestore.batch();
+      
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        if (!data.containsKey('reservedQuantity')) {
+          batch.update(doc.reference, {
+            'reservedQuantity': 0,
+            'lastReservationUpdate': FieldValue.serverTimestamp(),
+          });
+        }
+      }
+      
+      await batch.commit();
+      print('✅ Initialized reservedQuantity field for all items');
+      return true;
+    } catch (e) {
+      print('❌ Error initializing reservedQuantity field: $e');
       return false;
     }
   }
@@ -342,24 +433,24 @@ extension ItemStockStatusExtension on ItemStockStatus {
     }
   }
 
-    Color get color {
-      switch (this) {
-        case ItemStockStatus.unlimited:
-          return Color(0xFF2196F3); // Blue
-        case ItemStockStatus.inStock:
-          return Color(0xFF4CAF50); // Green
-        case ItemStockStatus.lowStock:
-          return Color(0xFFFF9800); // Orange
-        case ItemStockStatus.outOfStock:
-          return Color(0xFFF44336); // Red
-        case ItemStockStatus.unavailable:
-          return Color(0xFF9E9E9E); // Grey
-        case ItemStockStatus.notFound:
-          return Color(0xFF9E9E9E); // Grey
-        case ItemStockStatus.error:
-          return Color(0xFFF44336); // Red
-      }
+  Color get color {
+    switch (this) {
+      case ItemStockStatus.unlimited:
+        return Color(0xFF2196F3); // Blue
+      case ItemStockStatus.inStock:
+        return Color(0xFF4CAF50); // Green
+      case ItemStockStatus.lowStock:
+        return Color(0xFFFF9800); // Orange
+      case ItemStockStatus.outOfStock:
+        return Color(0xFFF44336); // Red
+      case ItemStockStatus.unavailable:
+        return Color(0xFF9E9E9E); // Grey
+      case ItemStockStatus.notFound:
+        return Color(0xFF9E9E9E); // Grey
+      case ItemStockStatus.error:
+        return Color(0xFFF44336); // Red
     }
+  }
 
   bool get canAddToCart {
     switch (this) {

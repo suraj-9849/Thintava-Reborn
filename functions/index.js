@@ -50,6 +50,96 @@ exports.terminateStalePickups = functions.pubsub
     return null;
   });
 
+// 🚀 NEW: Clean up expired stock reservations
+exports.cleanupExpiredReservations = functions.pubsub
+  .schedule('every 1 minutes')
+  .onRun(async (context) => {
+    const db = admin.firestore();
+    const now = admin.firestore.Timestamp.now();
+    
+    try {
+      console.log('🧹 Starting expired reservations cleanup...');
+      
+      // Find expired reservations
+      const expiredReservationsQuery = await db.collection('stockReservations')
+        .where('status', '==', 'active')
+        .where('expiresAt', '<', now)
+        .get();
+
+      if (expiredReservationsQuery.empty) {
+        console.log('✅ No expired reservations found.');
+        return null;
+      }
+
+      console.log(`🔍 Found ${expiredReservationsQuery.size} expired reservations to clean up`);
+
+      // Process expired reservations in batches
+      const batch = db.batch();
+      const itemUpdates = new Map(); // Track quantity updates per item
+
+      expiredReservationsQuery.forEach(doc => {
+        const reservation = doc.data();
+        const reservationId = doc.id;
+        const itemId = reservation.itemId;
+        const quantity = reservation.quantity || 0;
+
+        // Update reservation status to 'expired'
+        batch.update(db.collection('stockReservations').doc(reservationId), {
+          status: 'expired',
+          releasedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        // Track item quantity updates
+        if (!itemUpdates.has(itemId)) {
+          itemUpdates.set(itemId, 0);
+        }
+        itemUpdates.set(itemId, itemUpdates.get(itemId) + quantity);
+
+        console.log(`📋 Marking reservation ${reservationId} as expired (item: ${itemId}, qty: ${quantity})`);
+      });
+
+      // Update menu items' reserved quantities
+      for (const [itemId, quantityToRelease] of itemUpdates) {
+        try {
+          const itemRef = db.collection('menuItems').doc(itemId);
+          const itemDoc = await itemRef.get();
+          
+          if (itemDoc.exists) {
+            const itemData = itemDoc.data();
+            const hasUnlimitedStock = itemData.hasUnlimitedStock || false;
+            
+            if (!hasUnlimitedStock) {
+              const currentReserved = itemData.reservedQuantity || 0;
+              const newReserved = Math.max(0, currentReserved - quantityToRelease);
+              
+              batch.update(itemRef, {
+                reservedQuantity: newReserved,
+                lastReservationUpdate: admin.firestore.FieldValue.serverTimestamp(),
+              });
+              
+              console.log(`📦 Releasing ${quantityToRelease} reserved quantity for item ${itemId} (${currentReserved} -> ${newReserved})`);
+            }
+          }
+        } catch (error) {
+          console.error(`❌ Error updating item ${itemId}:`, error);
+        }
+      }
+
+      // Commit all updates
+      await batch.commit();
+      console.log(`✅ Successfully cleaned up ${expiredReservationsQuery.size} expired reservations`);
+      
+      return {
+        cleanedReservations: expiredReservationsQuery.size,
+        itemsUpdated: itemUpdates.size,
+      };
+
+    } catch (error) {
+      console.error('❌ Error in cleanupExpiredReservations:', error);
+      return null;
+    }
+  });
+
 // 🚀 Enhanced function: Detailed notification to kitchen when new order is created
 exports.notifyKitchenOnNewOrder = functions.firestore
   .document('orders/{orderId}')
@@ -388,3 +478,122 @@ exports.notifyUserOrderExpiring = functions.pubsub
       return null;
     }
   });
+
+// 🚀 NEW: Initialize reservedQuantity field for existing menu items (one-time migration)
+exports.initializeReservedQuantityField = functions.https.onRequest(async (req, res) => {
+  // This is a one-time migration function - should be called manually
+  if (req.method !== 'POST') {
+    res.status(405).send('Method Not Allowed');
+    return;
+  }
+  
+  try {
+    console.log('🔄 Starting reservedQuantity field initialization...');
+    
+    const db = admin.firestore();
+    const menuItemsSnapshot = await db.collection('menuItems').get();
+    
+    if (menuItemsSnapshot.empty) {
+      res.status(200).json({ message: 'No menu items found', updated: 0 });
+      return;
+    }
+    
+    const batch = db.batch();
+    let updateCount = 0;
+    
+    menuItemsSnapshot.forEach(doc => {
+      const data = doc.data();
+      
+      // Only update if reservedQuantity field doesn't exist
+      if (!data.hasOwnProperty('reservedQuantity')) {
+        batch.update(doc.ref, {
+          reservedQuantity: 0,
+          lastReservationUpdate: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        updateCount++;
+        console.log(`📝 Adding reservedQuantity field to item: ${data.name || doc.id}`);
+      }
+    });
+    
+    if (updateCount > 0) {
+      await batch.commit();
+      console.log(`✅ Successfully initialized reservedQuantity for ${updateCount} items`);
+    } else {
+      console.log('✅ All items already have reservedQuantity field');
+    }
+    
+    res.status(200).json({ 
+      message: 'ReservedQuantity field initialization completed',
+      totalItems: menuItemsSnapshot.size,
+      updated: updateCount 
+    });
+    
+  } catch (error) {
+    console.error('❌ Error initializing reservedQuantity field:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+});
+
+// 🚀 NEW: Get reservation statistics (for admin monitoring)
+exports.getReservationStats = functions.https.onRequest(async (req, res) => {
+  try {
+    const db = admin.firestore();
+    const now = admin.firestore.Timestamp.now();
+    
+    // Get active reservations
+    const activeReservations = await db.collection('stockReservations')
+      .where('status', '==', 'active')
+      .get();
+    
+    // Get expired reservations from last 24 hours
+    const twentyFourHoursAgo = admin.firestore.Timestamp.fromMillis(now.toMillis() - 24 * 60 * 60 * 1000);
+    const recentExpired = await db.collection('stockReservations')
+      .where('status', '==', 'expired')
+      .where('expiresAt', '>', twentyFourHoursAgo)
+      .get();
+    
+    // Get confirmed reservations from last 24 hours
+    const recentConfirmed = await db.collection('stockReservations')
+      .where('status', '==', 'confirmed')
+      .where('confirmedAt', '>', twentyFourHoursAgo)
+      .get();
+    
+    // Calculate stats
+    const stats = {
+      active: {
+        count: activeReservations.size,
+        totalItems: 0,
+        expiringInNext5Min: 0,
+      },
+      last24Hours: {
+        expired: recentExpired.size,
+        confirmed: recentConfirmed.size,
+        totalItems: 0,
+      },
+      timestamp: new Date().toISOString(),
+    };
+    
+    // Count total items in active reservations
+    activeReservations.forEach(doc => {
+      const data = doc.data();
+      stats.active.totalItems += data.quantity || 0;
+      
+      // Check if expiring in next 5 minutes
+      if (data.expiresAt && data.expiresAt.toMillis() < (now.toMillis() + 5 * 60 * 1000)) {
+        stats.active.expiringInNext5Min++;
+      }
+    });
+    
+    // Count total items in recent confirmed reservations
+    recentConfirmed.forEach(doc => {
+      const data = doc.data();
+      stats.last24Hours.totalItems += data.quantity || 0;
+    });
+    
+    res.status(200).json(stats);
+    
+  } catch (error) {
+    console.error('❌ Error getting reservation stats:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
