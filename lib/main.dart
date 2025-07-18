@@ -8,7 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:provider/provider.dart'; // Add this import
+import 'package:provider/provider.dart';
 
 // Import modularized components
 import 'package:canteen_app/config/theme_config.dart';
@@ -17,7 +17,11 @@ import 'package:canteen_app/screens/splash/splash_screen.dart';
 import 'package:canteen_app/services/notification_service.dart';
 import 'package:canteen_app/utils/firebase_utils.dart';
 import 'package:canteen_app/services/auth_service.dart';
-import 'package:canteen_app/providers/cart_provider.dart'; // Add this import
+import 'package:canteen_app/providers/cart_provider.dart';
+
+// NEW: Import reservation models and services
+import 'package:canteen_app/models/reservation_model.dart';
+import 'package:canteen_app/services/reservation_service.dart';
 
 // Initialize global plugins
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = 
@@ -177,7 +181,32 @@ class _ThintavaAppState extends State<ThintavaApp> {
     //   // This will be called if the user is logged out on another device
     //   _handleForcedLogout();
     // });
-    print('🚀 Thintava App initialized - Session management temporarily disabled');
+    print('🚀 Thintava App initialized with Stock Reservation System');
+    
+    // NEW: Initialize stock management field for existing items (one-time migration)
+    _initializeStockReservationSystem();
+  }
+  
+  // NEW: Initialize reservation system
+  void _initializeStockReservationSystem() async {
+    try {
+      // Check if we need to initialize reservedQuantity field for existing items
+      final snapshot = await FirebaseFirestore.instance
+          .collection('menuItems')
+          .limit(1)
+          .get();
+      
+      if (snapshot.docs.isNotEmpty) {
+        final firstItem = snapshot.docs.first.data();
+        if (!firstItem.containsKey('reservedQuantity')) {
+          print('🔄 Initializing reservedQuantity field for existing menu items...');
+          // This would typically be done via Cloud Function, but we can check here
+          print('💡 Run the Cloud Function initializeReservedQuantityField to migrate existing items');
+        }
+      }
+    } catch (e) {
+      print('⚠️ Error checking stock reservation system: $e');
+    }
   }
   
   void _handleForcedLogout() {
@@ -234,7 +263,7 @@ class _ThintavaAppState extends State<ThintavaApp> {
         return ChangeNotifierProvider(
           create: (context) => CartProvider()..loadFromStorage(), // Load cart on app start
           child: MaterialApp(
-            title: 'Thintava',
+            title: 'Thintava - Smart Food Ordering',
             debugShowCheckedModeBanner: false,
             theme: _buildAppTheme(),
             navigatorKey: navigatorKey,

@@ -1,4 +1,4 @@
-// lib/services/reservation_service.dart
+// lib/services/reservation_service.dart - FIXED VERSION
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:canteen_app/models/reservation_model.dart';
@@ -12,7 +12,7 @@ class ReservationService {
   // Default reservation timeout (10 minutes)
   static const Duration defaultReservationDuration = Duration(minutes: 10);
 
-  /// Reserve stock for items in cart before payment
+  /// Reserve stock for items in cart before payment - FIXED VERSION
   static Future<ReservationResult> reserveCartItems(
     Map<String, int> cartItems, {
     Duration? reservationDuration,
@@ -32,8 +32,9 @@ class ReservationService {
       return await _firestore.runTransaction<ReservationResult>((transaction) async {
         List<StockReservation> reservations = [];
         Map<String, String> itemErrors = {};
+        Map<String, Map<String, dynamic>> itemsData = {}; // Store read data
 
-        // Step 1: Check availability for all items
+        // STEP 1: PERFORM ALL READS FIRST
         for (String itemId in cartItems.keys) {
           final requestedQuantity = cartItems[itemId] ?? 0;
           if (requestedQuantity <= 0) continue;
@@ -47,6 +48,8 @@ class ReservationService {
           }
 
           final itemData = itemDoc.data()!;
+          itemsData[itemId] = itemData; // Store the data for later use
+          
           final hasUnlimitedStock = itemData['hasUnlimitedStock'] ?? false;
           final available = itemData['available'] ?? false;
           
@@ -79,10 +82,13 @@ class ReservationService {
           return ReservationResult.failure(errorMessage, itemErrors: itemErrors);
         }
 
-        // Step 2: Create reservations and update reserved quantities
+        // STEP 2: PERFORM ALL WRITES USING STORED DATA
         for (String itemId in cartItems.keys) {
           final requestedQuantity = cartItems[itemId] ?? 0;
           if (requestedQuantity <= 0) continue;
+
+          // Use the previously read data instead of reading again
+          final itemData = itemsData[itemId]!;
 
           // Create reservation document
           final reservationId = _firestore.collection(_reservationsCollection).doc().id;
@@ -100,12 +106,10 @@ class ReservationService {
           transaction.set(reservationRef, reservation.toFirestore());
 
           // Update item's reserved quantity (only for non-unlimited stock items)
-          final itemRef = _firestore.collection(_menuItemsCollection).doc(itemId);
-          final itemDoc = await transaction.get(itemRef);
-          final itemData = itemDoc.data()!;
           final hasUnlimitedStock = itemData['hasUnlimitedStock'] ?? false;
 
           if (!hasUnlimitedStock) {
+            final itemRef = _firestore.collection(_menuItemsCollection).doc(itemId);
             final currentReserved = itemData['reservedQuantity'] ?? 0;
             transaction.update(itemRef, {
               'reservedQuantity': currentReserved + requestedQuantity,
@@ -125,13 +129,17 @@ class ReservationService {
     }
   }
 
-  /// Release reservations (on payment failure or manual cancellation)
+  /// Release reservations (on payment failure or manual cancellation) - FIXED VERSION
   static Future<bool> releaseReservations(
     List<String> reservationIds, {
     ReservationStatus status = ReservationStatus.cancelled,
   }) async {
     try {
       return await _firestore.runTransaction<bool>((transaction) async {
+        // STEP 1: READ ALL RESERVATIONS FIRST
+        Map<String, StockReservation> reservationsData = {};
+        Map<String, Map<String, dynamic>> itemsData = {};
+
         for (String reservationId in reservationIds) {
           final reservationRef = _firestore.collection(_reservationsCollection).doc(reservationId);
           final reservationDoc = await transaction.get(reservationRef);
@@ -139,37 +147,53 @@ class ReservationService {
           if (reservationDoc.exists) {
             final reservation = StockReservation.fromFirestore(reservationDoc);
             
-            // Only release if currently active
+            // Only process if currently active
             if (reservation.isActive) {
-              // Update reservation status
-              transaction.update(reservationRef, {
-                'status': status.name,
-                'releasedAt': FieldValue.serverTimestamp(),
-              });
-
-              // Update item's reserved quantity
-              final itemRef = _firestore.collection(_menuItemsCollection).doc(reservation.itemId);
-              final itemDoc = await transaction.get(itemRef);
+              reservationsData[reservationId] = reservation;
               
-              if (itemDoc.exists) {
-                final itemData = itemDoc.data()!;
-                final hasUnlimitedStock = itemData['hasUnlimitedStock'] ?? false;
+              // Also read the corresponding item document if we haven't already
+              if (!itemsData.containsKey(reservation.itemId)) {
+                final itemRef = _firestore.collection(_menuItemsCollection).doc(reservation.itemId);
+                final itemDoc = await transaction.get(itemRef);
                 
-                if (!hasUnlimitedStock) {
-                  final currentReserved = itemData['reservedQuantity'] ?? 0;
-                  final newReserved = (currentReserved - reservation.quantity).clamp(0, double.infinity).toInt();
-                  
-                  transaction.update(itemRef, {
-                    'reservedQuantity': newReserved,
-                    'lastReservationUpdate': FieldValue.serverTimestamp(),
-                  });
+                if (itemDoc.exists) {
+                  itemsData[reservation.itemId] = itemDoc.data()!;
                 }
               }
             }
           }
         }
 
-        print('✅ Released ${reservationIds.length} reservations');
+        // STEP 2: PERFORM ALL WRITES USING STORED DATA
+        for (String reservationId in reservationsData.keys) {
+          final reservation = reservationsData[reservationId]!;
+          
+          // Update reservation status
+          final reservationRef = _firestore.collection(_reservationsCollection).doc(reservationId);
+          transaction.update(reservationRef, {
+            'status': status.name,
+            'releasedAt': FieldValue.serverTimestamp(),
+          });
+
+          // Update item's reserved quantity using stored data
+          final itemData = itemsData[reservation.itemId];
+          if (itemData != null) {
+            final hasUnlimitedStock = itemData['hasUnlimitedStock'] ?? false;
+            
+            if (!hasUnlimitedStock) {
+              final itemRef = _firestore.collection(_menuItemsCollection).doc(reservation.itemId);
+              final currentReserved = itemData['reservedQuantity'] ?? 0;
+              final newReserved = (currentReserved - reservation.quantity).clamp(0, double.infinity).toInt();
+              
+              transaction.update(itemRef, {
+                'reservedQuantity': newReserved,
+                'lastReservationUpdate': FieldValue.serverTimestamp(),
+              });
+            }
+          }
+        }
+
+        print('✅ Released ${reservationsData.length} reservations');
         return true;
       });
     } catch (e) {
@@ -178,13 +202,17 @@ class ReservationService {
     }
   }
 
-  /// Confirm reservations (convert to order after successful payment)
+  /// Confirm reservations (convert to order after successful payment) - FIXED VERSION
   static Future<bool> confirmReservations(
     List<String> reservationIds,
     String orderId,
   ) async {
     try {
       return await _firestore.runTransaction<bool>((transaction) async {
+        // STEP 1: READ ALL RESERVATIONS FIRST
+        Map<String, StockReservation> reservationsData = {};
+        Map<String, Map<String, dynamic>> itemsData = {};
+
         for (String reservationId in reservationIds) {
           final reservationRef = _firestore.collection(_reservationsCollection).doc(reservationId);
           final reservationDoc = await transaction.get(reservationRef);
@@ -192,42 +220,58 @@ class ReservationService {
           if (reservationDoc.exists) {
             final reservation = StockReservation.fromFirestore(reservationDoc);
             
-            // Only confirm if currently active
+            // Only process if currently active
             if (reservation.isActive) {
-              // Update reservation status
-              transaction.update(reservationRef, {
-                'status': ReservationStatus.confirmed.name,
-                'orderId': orderId,
-                'confirmedAt': FieldValue.serverTimestamp(),
-              });
-
-              // Update actual stock quantity and reduce reserved quantity
-              final itemRef = _firestore.collection(_menuItemsCollection).doc(reservation.itemId);
-              final itemDoc = await transaction.get(itemRef);
+              reservationsData[reservationId] = reservation;
               
-              if (itemDoc.exists) {
-                final itemData = itemDoc.data()!;
-                final hasUnlimitedStock = itemData['hasUnlimitedStock'] ?? false;
+              // Also read the corresponding item document if we haven't already
+              if (!itemsData.containsKey(reservation.itemId)) {
+                final itemRef = _firestore.collection(_menuItemsCollection).doc(reservation.itemId);
+                final itemDoc = await transaction.get(itemRef);
                 
-                if (!hasUnlimitedStock) {
-                  final currentStock = itemData['quantity'] ?? 0;
-                  final currentReserved = itemData['reservedQuantity'] ?? 0;
-                  
-                  final newStock = (currentStock - reservation.quantity).clamp(0, double.infinity).toInt();
-                  final newReserved = (currentReserved - reservation.quantity).clamp(0, double.infinity).toInt();
-                  
-                  transaction.update(itemRef, {
-                    'quantity': newStock,
-                    'reservedQuantity': newReserved,
-                    'lastStockUpdate': FieldValue.serverTimestamp(),
-                  });
+                if (itemDoc.exists) {
+                  itemsData[reservation.itemId] = itemDoc.data()!;
                 }
               }
             }
           }
         }
 
-        print('✅ Confirmed ${reservationIds.length} reservations for order $orderId');
+        // STEP 2: PERFORM ALL WRITES USING STORED DATA
+        for (String reservationId in reservationsData.keys) {
+          final reservation = reservationsData[reservationId]!;
+          
+          // Update reservation status
+          final reservationRef = _firestore.collection(_reservationsCollection).doc(reservationId);
+          transaction.update(reservationRef, {
+            'status': ReservationStatus.confirmed.name,
+            'orderId': orderId,
+            'confirmedAt': FieldValue.serverTimestamp(),
+          });
+
+          // Update actual stock quantity and reduce reserved quantity using stored data
+          final itemData = itemsData[reservation.itemId];
+          if (itemData != null) {
+            final hasUnlimitedStock = itemData['hasUnlimitedStock'] ?? false;
+            
+            if (!hasUnlimitedStock) {
+              final itemRef = _firestore.collection(_menuItemsCollection).doc(reservation.itemId);
+              final currentStock = itemData['quantity'] ?? 0;
+              final currentReserved = itemData['reservedQuantity'] ?? 0;
+              
+              final newStock = (currentStock - reservation.quantity).clamp(0, double.infinity).toInt();
+              final newReserved = (currentReserved - reservation.quantity).clamp(0, double.infinity).toInt();
+              
+              transaction.update(itemRef, {
+                'quantity': newStock,
+                'reservedQuantity': newReserved,
+                'lastStockUpdate': FieldValue.serverTimestamp(),
+              });
+            }
+          }
+        }
+
+        print('✅ Confirmed ${reservationsData.length} reservations for order $orderId');
         return true;
       });
     } catch (e) {
