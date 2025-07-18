@@ -1,14 +1,13 @@
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
     id("com.google.gms.google-services")
 }
 
 android {
-    namespace = "com.thintava.app"  // ← Changed from "com.example.thintava_sip"
-    compileSdk = 35  // ← Changed from 34 to 35
+    namespace = "com.thintava.app"
+    compileSdk = 35
     ndkVersion = "27.0.12077973"
 
     compileOptions {
@@ -22,12 +21,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.thintava.app"  // ← Changed from "com.example.thintava_sip"
+        applicationId = "com.thintava.app"
         minSdk = 23
-        targetSdk = 35  // ← Changed from 34 to 35
+        targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        
         multiDexEnabled = true
     }
 
@@ -58,26 +56,20 @@ flutter {
 }
 
 dependencies {
-    // Core Library Desugaring
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
-
-    // Import the Firebase BoM
-    implementation(platform("com.google.firebase:firebase-bom:33.12.0"))
-
-    // Firebase dependencies
+    
+    implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
     implementation("com.google.firebase:firebase-messaging")
     implementation("com.google.firebase:firebase-storage")
-
-    // AndroidX Core library with specific version to fix notification issues
+    
+    // CRITICAL: Google Sign-In dependency
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
+    
     implementation("androidx.core:core:1.13.1")
     implementation("androidx.core:core-ktx:1.13.1")
-    
-    // Notification support
     implementation("androidx.work:work-runtime:2.9.0")
-    
-    // MultiDex support
     implementation("androidx.multidex:multidex:2.0.1")
 }

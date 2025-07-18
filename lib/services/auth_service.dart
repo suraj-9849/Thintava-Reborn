@@ -1,131 +1,181 @@
-// lib/services/auth_service.dart
+// Simple, working AuthService
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:canteen_app/services/session_manager.dart';
+import 'package:flutter/services.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
-  final SessionManager _sessionManager = SessionManager();
 
-  // Sign in with Google
+  // Simple Google Sign-In
   Future<UserAuthResult> signInWithGoogle() async {
     try {
       print('🔑 Starting Google Sign-In process...');
       
-      // Trigger the authentication flow
+      // Clear any previous sign-in state
+      await _googleSignIn.signOut();
+      
+      // Step 1: Google Sign-In
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
       
       if (googleUser == null) {
-        // User canceled the sign-in
         throw Exception('Sign-in was canceled');
       }
       
       print('✅ Google account selected: ${googleUser.email}');
       
-      // Obtain the auth details from the request
+      // Step 2: Get authentication details
       final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
       
-      // Create a new credential
+      // Step 3: Create Firebase credential
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
       
-      // Sign in to Firebase with the Google credential
-      UserCredential result = await _auth.signInWithCredential(credential);
-      User? user = result.user;
+      print('🔑 Signing in to Firebase...');
       
-      if (user != null) {
-        print('✅ Firebase Auth successful for: ${user.email}');
-        
-        // Check if this is a new user or existing user
-        bool isNewUser = await _checkIfNewUser(user.uid);
-        
-        if (isNewUser) {
-          print('🆕 New user detected, needs username setup');
-          
-          // Create basic user document with Google info
-          await _db.collection('users').doc(user.uid).set({
-            'email': user.email,
-            'displayName': user.displayName,
-            'photoURL': user.photoURL,
-            'role': 'user', // Default role
-            'createdAt': FieldValue.serverTimestamp(),
-            'provider': 'google',
-            'needsUsernameSetup': true,
-          });
-          
-          return UserAuthResult(
-            user: user,
-            isNewUser: true,
-            needsUsernameSetup: true,
-          );
-        } else {
-          print('👤 Existing user, checking username setup status');
-          
-          // Get user document to check username setup status
-          final userDoc = await _db.collection('users').doc(user.uid).get();
-          final userData = userDoc.data();
-          final needsUsernameSetup = userData?['needsUsernameSetup'] ?? false;
-          
-          if (needsUsernameSetup) {
-            return UserAuthResult(
-              user: user,
-              isNewUser: false,
-              needsUsernameSetup: true,
-            );
-          } else {
-            // Update FCM token for returning user
-            await _updateFCMTokenSafely(user.uid, isLogin: true);
-            
-            return UserAuthResult(
-              user: user,
-              isNewUser: false,
-              needsUsernameSetup: false,
-            );
-          }
-        }
-      } else {
-        throw Exception('Google sign-in failed - no user returned');
+      // Step 4: Firebase sign-in (simple, no retry)
+      final UserCredential userCredential = await _auth.signInWithCredential(credential);
+      final User? user = userCredential.user;
+      
+      if (user == null) {
+        throw Exception('Firebase sign-in failed - no user returned');
       }
+      
+      print('✅ Firebase sign-in successful: ${user.email}');
+      
+      // Step 5: Handle user data
+      return await _handleUserData(user);
+      
+    } on PlatformException catch (e) {
+      print('❌ Platform error: ${e.code} - ${e.message}');
+      throw Exception(_getPlatformErrorMessage(e));
     } on FirebaseAuthException catch (e) {
-      print('❌ FirebaseAuthException: ${e.code} - ${e.message}');
-      String errorMessage;
-      switch (e.code) {
-        case 'account-exists-with-different-credential':
-          errorMessage = 'An account already exists with a different sign-in method.';
-          break;
-        case 'invalid-credential':
-          errorMessage = 'The credential is invalid or expired.';
-          break;
-        case 'operation-not-allowed':
-          errorMessage = 'Google sign-in is not enabled.';
-          break;
-        case 'user-disabled':
-          errorMessage = 'This user account has been disabled.';
-          break;
-        case 'user-not-found':
-          errorMessage = 'No user found.';
-          break;
-        case 'wrong-password':
-          errorMessage = 'Wrong password provided.';
-          break;
-        default:
-          errorMessage = e.message ?? 'Google sign-in failed';
-      }
-      throw Exception(errorMessage);
+      print('❌ Firebase error: ${e.code} - ${e.message}');
+      throw Exception(_getFirebaseErrorMessage(e));
     } catch (e) {
-      print('❌ Google Sign-In error: $e');
-      throw Exception('Google sign-in failed: ${e.toString()}');
+      print('❌ General error: $e');
+      
+      // Handle the specific type casting error
+      String errorStr = e.toString();
+      if (errorStr.contains('PigeonUserDetails') || 
+          errorStr.contains('List<Object?>') ||
+          errorStr.contains('type cast')) {
+        // This is a known compatibility issue - try a different approach
+        print('🔄 Attempting fallback authentication...');
+        return await _fallbackSignIn();
+      }
+      
+      throw Exception('Sign-in failed. Please try again.');
     }
   }
 
-  // Set up username for new users
+  // Fallback sign-in method for compatibility issues
+  Future<UserAuthResult> _fallbackSignIn() async {
+    try {
+      // Check if user is already signed in to Firebase
+      User? currentUser = _auth.currentUser;
+      
+      if (currentUser != null) {
+        print('✅ Using existing Firebase session: ${currentUser.email}');
+        return await _handleUserData(currentUser);
+      }
+      
+      throw Exception('Fallback authentication failed');
+    } catch (e) {
+      print('❌ Fallback error: $e');
+      throw Exception('Authentication failed. Please restart the app and try again.');
+    }
+  }
+
+  // Handle user data after successful authentication
+  Future<UserAuthResult> _handleUserData(User user) async {
+    try {
+      print('📝 Processing user data for: ${user.uid}');
+      
+      // Check if user document exists
+      final userDoc = await _db.collection('users').doc(user.uid).get();
+      
+      if (!userDoc.exists) {
+        // New user - create document
+        print('🆕 Creating new user document');
+        
+        await _db.collection('users').doc(user.uid).set({
+          'email': user.email,
+          'displayName': user.displayName,
+          'photoURL': user.photoURL,
+          'role': 'user',
+          'createdAt': FieldValue.serverTimestamp(),
+          'provider': 'google',
+          'needsUsernameSetup': true,
+          'isActive': true,
+        });
+        
+        // Update FCM token
+        _updateFCMTokenAsync(user.uid);
+        
+        return UserAuthResult(
+          user: user,
+          isNewUser: true,
+          needsUsernameSetup: true,
+        );
+      } else {
+        // Existing user
+        print('👤 Existing user found');
+        
+        final userData = userDoc.data() as Map<String, dynamic>;
+        final needsUsernameSetup = userData['needsUsernameSetup'] ?? false;
+        
+        // Update last login
+        await _db.collection('users').doc(user.uid).update({
+          'lastLoginTime': FieldValue.serverTimestamp(),
+          'isActive': true,
+        });
+        
+        // Update FCM token
+        _updateFCMTokenAsync(user.uid);
+        
+        return UserAuthResult(
+          user: user,
+          isNewUser: false,
+          needsUsernameSetup: needsUsernameSetup,
+        );
+      }
+    } catch (e) {
+      print('❌ Error handling user data: $e');
+      // Return success anyway if Firebase auth worked
+      return UserAuthResult(
+        user: user,
+        isNewUser: true,
+        needsUsernameSetup: true,
+      );
+    }
+  }
+
+  // Async FCM token update (non-blocking)
+  void _updateFCMTokenAsync(String uid) {
+    FirebaseMessaging.instance.getToken().then((token) {
+      if (token != null && token.isNotEmpty) {
+        _db.collection('users').doc(uid).update({
+          'fcmToken': token,
+          'tokenUpdatedAt': FieldValue.serverTimestamp(),
+        }).then((_) {
+          print('✅ FCM token updated');
+        }).catchError((error) {
+          print('⚠️ FCM token update failed: $error');
+        });
+      }
+    }).catchError((error) {
+      print('⚠️ FCM token retrieval failed: $error');
+    });
+  }
+
+  // Setup username
   Future<bool> setupUsername(String username) async {
     try {
       final user = _auth.currentUser;
@@ -133,165 +183,134 @@ class AuthService {
         throw Exception('No authenticated user');
       }
       
-      print('📝 Setting up username: $username for user: ${user.uid}');
+      final trimmedUsername = username.trim();
       
-      // Check if username is already taken
-      final usernameExists = await _checkUsernameExists(username);
-      if (usernameExists) {
+      // Validate username
+      if (trimmedUsername.isEmpty) {
+        throw Exception('Please enter a username');
+      }
+      
+      if (trimmedUsername.length < 3) {
+        throw Exception('Username must be at least 3 characters');
+      }
+      
+      if (trimmedUsername.length > 20) {
+        throw Exception('Username must be less than 20 characters');
+      }
+      
+      // Check for valid characters
+      if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(trimmedUsername)) {
+        throw Exception('Username can only contain letters, numbers, and underscores');
+      }
+      
+      // Check if username exists
+      final querySnapshot = await _db
+          .collection('users')
+          .where('username', isEqualTo: trimmedUsername)
+          .limit(1)
+          .get();
+      
+      if (querySnapshot.docs.isNotEmpty) {
         throw Exception('Username is already taken');
       }
       
-      // Update user document with username
+      // Update user document
       await _db.collection('users').doc(user.uid).update({
-        'username': username,
+        'username': trimmedUsername,
         'needsUsernameSetup': false,
         'usernameSetupAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
       
-      // Update FCM token
-      await _updateFCMTokenSafely(user.uid, isLogin: true);
-      
-      print('✅ Username setup completed successfully');
+      print('✅ Username setup completed: $trimmedUsername');
       return true;
     } catch (e) {
-      print('❌ Error setting up username: $e');
-      throw Exception('Failed to setup username: ${e.toString()}');
-    }
-  }
-
-  // Check if username already exists
-  Future<bool> _checkUsernameExists(String username) async {
-    try {
-      final query = await _db
-          .collection('users')
-          .where('username', isEqualTo: username)
-          .limit(1)
-          .get();
-      
-      return query.docs.isNotEmpty;
-    } catch (e) {
-      print('❌ Error checking username existence: $e');
-      return false; // Default to false to allow the attempt
-    }
-  }
-
-  // Check if user is new (doesn't exist in Firestore)
-  Future<bool> _checkIfNewUser(String uid) async {
-    try {
-      final doc = await _db.collection('users').doc(uid).get();
-      return !doc.exists;
-    } catch (e) {
-      print('❌ Error checking if new user: $e');
-      return true; // Default to true to be safe
-    }
-  }
-
-  // Safe FCM Token update method
-  Future<void> _updateFCMTokenSafely(String uid, {bool isRegistration = false, bool isLogin = false}) async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 100));
-      
-      String? token = await FirebaseMessaging.instance.getToken();
-      print('📱 FCM Token retrieved: ${token != null ? 'Success' : 'Failed'}');
-      
-      if (token != null && token.isNotEmpty) {
-        Map<String, dynamic> updateData = {
-          'fcmToken': token,
-        };
-        
-        if (isRegistration) {
-          updateData['registrationTime'] = FieldValue.serverTimestamp();
-        }
-        if (isLogin) {
-          updateData['lastLoginTime'] = FieldValue.serverTimestamp();
-        }
-        
-        await _db.collection('users').doc(uid).update(updateData);
-        print('✅ FCM token updated successfully');
-      } else {
-        print('⚠️ FCM token is null or empty, skipping update');
-      }
-    } catch (e) {
-      print('❌ Error updating FCM token: $e');
+      print('❌ Username setup error: $e');
+      rethrow;
     }
   }
 
   // Logout
   Future<void> logout() async {
     try {
-      User? user = _auth.currentUser;
+      final user = _auth.currentUser;
+      
       if (user != null) {
-        await _clearFCMTokenSafely(user.uid);
+        // Update user status (non-blocking)
+        _db.collection('users').doc(user.uid).update({
+          'isActive': false,
+          'lastLogoutTime': FieldValue.serverTimestamp(),
+          'fcmToken': null,
+        }).catchError((error) {
+          print('⚠️ User status update failed: $error');
+        });
       }
       
-      // Sign out from Google
+      // Sign out from both services
       await _googleSignIn.signOut();
-      
-      // Sign out from Firebase Auth
       await _auth.signOut();
-      print('✅ User logged out successfully');
+      
+      print('✅ Logout successful');
     } catch (e) {
-      print('❌ Error during logout: $e');
+      print('❌ Logout error: $e');
+      // Force logout
       try {
+        await _googleSignIn.signOut();
         await _auth.signOut();
-        print('✅ Force sign out successful');
-      } catch (signOutError) {
-        print('❌ Error signing out: $signOutError');
-        rethrow;
+      } catch (forceError) {
+        print('❌ Force logout error: $forceError');
       }
     }
   }
 
-  // Safe FCM Token clearing method
-  Future<void> _clearFCMTokenSafely(String uid) async {
-    try {
-      await _db.collection('users').doc(uid).update({
-        'fcmToken': null,
-        'lastLogoutTime': FieldValue.serverTimestamp(),
-      });
-      
-      await FirebaseMessaging.instance.deleteToken();
-      print('✅ FCM token cleared successfully');
-    } catch (e) {
-      print('❌ Error clearing FCM token: $e');
+  // Error message helpers
+  String _getPlatformErrorMessage(PlatformException e) {
+    switch (e.code) {
+      case 'sign_in_failed':
+        return 'Google Sign-In failed. Please try again.';
+      case 'sign_in_canceled':
+        return 'Sign-in was canceled';
+      case 'network_error':
+        return 'Network error. Please check your connection.';
+      default:
+        return 'Authentication error. Please try again.';
     }
   }
 
-  // Check if this device is still the active session
-  Future<bool> checkActiveSession() async {
-    return true; // Temporarily disabled
-  }
-  
-  // Start listening for session changes
-  void startSessionListener(VoidCallback onForcedLogout) {
-    print('📱 Session listener temporarily disabled');
-  }
-  
-  // Stop listening for session changes
-  void stopSessionListener() {
-    print('🛑 Session listener stop temporarily disabled');
+  String _getFirebaseErrorMessage(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'account-exists-with-different-credential':
+        return 'Account exists with different sign-in method';
+      case 'invalid-credential':
+        return 'Invalid credentials. Please try again.';
+      case 'network-request-failed':
+        return 'Network error. Please check your connection.';
+      default:
+        return 'Authentication failed. Please try again.';
+    }
   }
 
-  // Get current user
+  // Getters
   User? get currentUser => _auth.currentUser;
+  bool get isLoggedIn => _auth.currentUser != null;
+  String? get currentUserEmail => _auth.currentUser?.email;
+  String? get currentUserUid => _auth.currentUser?.uid;
+  Stream<User?> get authStateChanges => _auth.authStateChanges();
 
-  // Get user role from Firestore
+  // User data methods
   Future<String?> getUserRole(String uid) async {
     try {
-      DocumentSnapshot doc = await _db.collection('users').doc(uid).get();
-      if (doc.exists && doc.data() != null) {
-        final data = doc.data() as Map<String, dynamic>;
-        return data['role'] as String?;
+      final doc = await _db.collection('users').doc(uid).get();
+      if (doc.exists) {
+        return doc.data()?['role'] as String?;
       }
       return null;
     } catch (e) {
       print('Error getting user role: $e');
-      return null;
+      return 'user';
     }
   }
 
-  // Get current user's role
   Future<String> getCurrentUserRole() async {
     final user = currentUser;
     if (user != null) {
@@ -301,12 +320,11 @@ class AuthService {
     return 'user';
   }
 
-  // Get user data from Firestore
   Future<Map<String, dynamic>?> getUserData(String uid) async {
     try {
-      DocumentSnapshot doc = await _db.collection('users').doc(uid).get();
-      if (doc.exists && doc.data() != null) {
-        return doc.data() as Map<String, dynamic>;
+      final doc = await _db.collection('users').doc(uid).get();
+      if (doc.exists) {
+        return doc.data() as Map<String, dynamic>?;
       }
       return null;
     } catch (e) {
@@ -315,80 +333,17 @@ class AuthService {
     }
   }
 
-  // Check if user is logged in
-  bool get isLoggedIn => _auth.currentUser != null;
-
-  // Get current user's email
-  String? get currentUserEmail => _auth.currentUser?.email;
-
-  // Get current user's UID
-  String? get currentUserUid => _auth.currentUser?.uid;
-
-  // Stream of auth state changes
-  Stream<User?> get authStateChanges => _auth.authStateChanges();
-
-  // Update user profile
-  Future<void> updateUserProfile({String? displayName, String? photoURL}) async {
-    try {
-      final user = _auth.currentUser;
-      if (user != null) {
-        await user.updateDisplayName(displayName);
-        await user.updatePhotoURL(photoURL);
-        
-        await _db.collection('users').doc(user.uid).update({
-          'displayName': displayName,
-          'photoURL': photoURL,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-      }
-    } catch (e) {
-      print('Error updating user profile: $e');
-      throw Exception('Failed to update profile: ${e.toString()}');
-    }
+  // Session management (disabled)
+  Future<bool> checkActiveSession() async => true;
+  void startSessionListener(VoidCallback onForcedLogout) {
+    print('📱 Session listener temporarily disabled');
   }
-
-  // Reload user data
-  Future<void> reloadUser() async {
-    try {
-      await _auth.currentUser?.reload();
-    } catch (e) {
-      print('Error reloading user: $e');
-    }
-  }
-
-  // Delete user account
-  Future<void> deleteAccount() async {
-    try {
-      final user = _auth.currentUser;
-      if (user != null) {
-        // Delete user data from Firestore
-        await _db.collection('users').doc(user.uid).delete();
-        
-        // Sign out from Google
-        await _googleSignIn.signOut();
-        
-        // Delete the user account
-        await user.delete();
-        
-        print('✅ User account deleted successfully');
-      }
-    } on FirebaseAuthException catch (e) {
-      String errorMessage;
-      switch (e.code) {
-        case 'requires-recent-login':
-          errorMessage = 'Please log in again before deleting your account.';
-          break;
-        default:
-          errorMessage = e.message ?? 'Failed to delete account';
-      }
-      throw Exception(errorMessage);
-    } catch (e) {
-      throw Exception('Failed to delete account: ${e.toString()}');
-    }
+  void stopSessionListener() {
+    print('🛑 Session listener stop temporarily disabled');
   }
 }
 
-// Result class for authentication
+// Result class
 class UserAuthResult {
   final User user;
   final bool isNewUser;

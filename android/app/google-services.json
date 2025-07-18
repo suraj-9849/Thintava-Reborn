@@ -12,7 +12,28 @@
           "package_name": "com.thintava.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "626390741302-0ci9rousabbkr0nogbdk63ej2nqdsb6l.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.thintava.app",
+            "certificate_hash": "9a3f0f12c9d204043297c96d93bd4d47e583f1b2"
+          }
+        },
+        {
+          "client_id": "626390741302-k46rhl2j79lrf9l0nj75a1imt4u8o974.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.thintava.app",
+            "certificate_hash": "15d08f0da766505c71bee15d69080e9f73d4120a"
+          }
+        },
+        {
+          "client_id": "626390741302-hdos41tejvoohcstsmgbree6fevk7sp6.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCjCCnzeERfNzxA28wz0dVdbC6Cs6b8R_U"
@@ -20,7 +41,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "626390741302-hdos41tejvoohcstsmgbree6fevk7sp6.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "626390741302-2lh4d340v3ibita3ei154nkkg5sikvms.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.thintava"
+              }
+            }
+          ]
         }
       }
     }
