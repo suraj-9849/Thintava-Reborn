@@ -1,4 +1,4 @@
-// lib/screens/user/user_home.dart - Enhanced Modern UI
+// lib/screens/user/user_home.dart - Enhanced with Active Order Checking
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -143,6 +143,21 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
     _searchController.dispose();
     _authService.stopSessionListener();
     super.dispose();
+  }
+
+  // Active order checking stream
+  Stream<DocumentSnapshot?> _getActiveOrderStream() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const Stream.empty();
+    
+    return FirebaseFirestore.instance
+        .collection('orders')
+        .where('userId', isEqualTo: user.uid)
+        .where('status', whereIn: ['Placed', 'Preparing', 'Ready', 'Pick Up'])
+        .orderBy('timestamp', descending: true)
+        .limit(1)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.isNotEmpty ? snapshot.docs.first : null);
   }
 
   @override
@@ -335,6 +350,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
           child: Column(
             children: [
               _buildEnhancedHeader(),
+              _buildActiveOrderBanner(),
               _buildSearchAndFilter(),
               _buildMenuSection(),
             ],
@@ -362,6 +378,123 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
           ),
         ],
       ),
+    );
+  }
+
+  // NEW: Active order banner
+  Widget _buildActiveOrderBanner() {
+    return StreamBuilder<DocumentSnapshot?>(
+      stream: _getActiveOrderStream(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SizedBox();
+        }
+        
+        if (!snapshot.hasData || snapshot.data == null) {
+          return const SizedBox();
+        }
+        
+        final orderDoc = snapshot.data!;
+        final orderData = orderDoc.data() as Map<String, dynamic>;
+        final status = orderData['status'] ?? 'Unknown';
+        final orderId = orderDoc.id;
+        final shortOrderId = orderId.length > 6 ? orderId.substring(0, 6) : orderId;
+        
+        // Update cart provider to know about active order
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final cartProvider = Provider.of<CartProvider>(context, listen: false);
+          cartProvider.clearActiveOrderStatus(); // This will trigger the check
+        });
+        
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  _currentIndex = 1; // Switch to tracking tab
+                });
+                _pageController.animateToPage(
+                  1,
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeInOutCubic,
+                );
+              },
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFFFB703), width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFB703).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.restaurant_menu,
+                        color: Color(0xFFFFB703),
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "Active Order #$shortOrderId",
+                            style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            "Status: $status",
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            "Complete this order before placing a new one",
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: Colors.orange[700],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.arrow_forward_ios,
+                      color: Color(0xFFFFB703),
+                      size: 16,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -926,6 +1059,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
     return Consumer<CartProvider>(
       builder: (context, cartProvider, child) {
         int cartQuantity = cartProvider.getQuantity(id);
+        bool hasActiveOrder = cartProvider.hasActiveOrder;
         
         return TweenAnimationBuilder<double>(
           duration: Duration(milliseconds: 300 + (index * 100)),
@@ -955,13 +1089,13 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _buildFoodImage(imageUrl, isVeg, isOutOfStock, isUnavailable),
+                            _buildFoodImage(imageUrl, isVeg, isOutOfStock, isUnavailable, hasActiveOrder),
                             const SizedBox(width: 16),
                             Expanded(
                               child: _buildFoodDetails(
                                 name, price, description, quantity, 
                                 hasUnlimitedStock, available, isOutOfStock, 
-                                isUnavailable, cartProvider, id, cartQuantity
+                                isUnavailable, cartProvider, id, cartQuantity, hasActiveOrder
                               ),
                             ),
                           ],
@@ -969,6 +1103,8 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
                       ),
                       if (isOutOfStock && !hasUnlimitedStock)
                         _buildOutOfStockOverlay(),
+                      if (hasActiveOrder)
+                        _buildActiveOrderOverlay(),
                     ],
                   ),
                 ),
@@ -980,7 +1116,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildFoodImage(String? imageUrl, bool isVeg, bool isOutOfStock, bool isUnavailable) {
+  Widget _buildFoodImage(String? imageUrl, bool isVeg, bool isOutOfStock, bool isUnavailable, bool hasActiveOrder) {
     return Stack(
       children: [
         Container(
@@ -1000,7 +1136,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
             borderRadius: BorderRadius.circular(16),
             child: imageUrl != null && imageUrl.isNotEmpty
               ? ColorFiltered(
-                  colorFilter: (isOutOfStock || isUnavailable)
+                  colorFilter: (isOutOfStock || isUnavailable || hasActiveOrder)
                     ? const ColorFilter.mode(Colors.grey, BlendMode.saturation)
                     : const ColorFilter.mode(Colors.transparent, BlendMode.multiply),
                   child: Image.network(
@@ -1045,7 +1181,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
 
   Widget _buildFoodDetails(String name, double price, String description, 
       int quantity, bool hasUnlimitedStock, bool available, bool isOutOfStock, 
-      bool isUnavailable, CartProvider cartProvider, String id, int cartQuantity) {
+      bool isUnavailable, CartProvider cartProvider, String id, int cartQuantity, bool hasActiveOrder) {
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1059,14 +1195,16 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
                 style: GoogleFonts.poppins(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
-                  color: (isOutOfStock || isUnavailable) ? Colors.grey[600] : Colors.black87,
-                  decoration: (isOutOfStock || isUnavailable) ? TextDecoration.lineThrough : null,
+                  color: (isOutOfStock || isUnavailable || hasActiveOrder) ? Colors.grey[600] : Colors.black87,
+                  decoration: (isOutOfStock || isUnavailable || hasActiveOrder) ? TextDecoration.lineThrough : null,
                 ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            if (isUnavailable)
+            if (hasActiveOrder)
+              _buildStatusBadge('Order Active', Colors.orange)
+            else if (isUnavailable)
               _buildStatusBadge('Unavailable', Colors.grey)
             else if (isOutOfStock)
               _buildStatusBadge('Out of Stock', Colors.red)
@@ -1083,7 +1221,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
             description,
             style: GoogleFonts.poppins(
               fontSize: 14,
-              color: (isOutOfStock || isUnavailable) ? Colors.grey[500] : Colors.grey[600],
+              color: (isOutOfStock || isUnavailable || hasActiveOrder) ? Colors.grey[500] : Colors.grey[600],
               height: 1.4,
             ),
             maxLines: 2,
@@ -1099,15 +1237,17 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
           style: GoogleFonts.poppins(
             fontSize: 22,
             fontWeight: FontWeight.w800,
-            color: (isOutOfStock || isUnavailable) ? Colors.grey[500] : const Color(0xFFFFB703),
-            decoration: (isOutOfStock || isUnavailable) ? TextDecoration.lineThrough : null,
+            color: (isOutOfStock || isUnavailable || hasActiveOrder) ? Colors.grey[500] : const Color(0xFFFFB703),
+            decoration: (isOutOfStock || isUnavailable || hasActiveOrder) ? TextDecoration.lineThrough : null,
           ),
         ),
         
         const SizedBox(height: 16),
         
         // Add to cart controls
-        if (!isOutOfStock && !isUnavailable)
+        if (hasActiveOrder)
+          _buildActiveOrderButton()
+        else if (!isOutOfStock && !isUnavailable)
           _buildCartControls(cartProvider, id, cartQuantity)
         else
           _buildUnavailableButton(isUnavailable),
@@ -1169,7 +1309,11 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
               onTap: () async {
                 final success = await cartProvider.addItem(id);
                 if (!success) {
-                  _showStockError();
+                  if (cartProvider.hasActiveOrder) {
+                    _showActiveOrderError();
+                  } else {
+                    _showStockError();
+                  }
                 }
               },
             ),
@@ -1183,7 +1327,11 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
           onPressed: () async {
             final success = await cartProvider.addItem(id);
             if (!success) {
-              _showStockError();
+              if (cartProvider.hasActiveOrder) {
+                _showActiveOrderError();
+              } else {
+                _showStockError();
+              }
             }
           },
           style: ElevatedButton.styleFrom(
@@ -1218,6 +1366,37 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
           color: const Color(0xFFFFB703),
           size: 20,
         ),
+      ),
+    );
+  }
+
+  Widget _buildActiveOrderButton() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.orange[100],
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.orange.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.restaurant_menu,
+            color: Colors.orange[700],
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'Complete Active Order First',
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              color: Colors.orange[700],
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1288,6 +1467,53 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
     );
   }
 
+  Widget _buildActiveOrderOverlay() {
+    return Positioned.fill(
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.9),
+          borderRadius: BorderRadius.circular(25),
+        ),
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.orange,
+              borderRadius: BorderRadius.circular(25),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.orange.withOpacity(0.3),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.restaurant_menu,
+                  color: Colors.white,
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'ACTIVE ORDER',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildImagePlaceholder() {
     return Container(
       decoration: BoxDecoration(
@@ -1325,6 +1551,45 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
           borderRadius: BorderRadius.circular(15),
         ),
         margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  void _showActiveOrderError() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.restaurant_menu, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Complete your active order before adding new items',
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.orange,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(15),
+        ),
+        margin: const EdgeInsets.all(16),
+        action: SnackBarAction(
+          label: 'Track Order',
+          textColor: Colors.white,
+          onPressed: () {
+            setState(() {
+              _currentIndex = 1;
+            });
+            _pageController.animateToPage(
+              1,
+              duration: const Duration(milliseconds: 400),
+              curve: Curves.easeInOutCubic,
+            );
+          },
+        ),
       ),
     );
   }

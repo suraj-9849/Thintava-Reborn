@@ -1,21 +1,62 @@
-// lib/providers/cart_provider.dart - ENHANCED WITH STOCK MANAGEMENT
+// lib/providers/cart_provider.dart - ENHANCED WITH ACTIVE ORDER CHECKING
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:canteen_app/services/stock_management_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:convert';
 
 class CartProvider extends ChangeNotifier {
   Map<String, int> _cart = {};
   bool _isValidatingStock = false;
+  bool _hasActiveOrder = false;
+  String? _activeOrderId;
   
   Map<String, int> get cart => Map.unmodifiable(_cart);
   int get itemCount => _cart.values.fold(0, (sum, quantity) => sum + quantity);
   bool get isEmpty => _cart.isEmpty;
   List<String> get itemIds => _cart.keys.toList();
   bool get isValidatingStock => _isValidatingStock;
+  bool get hasActiveOrder => _hasActiveOrder;
+  String? get activeOrderId => _activeOrderId;
   
-  // Add item to cart with stock validation
+  // Check for active orders
+  Future<bool> _checkActiveOrder() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return false;
+      
+      final activeOrderQuery = await FirebaseFirestore.instance
+          .collection('orders')
+          .where('userId', isEqualTo: user.uid)
+          .where('status', whereIn: ['Placed', 'Preparing', 'Ready', 'Pick Up'])
+          .limit(1)
+          .get();
+      
+      if (activeOrderQuery.docs.isNotEmpty) {
+        _hasActiveOrder = true;
+        _activeOrderId = activeOrderQuery.docs.first.id;
+        print('🚫 Active order found: $_activeOrderId');
+        return true;
+      } else {
+        _hasActiveOrder = false;
+        _activeOrderId = null;
+        return false;
+      }
+    } catch (e) {
+      print('❌ Error checking active order: $e');
+      return false;
+    }
+  }
+  
+  // Add item to cart with stock validation and active order check
   Future<bool> addItem(String itemId, {int quantity = 1}) async {
+    // Check for active order first
+    if (await _checkActiveOrder()) {
+      notifyListeners();
+      return false;
+    }
+    
     final currentQuantity = _cart[itemId] ?? 0;
     
     // Check if we can add this quantity
@@ -61,8 +102,14 @@ class CartProvider extends ChangeNotifier {
     }
   }
   
-  // Update item quantity with stock validation
+  // Update item quantity with stock validation and active order check
   Future<bool> updateQuantity(String itemId, int quantity) async {
+    // Check for active order first
+    if (await _checkActiveOrder()) {
+      notifyListeners();
+      return false;
+    }
+    
     if (quantity <= 0) {
       _cart.remove(itemId);
       await _saveToStorage();
@@ -93,6 +140,14 @@ class CartProvider extends ChangeNotifier {
     print('Cart cleared');
   }
   
+  // Clear active order status (call after successful order placement or when order is completed)
+  void clearActiveOrderStatus() {
+    _hasActiveOrder = false;
+    _activeOrderId = null;
+    notifyListeners();
+    print('Active order status cleared');
+  }
+  
   // Get quantity of specific item
   int getQuantity(String itemId) {
     return _cart[itemId] ?? 0;
@@ -113,10 +168,21 @@ class CartProvider extends ChangeNotifier {
     return total;
   }
   
-  // Validate entire cart against current stock
+  // Validate entire cart against current stock and active order
   Future<CartValidationResult> validateCartStock() async {
     _isValidatingStock = true;
     notifyListeners();
+    
+    // Check for active order first
+    if (await _checkActiveOrder()) {
+      _isValidatingStock = false;
+      notifyListeners();
+      return CartValidationResult(
+        isValid: false,
+        itemsToRemove: [],
+        itemsToUpdate: {},
+      );
+    }
     
     final result = await StockManagementService.validateCart(_cart);
     
@@ -159,6 +225,12 @@ class CartProvider extends ChangeNotifier {
     return await StockManagementService.checkStockAvailability(_cart);
   }
   
+  // Check if can proceed to checkout (no active order and cart not empty)
+  Future<bool> canProceedToCheckout() async {
+    if (_cart.isEmpty) return false;
+    return !(await _checkActiveOrder());
+  }
+  
   // Save cart to local storage
   Future<void> _saveToStorage() async {
     try {
@@ -181,6 +253,9 @@ class CartProvider extends ChangeNotifier {
         final Map<String, dynamic> decoded = json.decode(cartJson);
         _cart = decoded.map((key, value) => MapEntry(key, value as int));
         
+        // Check for active order on load
+        await _checkActiveOrder();
+        
         // Validate loaded cart against current stock
         final validationResult = await validateCartStock();
         if (!validationResult.isValid) {
@@ -190,10 +265,13 @@ class CartProvider extends ChangeNotifier {
         print('📱 Cart loaded from storage: $_cart');
       } else {
         print('📱 No cart data found in storage');
+        // Still check for active order even if no cart data
+        await _checkActiveOrder();
       }
     } catch (e) {
       print('❌ Error loading cart from storage: $e');
       _cart = {};
+      await _checkActiveOrder();
     }
     notifyListeners();
   }
@@ -235,6 +313,11 @@ class CartProvider extends ChangeNotifier {
   
   // Get maximum addable quantity for an item
   Future<int> getMaxAddableQuantity(String itemId) async {
+    // Check for active order first
+    if (await _checkActiveOrder()) {
+      return 0;
+    }
+    
     final currentCartQuantity = getQuantity(itemId);
     
     try {
@@ -262,12 +345,25 @@ class CartProvider extends ChangeNotifier {
       });
       print('Total items: $itemCount');
     }
+    print('Active Order: $_hasActiveOrder');
     print('====================');
   }
   
   // Get items that have stock issues
   Future<List<CartStockIssue>> getCartStockIssues() async {
     List<CartStockIssue> issues = [];
+    
+    // Check for active order first
+    if (await _checkActiveOrder()) {
+      issues.add(CartStockIssue(
+        itemId: 'active_order',
+        issueType: StockIssueType.unavailable,
+        currentQuantity: 0,
+        availableQuantity: 0,
+        message: 'You have an active order. Complete it before placing a new one.',
+      ));
+      return issues;
+    }
     
     final stockStatuses = await getCartItemsStockStatus();
     

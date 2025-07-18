@@ -20,7 +20,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   // User stats
   int totalOrders = 0;
   double totalSpent = 0.0;
-  double avgRating = 4.8;
   bool isLoading = true;
 
   @override
@@ -307,18 +306,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                   icon: Icons.currency_rupee,
                                   value: "₹${totalSpent.toStringAsFixed(0)}",
                                   label: "Spent",
-                                ),
-                              ),
-                              Container(
-                                width: 1,
-                                height: 50,
-                                color: Colors.grey[300],
-                              ),
-                              Expanded(
-                                child: _buildStatItem(
-                                  icon: Icons.star_outline,
-                                  value: "${avgRating}★",
-                                  label: "Rating",
                                 ),
                               ),
                             ],

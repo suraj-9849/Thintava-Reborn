@@ -1,10 +1,11 @@
-// lib/screens/user/cart_screen.dart
+// lib/screens/user/cart_screen.dart - Enhanced with Active Order Checking
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:canteen_app/providers/cart_provider.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({Key? key}) : super(key: key);
@@ -63,13 +64,55 @@ class _CartScreenState extends State<CartScreen> {
     });
   }
 
-  void startPayment() {
+  // Check for active order before payment
+  Future<bool> _checkActiveOrderBeforePayment() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return false;
+      
+      final activeOrderQuery = await FirebaseFirestore.instance
+          .collection('orders')
+          .where('userId', isEqualTo: user.uid)
+          .where('status', whereIn: ['Placed', 'Preparing', 'Ready', 'Pick Up'])
+          .limit(1)
+          .get();
+      
+      return activeOrderQuery.docs.isNotEmpty;
+    } catch (e) {
+      print('Error checking active order: $e');
+      return false;
+    }
+  }
+
+  void startPayment() async {
     final cartProvider = Provider.of<CartProvider>(context, listen: false);
     
     if (cartProvider.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Your cart is empty")),
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.shopping_cart_outlined, color: Colors.white),
+              const SizedBox(width: 12),
+              Text(
+                "Your cart is empty",
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          margin: const EdgeInsets.all(16),
+        ),
       );
+      return;
+    }
+
+    // Check for active order before payment
+    final hasActiveOrder = await _checkActiveOrderBeforePayment();
+    if (hasActiveOrder) {
+      _showActiveOrderDialog();
       return;
     }
 
@@ -93,9 +136,132 @@ class _CartScreenState extends State<CartScreen> {
     } catch (e) {
       debugPrint("Error: $e");
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Payment error: ${e.toString()}")),
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  "Payment error: ${e.toString()}",
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          margin: const EdgeInsets.all(16),
+        ),
       );
     }
+  }
+
+  void _showActiveOrderDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.restaurant_menu,
+                color: Colors.orange,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Active Order Found',
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'You already have an active order. Please complete your current order before placing a new one.',
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Track your current order to see its status and pickup time.',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Stay Here',
+              style: GoogleFonts.poppins(
+                color: Colors.grey[600],
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context); // Close dialog
+              Navigator.pushNamedAndRemoveUntil(
+                context,
+                '/track',
+                (route) => route.settings.name == '/user/user-home',
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFB703),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            ),
+            icon: const Icon(Icons.track_changes, size: 18),
+            label: Text(
+              'Track Order',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _handlePaymentSuccess(PaymentSuccessResponse response) async {
@@ -117,34 +283,35 @@ class _CartScreenState extends State<CartScreen> {
       final cartProvider = Provider.of<CartProvider>(context, listen: false);
       final List<Map<String, dynamic>> orderItems = [];
 
-cartProvider.cart.forEach((itemId, qty) {
-  final itemData = menuMap[itemId];
-  if (itemData != null) {
-    orderItems.add({
-      'id': itemId,
-      'name': itemData['name'] ?? 'Unknown',
-      'price': itemData['price'] ?? 0,
-      'quantity': qty,
-      'subtotal': (itemData['price'] ?? 0) * qty,
-    });
-  }
-});
+      cartProvider.cart.forEach((itemId, qty) {
+        final itemData = menuMap[itemId];
+        if (itemData != null) {
+          orderItems.add({
+            'id': itemId,
+            'name': itemData['name'] ?? 'Unknown',
+            'price': itemData['price'] ?? 0,
+            'quantity': qty,
+            'subtotal': (itemData['price'] ?? 0) * qty,
+          });
+        }
+      });
 
-final order = {
-  'userId': user.uid,
-  'userEmail': user.email,
-  'items': orderItems,
-  'status': 'Placed',
-  'timestamp': Timestamp.now(),
-  'total': total,
-  'paymentId': response.paymentId,
-  'paymentStatus': 'success',
-};
+      final order = {
+        'userId': user.uid,
+        'userEmail': user.email,
+        'items': orderItems,
+        'status': 'Placed',
+        'timestamp': Timestamp.now(),
+        'total': total,
+        'paymentId': response.paymentId,
+        'paymentStatus': 'success',
+      };
 
       await FirebaseFirestore.instance.collection('orders').add(order);
       
-      // Clear the cart using provider
+      // Clear the cart and active order status using provider
       cartProvider.clearCart();
+      cartProvider.clearActiveOrderStatus();
       
       // Close loading dialog
       Navigator.pop(context);
@@ -175,7 +342,7 @@ final order = {
               Expanded(
                 child: Text(
                   "Order Placed Successfully!",
-                  style: TextStyle(
+                  style: GoogleFonts.poppins(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                     color: Colors.green.shade700,
@@ -200,23 +367,23 @@ final order = {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       "Your order has been placed successfully and will be prepared shortly.",
-                      style: TextStyle(fontSize: 16),
+                      style: GoogleFonts.poppins(fontSize: 16),
                     ),
                     const SizedBox(height: 12),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
+                        Text(
                           "Order Total:",
-                          style: TextStyle(fontWeight: FontWeight.w600),
+                          style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
                         ),
                         Text(
                           "₹${total.toStringAsFixed(2)}",
-                          style: const TextStyle(
+                          style: GoogleFonts.poppins(
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFFFFB703),
+                            color: const Color(0xFFFFB703),
                             fontSize: 16,
                           ),
                         ),
@@ -226,9 +393,9 @@ final order = {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           "Payment ID:",
-                          style: TextStyle(
+                          style: GoogleFonts.poppins(
                             fontWeight: FontWeight.w600,
                             fontSize: 12,
                           ),
@@ -267,7 +434,7 @@ final order = {
                     Expanded(
                       child: Text(
                         "You can track your order status and get updates on preparation time.",
-                        style: TextStyle(
+                        style: GoogleFonts.poppins(
                           fontSize: 13,
                           color: Colors.blue.shade700,
                         ),
@@ -284,13 +451,16 @@ final order = {
                 Navigator.pop(context); // Close success dialog
                 // Navigate to order tracking
                 Navigator.pushNamedAndRemoveUntil(
-  context, 
-  '/track',
-  (route) => route.settings.name == '/user/user-home',
-);
+                  context, 
+                  '/track',
+                  (route) => route.settings.name == '/user/user-home',
+                );
               },
               icon: const Icon(Icons.track_changes),
-              label: const Text("TRACK ORDER"),
+              label: Text(
+                "TRACK ORDER",
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+              ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFFFB703),
                 foregroundColor: Colors.white,
@@ -309,8 +479,22 @@ final order = {
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Error processing order: ${e.toString()}"),
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  "Error processing order: ${e.toString()}",
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
           backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          margin: const EdgeInsets.all(16),
         ),
       );
     }
@@ -319,19 +503,49 @@ final order = {
   void _handlePaymentError(PaymentFailureResponse response) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text("Payment failed! Tap to retry."),
+        content: Row(
+          children: [
+            const Icon(Icons.payment, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                "Payment failed! Tap to retry.",
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
         action: SnackBarAction(
           label: 'Retry',
+          textColor: Colors.white,
           onPressed: startPayment,
         ),
         backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        margin: const EdgeInsets.all(16),
       ),
     );
   }
 
   void _handleExternalWallet(ExternalWalletResponse response) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("External Wallet selected.")),
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.account_balance_wallet, color: Colors.white),
+            const SizedBox(width: 12),
+            Text(
+              "External Wallet selected.",
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFFFFB703),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        margin: const EdgeInsets.all(16),
+      ),
     );
   }
 
@@ -348,9 +562,9 @@ final order = {
           backgroundColor: Colors.grey[100],
           appBar: AppBar(
             backgroundColor: const Color(0xFFFFB703),
-            title: const Text(
+            title: Text(
               "Your Cart",
-              style: TextStyle(
+              style: GoogleFonts.poppins(
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
               ),
@@ -363,28 +577,35 @@ final order = {
                     showDialog(
                       context: context,
                       builder: (context) => AlertDialog(
-                        title: const Text("Clear Cart"),
-                        content: const Text("Are you sure you want to clear your cart?"),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        title: Text(
+                          "Clear Cart",
+                          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+                        ),
+                        content: Text(
+                          "Are you sure you want to clear your cart?",
+                          style: GoogleFonts.poppins(),
+                        ),
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.pop(context),
-                            child: const Text("CANCEL"),
+                            child: Text("CANCEL", style: GoogleFonts.poppins()),
                           ),
                           TextButton(
                             onPressed: () {
                               Navigator.pop(context);
                               cartProvider.clearCart();
                             },
-                            child: const Text("CLEAR"),
+                            child: Text("CLEAR", style: GoogleFonts.poppins()),
                           ),
                         ],
                       ),
                     );
                   },
                   icon: const Icon(Icons.delete_outline, color: Colors.white),
-                  label: const Text(
+                  label: Text(
                     "Clear",
-                    style: TextStyle(color: Colors.white),
+                    style: GoogleFonts.poppins(color: Colors.white),
                   ),
                 ),
             ],
@@ -397,6 +618,65 @@ final order = {
                 )
               : Column(
                   children: [
+                    // Active Order Warning Banner
+                    if (cartProvider.hasActiveOrder)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade100,
+                          border: Border.all(color: Colors.orange.shade300),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.warning_amber_rounded,
+                              color: Colors.orange.shade700,
+                              size: 24,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    "Active Order Detected",
+                                    style: GoogleFonts.poppins(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.orange.shade700,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  Text(
+                                    "Complete your current order before placing a new one.",
+                                    style: GoogleFonts.poppins(
+                                      color: Colors.orange.shade700,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.pushNamedAndRemoveUntil(
+                                  context,
+                                  '/track',
+                                  (route) => route.settings.name == '/user/user-home',
+                                );
+                              },
+                              child: Text(
+                                "Track",
+                                style: GoogleFonts.poppins(
+                                  color: Colors.orange.shade700,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    
                     // Order summary header
                     Container(
                       color: const Color(0xFFFFB703),
@@ -408,9 +688,9 @@ final order = {
                             color: Colors.white,
                           ),
                           const SizedBox(width: 8),
-                          const Text(
+                          Text(
                             "ORDER SUMMARY",
-                            style: TextStyle(
+                            style: GoogleFonts.poppins(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
                             ),
@@ -418,7 +698,7 @@ final order = {
                           const Spacer(),
                           Text(
                             "${cartProvider.itemCount} item${cartProvider.itemCount != 1 ? 's' : ''}",
-                            style: const TextStyle(
+                            style: GoogleFonts.poppins(
                               color: Colors.white,
                             ),
                           ),
@@ -441,7 +721,7 @@ final order = {
                                   const SizedBox(height: 16),
                                   Text(
                                     "Your cart is empty",
-                                    style: TextStyle(
+                                    style: GoogleFonts.poppins(
                                       fontSize: 18,
                                       fontWeight: FontWeight.bold,
                                       color: Colors.grey[600],
@@ -459,7 +739,10 @@ final order = {
                                         borderRadius: BorderRadius.circular(20),
                                       ),
                                     ),
-                                    child: const Text("Browse Menu"),
+                                    child: Text(
+                                      "Browse Menu",
+                                      style: GoogleFonts.poppins(),
+                                    ),
                                   ),
                                 ],
                               ),
@@ -557,17 +840,17 @@ final order = {
                                             children: [
                                               Text(
                                                 item['name'] ?? 'Item',
-                                                style: const TextStyle(
+                                                style: GoogleFonts.poppins(
                                                   fontSize: 16,
                                                   fontWeight: FontWeight.bold,
-                                                  color: Color(0xFF023047),
+                                                  color: const Color(0xFF023047),
                                                 ),
                                               ),
                                               const SizedBox(height: 4),
                                               if (item['description'] != null)
                                                 Text(
                                                   item['description'],
-                                                  style: TextStyle(
+                                                  style: GoogleFonts.poppins(
                                                     fontSize: 12,
                                                     color: Colors.grey[600],
                                                   ),
@@ -580,17 +863,17 @@ final order = {
                                                 children: [
                                                   Text(
                                                     "₹${price.toStringAsFixed(2)} × $quantity",
-                                                    style: TextStyle(
+                                                    style: GoogleFonts.poppins(
                                                       fontSize: 14,
                                                       color: Colors.grey[700],
                                                     ),
                                                   ),
                                                   Text(
                                                     "₹${(price * quantity).toStringAsFixed(2)}",
-                                                    style: const TextStyle(
+                                                    style: GoogleFonts.poppins(
                                                       fontSize: 16,
                                                       fontWeight: FontWeight.bold,
-                                                      color: Color(0xFFFFB703),
+                                                      color: const Color(0xFFFFB703),
                                                     ),
                                                   ),
                                                 ],
@@ -632,7 +915,7 @@ final order = {
                                                           ),
                                                           child: Text(
                                                             quantity.toString(),
-                                                            style: const TextStyle(
+                                                            style: GoogleFonts.poppins(
                                                               color: Colors.white,
                                                               fontWeight: FontWeight.bold,
                                                             ),
@@ -701,12 +984,12 @@ final order = {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             // Bill details
-                            const Text(
+                            Text(
                               "BILL DETAILS",
-                              style: TextStyle(
+                              style: GoogleFonts.poppins(
                                 fontSize: 14,
                                 fontWeight: FontWeight.bold,
-                                color: Color(0xFF023047),
+                                color: const Color(0xFF023047),
                               ),
                             ),
                             const SizedBox(height: 8),
@@ -715,14 +998,14 @@ final order = {
                               children: [
                                 Text(
                                   "Item Total",
-                                  style: TextStyle(
+                                  style: GoogleFonts.poppins(
                                     fontSize: 14,
                                     color: Colors.grey[700],
                                   ),
                                 ),
                                 Text(
                                   "₹${total.toStringAsFixed(2)}",
-                                  style: const TextStyle(
+                                  style: GoogleFonts.poppins(
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -735,14 +1018,14 @@ final order = {
                               children: [
                                 Text(
                                   "GST",
-                                  style: TextStyle(
+                                  style: GoogleFonts.poppins(
                                     fontSize: 14,
                                     color: Colors.grey[700],
                                   ),
                                 ),
-                                const Text(
+                                Text(
                                   "Included",
-                                  style: TextStyle(
+                                  style: GoogleFonts.poppins(
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -755,20 +1038,20 @@ final order = {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Text(
+                                Text(
                                   "Grand Total",
-                                  style: TextStyle(
+                                  style: GoogleFonts.poppins(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
-                                    color: Color(0xFF023047),
+                                    color: const Color(0xFF023047),
                                   ),
                                 ),
                                 Text(
                                   "₹${total.toStringAsFixed(2)}",
-                                  style: const TextStyle(
+                                  style: GoogleFonts.poppins(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
-                                    color: Color(0xFFFFB703),
+                                    color: const Color(0xFFFFB703),
                                   ),
                                 ),
                               ],
@@ -780,9 +1063,11 @@ final order = {
                               width: double.infinity,
                               height: 50,
                               child: ElevatedButton(
-                                onPressed: startPayment,
+                                onPressed: cartProvider.hasActiveOrder ? null : startPayment,
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFFFFB703),
+                                  backgroundColor: cartProvider.hasActiveOrder 
+                                    ? Colors.grey[400] 
+                                    : const Color(0xFFFFB703),
                                   foregroundColor: Colors.white,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
@@ -792,11 +1077,17 @@ final order = {
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    const Icon(Icons.payment),
+                                    Icon(
+                                      cartProvider.hasActiveOrder 
+                                        ? Icons.block 
+                                        : Icons.payment,
+                                    ),
                                     const SizedBox(width: 8),
                                     Text(
-                                      "Place Order • ₹${total.toStringAsFixed(2)}",
-                                      style: const TextStyle(
+                                      cartProvider.hasActiveOrder
+                                        ? "Complete Active Order First"
+                                        : "Place Order • ₹${total.toStringAsFixed(2)}",
+                                      style: GoogleFonts.poppins(
                                         fontSize: 16,
                                         fontWeight: FontWeight.bold,
                                       ),
