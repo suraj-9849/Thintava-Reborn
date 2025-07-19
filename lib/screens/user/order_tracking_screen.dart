@@ -48,13 +48,31 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
     super.dispose();
   }
 
+  // FIXED: Updated status mapping to match your backend statuses
+  String _getDisplayStatus(String status) {
+    switch (status) {
+      case 'Placed':
+        return 'Placed';
+      case 'Cooking':
+        return 'Cooking';
+      case 'Cooked': // Backend uses "Cooked"
+        return 'Cooked';
+      case 'Pick Up':
+        return 'Pick Up';
+      case 'PickedUp':
+        return 'Completed';
+      default:
+        return status;
+    }
+  }
+
   Color _getStatusColor(String status) {
     switch (status) {
       case 'Placed':
         return Colors.blue;
-      case 'Preparing':
+      case 'Cooking':
         return Colors.orange;
-      case 'Ready':
+      case 'Cooked':
         return Colors.green;
       case 'Pick Up':
         return const Color(0xFFFFB703);
@@ -69,9 +87,9 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
     switch (status) {
       case 'Placed':
         return Icons.receipt_long;
-      case 'Preparing':
+      case 'Cooking':
         return Icons.restaurant;
-      case 'Ready':
+      case 'Cooked':
         return Icons.check_circle;
       case 'Pick Up':
         return Icons.delivery_dining;
@@ -80,6 +98,15 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
       default:
         return Icons.help_outline;
     }
+  }
+
+  // FIXED: Updated progress logic to handle correct status flow
+  bool _isStatusActive(String currentStatus, String checkStatus) {
+    final statusOrder = ['Placed', 'Cooking', 'Cooked', 'Pick Up', 'PickedUp'];
+    final currentIndex = statusOrder.indexOf(currentStatus);
+    final checkIndex = statusOrder.indexOf(checkStatus);
+    
+    return currentIndex >= checkIndex && checkIndex != -1;
   }
 
   void _handleTimerExpired() {
@@ -179,6 +206,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
           
           final data = doc.data()! as Map<String, dynamic>;
           final status = data['status'] ?? 'Unknown';
+          final displayStatus = _getDisplayStatus(status);
           final total = data['total'] ?? 0.0;
           final timestamp = data['timestamp'] as Timestamp?;
           final orderDate = timestamp != null 
@@ -188,7 +216,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
           final statusColor = _getStatusColor(status);
           final statusIcon = _getStatusIcon(status);
           
-          // Process items data - FIXED TO HANDLE LIST FORMAT
+          // Process items data
           final itemsList = data['items'] as List<dynamic>?;
           final orderItems = <Map<String, dynamic>>[];
           
@@ -213,455 +241,465 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
           if (status == 'Terminated') {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               Navigator.pushAndRemoveUntil(
-  context,
-  MaterialPageRoute(
-    builder: (context) => const UserHome(initialIndex: 2), // History tab
-  ),
-  (route) => false,
-);
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const UserHome(initialIndex: 2), // History tab
+                ),
+                (route) => false,
+              );
             });
           }
 
-          return SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Status Banner
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 30),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFB703),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 10,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
-                              blurRadius: 8,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          statusIcon,
-                          size: 40,
-                          color: statusColor,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        "Order Status",
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        status,
-                        style: GoogleFonts.poppins(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                
-                // Order Progress
-                Container(
-                  padding: const EdgeInsets.all(16),
+          return Column(
+            children: [
+              // FIXED: Made content scrollable but keep pickup button visible
+              Expanded(
+                child: SingleChildScrollView(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Order Status timeline
+                      // Status Banner
                       Container(
-                        margin: const EdgeInsets.symmetric(vertical: 24),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 30),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFB703),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 10,
+                              offset: const Offset(0, 5),
+                            ),
+                          ],
+                        ),
+                        child: Column(
                           children: [
-                            _buildStatusStep(
-                              'Placed', 
-                              Icons.receipt_long, 
-                              status == 'Placed' || status == 'Preparing' || status == 'Ready' || status == 'Pick Up' || status == 'PickedUp' || status == 'Completed'
-                            ),
-                            Expanded(
-                              child: Container(
-                                height: 3,
-                                color: status == 'Placed' || status == 'Unknown' 
-                                  ? Colors.grey[300] 
-                                  : const Color(0xFFFFB703),
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.1),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Icon(
+                                statusIcon,
+                                size: 40,
+                                color: statusColor,
                               ),
                             ),
-                            _buildStatusStep(
-                              'Preparing', 
-                              Icons.restaurant, 
-                              status == 'Preparing' || status == 'Ready' || status == 'Pick Up' || status == 'PickedUp' || status == 'Completed'
-                            ),
-                            Expanded(
-                              child: Container(
-                                height: 3,
-                                color: status == 'Placed' || status == 'Preparing' || status == 'Unknown' 
-                                  ? Colors.grey[300] 
-                                  : const Color(0xFFFFB703),
+                            const SizedBox(height: 16),
+                            Text(
+                              "Order Status",
+                              style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                color: Colors.white,
                               ),
                             ),
-                            _buildStatusStep(
-                              'Ready', 
-                              Icons.check_circle, 
-                              status == 'Ready' || status == 'Pick Up' || status == 'PickedUp' || status == 'Completed'
-                            ),
-                            Expanded(
-                              child: Container(
-                                height: 3,
-                                color: status == 'Placed' || status == 'Preparing' || status == 'Ready' || status == 'Unknown' 
-                                  ? Colors.grey[300] 
-                                  : const Color(0xFFFFB703),
+                            const SizedBox(height: 4),
+                            Text(
+                              displayStatus,
+                              style: GoogleFonts.poppins(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
                               ),
-                            ),
-                            _buildStatusStep(
-                              'Pick Up', 
-                              Icons.delivery_dining, 
-                              status == 'Pick Up' || status == 'PickedUp' || status == 'Completed'
                             ),
                           ],
                         ),
                       ),
                       
-                      // Timer widget - only show if status is "Pick Up" and we have pickup time
-                      if (status == 'Pick Up' && pickedUpTime != null)
-                        Center(
-                          child: OrderExpiryTimer(
-                            pickedUpTime: pickedUpTime.toDate(),
-                            onExpired: _handleTimerExpired,
-                            expiryDuration: const Duration(minutes: 5),
-                          ),
-                        ),
-                      
-                      const SizedBox(height: 24),
-                      
-                      // Order details card
-                      Card(
-                        elevation: 2,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      // Order Progress
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // FIXED: Order Status timeline with correct progress logic
+                            Container(
+                              margin: const EdgeInsets.symmetric(vertical: 24),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                                 children: [
-                                  Text(
-                                    "Order Details",
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: const Color(0xFF023047),
+                                  _buildStatusStep(
+                                    'Placed', 
+                                    Icons.receipt_long, 
+                                    _isStatusActive(status, 'Placed')
+                                  ),
+                                  Expanded(
+                                    child: Container(
+                                      height: 3,
+                                      color: _isStatusActive(status, 'Cooking') 
+                                        ? const Color(0xFFFFB703) 
+                                        : Colors.grey[300],
                                     ),
                                   ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFFFB703).withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(20),
+                                  _buildStatusStep(
+                                    'Cooking', 
+                                    Icons.restaurant, 
+                                    _isStatusActive(status, 'Cooking')
+                                  ),
+                                  Expanded(
+                                    child: Container(
+                                      height: 3,
+                                      color: _isStatusActive(status, 'Cooked') 
+                                        ? const Color(0xFFFFB703) 
+                                        : Colors.grey[300],
                                     ),
-                                    child: Text(
-                                      "₹${total.toStringAsFixed(2)}",
-                                      style: GoogleFonts.poppins(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color: const Color(0xFFFFB703),
-                                      ),
+                                  ),
+                                  _buildStatusStep(
+                                    'Cooked', 
+                                    Icons.check_circle, 
+                                    _isStatusActive(status, 'Cooked')
+                                  ),
+                                  Expanded(
+                                    child: Container(
+                                      height: 3,
+                                      color: _isStatusActive(status, 'Pick Up') 
+                                        ? const Color(0xFFFFB703) 
+                                        : Colors.grey[300],
                                     ),
+                                  ),
+                                  _buildStatusStep(
+                                    'Pick Up', 
+                                    Icons.delivery_dining, 
+                                    _isStatusActive(status, 'Pick Up')
                                   ),
                                 ],
-                              ),
-                              const Divider(height: 24),
-                              Text(
-                                "Items",
-                                style: GoogleFonts.poppins(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: const Color(0xFF023047),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              
-                              // Items list - UPDATED TO HANDLE LIST FORMAT
-                              if (orderItems.isEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
-                                  child: Text(
-                                    "No items in this order",
-                                    style: GoogleFonts.poppins(
-                                      color: Colors.grey[600],
-                                      fontStyle: FontStyle.italic,
-                                    ),
-                                  ),
-                                )
-                              else
-                                ListView.builder(
-                                  shrinkWrap: true,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  itemCount: orderItems.length,
-                                  itemBuilder: (context, index) {
-                                    final item = orderItems[index];
-                                    return Padding(
-                                      padding: const EdgeInsets.symmetric(vertical: 8),
-                                      child: Row(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.all(8),
-                                            decoration: BoxDecoration(
-                                              color: Colors.grey[100],
-                                              borderRadius: BorderRadius.circular(8),
-                                            ),
-                                            child: Text(
-                                              "${item['quantity']}x",
-                                              style: GoogleFonts.poppins(
-                                                fontWeight: FontWeight.bold,
-                                                color: const Color(0xFF023047),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  item['name'] ?? 'Unknown Item',
-                                                  style: GoogleFonts.poppins(
-                                                    fontWeight: FontWeight.w500,
-                                                  ),
-                                                ),
-                                                if (item['price'] != null && item['price'] is num)
-                                                  Text(
-                                                    "₹${item['price'].toStringAsFixed(2)} per item",
-                                                    style: GoogleFonts.poppins(
-                                                      fontSize: 12,
-                                                      color: Colors.grey[600],
-                                                    ),
-                                                  ),
-                                              ],
-                                            ),
-                                          ),
-                                          Text(
-                                            "₹${item['subtotal'] != null && item['subtotal'] is num ? item['subtotal'].toStringAsFixed(2) : ((item['price'] ?? 0) * (item['quantity'] ?? 1)).toStringAsFixed(2)}",
-                                            style: GoogleFonts.poppins(
-                                              fontWeight: FontWeight.bold,
-                                              color: const Color(0xFF023047),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  },
-                                ),
-                              
-                              const Divider(height: 24),
-                              
-                              // Order time details
-                              Row(
-                                children: [
-                                  const Icon(Icons.access_time, color: Colors.grey, size: 18),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    "Ordered on: ${_formatDate(orderDate)}",
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 14,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              
-                              const SizedBox(height: 8),
-                              
-                              // Order ID
-                              Row(
-                                children: [
-                                  const Icon(Icons.assignment, color: Colors.grey, size: 18),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    "Order ID: ${doc.id.substring(0, 8)}...",
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 14,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      
-                      const SizedBox(height: 24),
-                      
-                      // Pick up button
-                      if (status == 'Pick Up')
-                        SizedBox(
-                          width: double.infinity,
-                          height: 55,
-                          child: ElevatedButton.icon(
-                            onPressed: () async {
-  // Show confirmation dialog
-  final confirm = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: Text(
-        "Confirm Pick Up",
-        style: GoogleFonts.poppins(
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      content: Text(
-        "Have you picked up your order? This action cannot be undone.",
-        style: GoogleFonts.poppins(),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: Text(
-            "CANCEL",
-            style: GoogleFonts.poppins(),
-          ),
-        ),
-        ElevatedButton(
-          onPressed: () => Navigator.of(context).pop(true),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFFFB703),
-          ),
-          child: Text(
-            "CONFIRM",
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-      ],
-    ),
-  ) ?? false;
-  
-  if (!confirm) return;
-  
-  // Show loading dialog
-  showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) => const Center(
-      child: CircularProgressIndicator(
-        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFB703)),
-      ),
-    ),
-  );
-  
-  try {
-    final id = doc.id;
-    final userId = FirebaseAuth.instance.currentUser!.uid;
-
-    final orderData = {...data, 'status': 'PickedUp'};
-
-    await FirebaseFirestore.instance
-        .collection('orders')
-        .doc(id)
-        .update({
-      'status': 'PickedUp',
-      'pickedUpByUserTime': FieldValue.serverTimestamp(),
-    });
-
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(userId)
-        .collection('orderHistory')
-        .doc(id)
-        .set(orderData);
-
-    await FirebaseFirestore.instance
-        .collection('adminOrderHistory')
-        .doc(id)
-        .set(orderData);
-    
-    // Close loading dialog
-    Navigator.pop(context);
-    
-    // Show success snackbar
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          "Order marked as picked up!",
-          style: GoogleFonts.poppins(),
-        ),
-        backgroundColor: Colors.green,
-      ),
-    );
-    
-    // FIXED: Navigate to UserHome with History tab
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const UserHome(initialIndex: 2), // History tab
-      ),
-      (route) => false,
-    );
-  } catch (e) {
-    // Close loading dialog
-    Navigator.pop(context);
-    
-    // Show error snackbar
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          "Error updating order: $e",
-          style: GoogleFonts.poppins(),
-        ),
-        backgroundColor: Colors.red,
-      ),
-    );
-  }
-},
-                            icon: const Icon(Icons.check_circle),
-                            label: Text(
-                              "CONFIRM ORDER PICK UP",
-                              style: GoogleFonts.poppins(
-                                fontWeight: FontWeight.bold,
                               ),
                             ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFFFB703),
-                              foregroundColor: Colors.white,
+                            
+                            // Timer widget - only show if status is "Pick Up" and we have pickup time
+                            if (status == 'Pick Up' && pickedUpTime != null)
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 16),
+                                child: Center(
+                                  child: OrderExpiryTimer(
+                                    pickedUpTime: pickedUpTime.toDate(),
+                                    onExpired: _handleTimerExpired,
+                                    expiryDuration: const Duration(minutes: 5),
+                                  ),
+                                ),
+                              ),
+                            
+                            // FIXED: Show pickup button at top when status is "Pick Up"
+                            if (status == 'Pick Up')
+                              Container(
+                                margin: const EdgeInsets.symmetric(vertical: 16),
+                                child: SizedBox(
+                                  width: double.infinity,
+                                  height: 55,
+                                  child: ElevatedButton.icon(
+                                    onPressed: () async {
+                                      // Show confirmation dialog
+                                      final confirm = await showDialog<bool>(
+                                        context: context,
+                                        builder: (context) => AlertDialog(
+                                          title: Text(
+                                            "Confirm Pick Up",
+                                            style: GoogleFonts.poppins(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          content: Text(
+                                            "Have you picked up your order? This action cannot be undone.",
+                                            style: GoogleFonts.poppins(),
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () => Navigator.of(context).pop(false),
+                                              child: Text(
+                                                "CANCEL",
+                                                style: GoogleFonts.poppins(),
+                                              ),
+                                            ),
+                                            ElevatedButton(
+                                              onPressed: () => Navigator.of(context).pop(true),
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: const Color(0xFFFFB703),
+                                              ),
+                                              child: Text(
+                                                "CONFIRM",
+                                                style: GoogleFonts.poppins(
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ) ?? false;
+                                      
+                                      if (!confirm) return;
+                                      
+                                      // Show loading dialog
+                                      showDialog(
+                                        context: context,
+                                        barrierDismissible: false,
+                                        builder: (context) => const Center(
+                                          child: CircularProgressIndicator(
+                                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFB703)),
+                                          ),
+                                        ),
+                                      );
+                                      
+                                      try {
+                                        final id = doc.id;
+                                        final userId = FirebaseAuth.instance.currentUser!.uid;
+
+                                        final orderData = {...data, 'status': 'PickedUp'};
+
+                                        await FirebaseFirestore.instance
+                                            .collection('orders')
+                                            .doc(id)
+                                            .update({
+                                          'status': 'PickedUp',
+                                          'pickedUpByUserTime': FieldValue.serverTimestamp(),
+                                        });
+
+                                        await FirebaseFirestore.instance
+                                            .collection('users')
+                                            .doc(userId)
+                                            .collection('orderHistory')
+                                            .doc(id)
+                                            .set(orderData);
+
+                                        await FirebaseFirestore.instance
+                                            .collection('adminOrderHistory')
+                                            .doc(id)
+                                            .set(orderData);
+                                        
+                                        // Close loading dialog
+                                        Navigator.pop(context);
+                                        
+                                        // Show success snackbar
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              "Order marked as picked up!",
+                                              style: GoogleFonts.poppins(),
+                                            ),
+                                            backgroundColor: Colors.green,
+                                          ),
+                                        );
+                                        
+                                        // Navigate to UserHome with History tab
+                                        Navigator.pushAndRemoveUntil(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => const UserHome(initialIndex: 2), // History tab
+                                          ),
+                                          (route) => false,
+                                        );
+                                      } catch (e) {
+                                        // Close loading dialog
+                                        Navigator.pop(context);
+                                        
+                                        // Show error snackbar
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              "Error updating order: $e",
+                                              style: GoogleFonts.poppins(),
+                                            ),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    icon: const Icon(Icons.check_circle),
+                                    label: Text(
+                                      "CONFIRM ORDER PICK UP",
+                                      style: GoogleFonts.poppins(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFFFFB703),
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      elevation: 3,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            
+                            const SizedBox(height: 24),
+                            
+                            // Order details card
+                            Card(
+                              elevation: 2,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(16),
                               ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          "Order Details",
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                            color: const Color(0xFF023047),
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFFFB703).withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(20),
+                                          ),
+                                          child: Text(
+                                            "₹${total.toStringAsFixed(2)}",
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                              color: const Color(0xFFFFB703),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const Divider(height: 24),
+                                    Text(
+                                      "Items",
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: const Color(0xFF023047),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    
+                                    // Items list
+                                    if (orderItems.isEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 8),
+                                        child: Text(
+                                          "No items in this order",
+                                          style: GoogleFonts.poppins(
+                                            color: Colors.grey[600],
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                        ),
+                                      )
+                                    else
+                                      ListView.builder(
+                                        shrinkWrap: true,
+                                        physics: const NeverScrollableScrollPhysics(),
+                                        itemCount: orderItems.length,
+                                        itemBuilder: (context, index) {
+                                          final item = orderItems[index];
+                                          return Padding(
+                                            padding: const EdgeInsets.symmetric(vertical: 8),
+                                            child: Row(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Container(
+                                                  padding: const EdgeInsets.all(8),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.grey[100],
+                                                    borderRadius: BorderRadius.circular(8),
+                                                  ),
+                                                  child: Text(
+                                                    "${item['quantity']}x",
+                                                    style: GoogleFonts.poppins(
+                                                      fontWeight: FontWeight.bold,
+                                                      color: const Color(0xFF023047),
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(
+                                                        item['name'] ?? 'Unknown Item',
+                                                        style: GoogleFonts.poppins(
+                                                          fontWeight: FontWeight.w500,
+                                                        ),
+                                                      ),
+                                                      if (item['price'] != null && item['price'] is num)
+                                                        Text(
+                                                          "₹${item['price'].toStringAsFixed(2)} per item",
+                                                          style: GoogleFonts.poppins(
+                                                            fontSize: 12,
+                                                            color: Colors.grey[600],
+                                                          ),
+                                                        ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                Text(
+                                                  "₹${item['subtotal'] != null && item['subtotal'] is num ? item['subtotal'].toStringAsFixed(2) : ((item['price'] ?? 0) * (item['quantity'] ?? 1)).toStringAsFixed(2)}",
+                                                  style: GoogleFonts.poppins(
+                                                    fontWeight: FontWeight.bold,
+                                                    color: const Color(0xFF023047),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    
+                                    const Divider(height: 24),
+                                    
+                                    // Order time details
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.access_time, color: Colors.grey, size: 18),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          "Ordered on: ${_formatDate(orderDate)}",
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 14,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    
+                                    const SizedBox(height: 8),
+                                    
+                                    // Order ID
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.assignment, color: Colors.grey, size: 18),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          "Order ID: ${doc.id.substring(0, 8)}...",
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 14,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
-                          ),
+                          ],
                         ),
-                      
-                      const SizedBox(height: 40),
+                      ),
                     ],
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           );
         },
       ),
