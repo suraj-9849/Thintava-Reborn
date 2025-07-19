@@ -6,6 +6,7 @@ import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:canteen_app/providers/cart_provider.dart';
 import 'package:canteen_app/models/reservation_model.dart';
+import 'package:canteen_app/services/reservation_service.dart';
 import 'package:canteen_app/widgets/reservation_timer.dart';
 import 'package:google_fonts/google_fonts.dart';
 
