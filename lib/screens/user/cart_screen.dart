@@ -69,67 +69,82 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   /// NEW: Reserve stock and proceed to payment
-  Future<void> _reserveAndProceedToPayment() async {
-    final cartProvider = Provider.of<CartProvider>(context, listen: false);
+  /// Reserve stock and proceed to payment - WITH DEBUGGING
+Future<void> _reserveAndProceedToPayment() async {
+  final cartProvider = Provider.of<CartProvider>(context, listen: false);
+  
+  if (cartProvider.isEmpty) {
+    _showSnackBar("Your cart is empty", Colors.orange, Icons.shopping_cart_outlined);
+    return;
+  }
+
+  setState(() {
+    isReserving = true;
+  });
+
+  try {
+    print('🔍 DEBUG: Starting reservation process...');
+    print('🔍 DEBUG: Cart items: ${cartProvider.cart}');
     
-    if (cartProvider.isEmpty) {
-      _showSnackBar("Your cart is empty", Colors.orange, Icons.shopping_cart_outlined);
+    // Step 1: Check if cart can be reserved
+    final reservabilityCheck = await cartProvider.checkCartReservability();
+    print('🔍 DEBUG: Reservability check: $reservabilityCheck');
+    
+    if (!reservabilityCheck['canReserve']) {
+      final error = reservabilityCheck['error'] ?? 'Cannot reserve items';
+      final issues = reservabilityCheck['issues'] as Map<String, String>? ?? {};
+      
+      _showReservationErrorDialog(error, issues);
       return;
     }
 
-    setState(() {
-      isReserving = true;
-    });
+    // Step 2: Show reservation confirmation
+    final shouldProceed = await _showReservationConfirmDialog();
+    if (!shouldProceed) return;
 
-    try {
-      // Step 1: Check if cart can be reserved
-      final reservabilityCheck = await cartProvider.checkCartReservability();
+    print('🔍 DEBUG: User confirmed reservation, proceeding...');
+
+    // Step 3: Reserve the items
+    final reservationResult = await cartProvider.reserveCartItems();
+    print('🔍 DEBUG: Reservation result: ${reservationResult.success}');
+    print('🔍 DEBUG: Reservations created: ${reservationResult.reservations?.length ?? 0}');
+    
+    if (!reservationResult.success) {
+      final error = reservationResult.error ?? 'Failed to reserve items';
+      final itemErrors = reservationResult.itemErrors ?? {};
       
-      if (!reservabilityCheck['canReserve']) {
-        final error = reservabilityCheck['error'] ?? 'Cannot reserve items';
-        final issues = reservabilityCheck['issues'] as Map<String, String>? ?? {};
-        
-        _showReservationErrorDialog(error, issues);
-        return;
-      }
-
-      // Step 2: Show reservation confirmation
-      final shouldProceed = await _showReservationConfirmDialog();
-      if (!shouldProceed) return;
-
-      // Step 3: Reserve the items
-      final reservationResult = await cartProvider.reserveCartItems();
-      
-      if (!reservationResult.success) {
-        final error = reservationResult.error ?? 'Failed to reserve items';
-        final itemErrors = reservationResult.itemErrors ?? {};
-        
-        _showReservationErrorDialog(error, itemErrors);
-        return;
-      }
-
-      // Step 4: Store reservation IDs and proceed to payment
-      currentReservationIds = reservationResult.reservations
-          ?.map((r) => r.id)
-          .toList();
-
-      _showSnackBar(
-        "Items reserved! Complete payment within 10 minutes", 
-        Colors.green, 
-        Icons.schedule
-      );
-
-      // Step 5: Proceed to payment gateway
-      _startPayment();
-
-    } catch (e) {
-      _showSnackBar("Error reserving items: $e", Colors.red, Icons.error_outline);
-    } finally {
-      setState(() {
-        isReserving = false;
-      });
+      print('❌ DEBUG: Reservation failed: $error');
+      _showReservationErrorDialog(error, itemErrors);
+      return;
     }
+
+    // Step 4: Store reservation IDs and proceed to payment
+    currentReservationIds = reservationResult.reservations
+        ?.map((r) => r.id)
+        .toList();
+    
+    print('✅ DEBUG: Reservations created successfully!');
+    print('🔍 DEBUG: Reservation IDs: $currentReservationIds');
+    print('🔍 DEBUG: Cart provider has reservations: ${cartProvider.hasActiveReservations}');
+
+    _showSnackBar(
+      "Items reserved! Complete payment within 10 minutes", 
+      Colors.green, 
+      Icons.schedule
+    );
+
+    // Step 5: Proceed to payment gateway
+    _startPayment();
+
+  } catch (e) {
+    print('❌ DEBUG: Error in reservation process: $e');
+    _showSnackBar("Error reserving items: $e", Colors.red, Icons.error_outline);
+  } finally {
+    setState(() {
+      isReserving = false;
+    });
   }
+}
 
   Future<bool> _showReservationConfirmDialog() async {
     return await showDialog<bool>(
@@ -340,79 +355,148 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   void _handlePaymentSuccess(PaymentSuccessResponse response) async {
-    // Show loading indicator
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(
-          color: Color(0xFFFFB703),
-        ),
+  // Show loading indicator
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => const Center(
+      child: CircularProgressIndicator(
+        color: Color(0xFFFFB703),
       ),
-    );
+    ),
+  );
+  
+  try {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final cartProvider = Provider.of<CartProvider>(context, listen: false);
     
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
-      final cartProvider = Provider.of<CartProvider>(context, listen: false);
-      final List<Map<String, dynamic>> orderItems = [];
-
-      cartProvider.cart.forEach((itemId, qty) {
-        final itemData = menuMap[itemId];
-        if (itemData != null) {
-          orderItems.add({
-            'id': itemId,
-            'name': itemData['name'] ?? 'Unknown',
-            'price': itemData['price'] ?? 0,
-            'quantity': qty,
-            'subtotal': (itemData['price'] ?? 0) * qty,
-          });
-        }
-      });
-
-      // Create order document
-      final orderDocRef = await FirebaseFirestore.instance.collection('orders').add({
-        'userId': user.uid,
-        'userEmail': user.email,
-        'items': orderItems,
-        'status': 'Placed',
-        'timestamp': Timestamp.now(),
-        'total': total,
-        'paymentId': response.paymentId,
-        'paymentStatus': 'success',
-      });
-
-      // Confirm reservations (this will update actual stock)
-      final confirmSuccess = await cartProvider.confirmReservations(orderDocRef.id);
-      
-      if (!confirmSuccess) {
-        print('⚠️ Warning: Reservation confirmation failed, but order was placed');
+    // 🔍 DEBUG: Check reservation state
+    print('🔍 DEBUG: Has active reservations: ${cartProvider.hasActiveReservations}');
+    print('🔍 DEBUG: Active reservations count: ${cartProvider.activeReservations.length}');
+    print('🔍 DEBUG: Current reservation IDs: $currentReservationIds');
+    
+    // Create order items list
+    final List<Map<String, dynamic>> orderItems = [];
+    cartProvider.cart.forEach((itemId, qty) {
+      final itemData = menuMap[itemId];
+      if (itemData != null) {
+        orderItems.add({
+          'id': itemId,
+          'name': itemData['name'] ?? 'Unknown',
+          'price': itemData['price'] ?? 0,
+          'quantity': qty,
+          'subtotal': (itemData['price'] ?? 0) * qty,
+        });
       }
-      
-      // Clear current reservation tracking
-      currentReservationIds = null;
-      
-      // Close loading dialog
-      Navigator.pop(context);
-      
-      // Show success dialog
-      _showPaymentSuccessDialog(response, orderDocRef.id);
+    });
 
-    } catch (e) {
-      // Close loading dialog
-      Navigator.pop(context);
-      
-      // Release reservations on error
-      if (currentReservationIds != null) {
-        final cartProvider = Provider.of<CartProvider>(context, listen: false);
-        await cartProvider.releaseReservations(status: ReservationStatus.failed);
-        currentReservationIds = null;
-      }
-      
-      _showSnackBar("Error processing order: ${e.toString()}", Colors.red, Icons.error_outline);
+    // Create order document
+    final orderDocRef = await FirebaseFirestore.instance.collection('orders').add({
+      'userId': user.uid,
+      'userEmail': user.email,
+      'items': orderItems,
+      'status': 'Placed',
+      'timestamp': Timestamp.now(),
+      'total': total,
+      'paymentId': response.paymentId,
+      'paymentStatus': 'success',
+    });
+    
+    print('✅ Order created: ${orderDocRef.id}');
+
+    // Method 1: Use currentReservationIds if available
+    bool confirmSuccess = false;
+    
+    if (currentReservationIds != null && currentReservationIds!.isNotEmpty) {
+      print('🔄 Confirming reservations using currentReservationIds: $currentReservationIds');
+      confirmSuccess = await ReservationService.confirmReservations(currentReservationIds!, orderDocRef.id);
+    } 
+    // Method 2: Use cart provider's active reservations
+    else if (cartProvider.hasActiveReservations) {
+      final reservationIds = cartProvider.activeReservations.map((r) => r.id).toList();
+      print('🔄 Confirming reservations using cartProvider reservations: $reservationIds');
+      confirmSuccess = await ReservationService.confirmReservations(reservationIds, orderDocRef.id);
     }
+    // Method 3: Fallback - manually update stock
+    else {
+      print('⚠️ No reservations found, manually updating stock');
+      confirmSuccess = await _manuallyUpdateStock(cartProvider.cart);
+    }
+    
+    print('✅ Reservation confirmation result: $confirmSuccess');
+    
+    if (!confirmSuccess) {
+      print('⚠️ Warning: Reservation confirmation failed, but order was placed');
+      // Try manual stock update as fallback
+      await _manuallyUpdateStock(cartProvider.cart);
+    }
+    
+    // Clear current reservation tracking
+    currentReservationIds = null;
+    
+    // Close loading dialog
+    Navigator.pop(context);
+    
+    // Show success dialog
+    _showPaymentSuccessDialog(response, orderDocRef.id);
+
+  } catch (e) {
+    print('❌ Error in payment success handler: $e');
+    
+    // Close loading dialog
+    Navigator.pop(context);
+    
+    // Release reservations on error
+    if (currentReservationIds != null) {
+      final cartProvider = Provider.of<CartProvider>(context, listen: false);
+      await cartProvider.releaseReservations(status: ReservationStatus.failed);
+      currentReservationIds = null;
+    }
+    
+    _showSnackBar("Error processing order: ${e.toString()}", Colors.red, Icons.error_outline);
   }
+}
+
+// Add this fallback method
+Future<bool> _manuallyUpdateStock(Map<String, int> cartItems) async {
+  try {
+    print('🔧 Manually updating stock for items: $cartItems');
+    
+    WriteBatch batch = FirebaseFirestore.instance.batch();
+    
+    for (String itemId in cartItems.keys) {
+      final orderedQuantity = cartItems[itemId] ?? 0;
+      final docRef = FirebaseFirestore.instance.collection('menuItems').doc(itemId);
+      
+      final doc = await docRef.get();
+      if (doc.exists) {
+        final data = doc.data()!;
+        final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
+        
+        if (!hasUnlimitedStock) {
+          final currentStock = data['quantity'] ?? 0;
+          final newStock = currentStock - orderedQuantity;
+          
+          batch.update(docRef, {
+            'quantity': newStock >= 0 ? newStock : 0,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+          
+          print('📦 Manual stock update: $itemId: $currentStock -> ${newStock >= 0 ? newStock : 0}');
+        }
+      }
+    }
+    
+    await batch.commit();
+    print('✅ Manual stock update completed successfully');
+    return true;
+  } catch (e) {
+    print('❌ Error in manual stock update: $e');
+    return false;
+  }
+}
 
   void _handlePaymentError(PaymentFailureResponse response) async {
     // Release reservations on payment failure
