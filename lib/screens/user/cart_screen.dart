@@ -1,4 +1,4 @@
-// lib/screens/user/cart_screen.dart - UPDATED WITH RESERVATION SYSTEM
+// lib/screens/user/cart_screen.dart - FIXED UI ISSUES & REMOVED DEBUG CODE
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -70,83 +70,63 @@ class _CartScreenState extends State<CartScreen> {
     });
   }
 
-  /// NEW: Reserve stock and proceed to payment
-  /// Reserve stock and proceed to payment - WITH DEBUGGING
-Future<void> _reserveAndProceedToPayment() async {
-  final cartProvider = Provider.of<CartProvider>(context, listen: false);
-  
-  if (cartProvider.isEmpty) {
-    _showSnackBar("Your cart is empty", Colors.orange, Icons.shopping_cart_outlined);
-    return;
-  }
-
-  setState(() {
-    isReserving = true;
-  });
-
-  try {
-    print('🔍 DEBUG: Starting reservation process...');
-    print('🔍 DEBUG: Cart items: ${cartProvider.cart}');
+  /// Reserve stock and proceed to payment - CLEANED UP
+  Future<void> _reserveAndProceedToPayment() async {
+    final cartProvider = Provider.of<CartProvider>(context, listen: false);
     
-    // Step 1: Check if cart can be reserved
-    final reservabilityCheck = await cartProvider.checkCartReservability();
-    print('🔍 DEBUG: Reservability check: $reservabilityCheck');
-    
-    if (!reservabilityCheck['canReserve']) {
-      final error = reservabilityCheck['error'] ?? 'Cannot reserve items';
-      final issues = reservabilityCheck['issues'] as Map<String, String>? ?? {};
-      
-      _showReservationErrorDialog(error, issues);
+    if (cartProvider.isEmpty) {
+      _showSnackBar("Your cart is empty", Colors.orange, Icons.shopping_cart_outlined);
       return;
     }
 
-    // Step 2: Show reservation confirmation
-    final shouldProceed = await _showReservationConfirmDialog();
-    if (!shouldProceed) return;
-
-    print('🔍 DEBUG: User confirmed reservation, proceeding...');
-
-    // Step 3: Reserve the items
-    final reservationResult = await cartProvider.reserveCartItems();
-    print('🔍 DEBUG: Reservation result: ${reservationResult.success}');
-    print('🔍 DEBUG: Reservations created: ${reservationResult.reservations?.length ?? 0}');
-    
-    if (!reservationResult.success) {
-      final error = reservationResult.error ?? 'Failed to reserve items';
-      final itemErrors = reservationResult.itemErrors ?? {};
-      
-      print('❌ DEBUG: Reservation failed: $error');
-      _showReservationErrorDialog(error, itemErrors);
-      return;
-    }
-
-    // Step 4: Store reservation IDs and proceed to payment
-    currentReservationIds = reservationResult.reservations
-        ?.map((r) => r.id)
-        .toList();
-    
-    print('✅ DEBUG: Reservations created successfully!');
-    print('🔍 DEBUG: Reservation IDs: $currentReservationIds');
-    print('🔍 DEBUG: Cart provider has reservations: ${cartProvider.hasActiveReservations}');
-
-    _showSnackBar(
-      "Items reserved! Complete payment within 10 minutes", 
-      Colors.green, 
-      Icons.schedule
-    );
-
-    // Step 5: Proceed to payment gateway
-    _startPayment();
-
-  } catch (e) {
-    print('❌ DEBUG: Error in reservation process: $e');
-    _showSnackBar("Error reserving items: $e", Colors.red, Icons.error_outline);
-  } finally {
     setState(() {
-      isReserving = false;
+      isReserving = true;
     });
+
+    try {
+      // Step 1: Check if cart can be reserved
+      final reservabilityCheck = await cartProvider.checkCartReservability();
+      
+      if (!reservabilityCheck['canReserve']) {
+        final error = reservabilityCheck['error'] ?? 'Cannot reserve items';
+        final issues = reservabilityCheck['issues'] as Map<String, String>? ?? {};
+        
+        _showReservationErrorDialog(error, issues);
+        return;
+      }
+
+      // Step 2: Show reservation confirmation
+      final shouldProceed = await _showReservationConfirmDialog();
+      if (!shouldProceed) return;
+
+      // Step 3: Reserve the items
+      final reservationResult = await cartProvider.reserveCartItems();
+      
+      if (!reservationResult.success) {
+        final error = reservationResult.error ?? 'Failed to reserve items';
+        final itemErrors = reservationResult.itemErrors ?? {};
+        
+        _showReservationErrorDialog(error, itemErrors);
+        return;
+      }
+
+      // Step 4: Store reservation IDs and proceed to payment
+      currentReservationIds = reservationResult.reservations
+          ?.map((r) => r.id)
+          .toList();
+
+
+      // Step 5: Proceed to payment gateway
+      _startPayment();
+
+    } catch (e) {
+      _showSnackBar("Error reserving items: $e", Colors.red, Icons.error_outline);
+    } finally {
+      setState(() {
+        isReserving = false;
+      });
+    }
   }
-}
 
   Future<bool> _showReservationConfirmDialog() async {
     return await showDialog<bool>(
@@ -357,148 +337,124 @@ Future<void> _reserveAndProceedToPayment() async {
   }
 
   void _handlePaymentSuccess(PaymentSuccessResponse response) async {
-  // Show loading indicator
-  showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) => const Center(
-      child: CircularProgressIndicator(
-        color: Color(0xFFFFB703),
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(
+          color: Color(0xFFFFB703),
+        ),
       ),
-    ),
-  );
-  
-  try {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    );
+    
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
 
-    final cartProvider = Provider.of<CartProvider>(context, listen: false);
-    
-    // 🔍 DEBUG: Check reservation state
-    print('🔍 DEBUG: Has active reservations: ${cartProvider.hasActiveReservations}');
-    print('🔍 DEBUG: Active reservations count: ${cartProvider.activeReservations.length}');
-    print('🔍 DEBUG: Current reservation IDs: $currentReservationIds');
-    
-    // Create order items list
-    final List<Map<String, dynamic>> orderItems = [];
-    cartProvider.cart.forEach((itemId, qty) {
-      final itemData = menuMap[itemId];
-      if (itemData != null) {
-        orderItems.add({
-          'id': itemId,
-          'name': itemData['name'] ?? 'Unknown',
-          'price': itemData['price'] ?? 0,
-          'quantity': qty,
-          'subtotal': (itemData['price'] ?? 0) * qty,
-        });
-      }
-    });
-
-    // Create order document
-    final orderDocRef = await FirebaseFirestore.instance.collection('orders').add({
-      'userId': user.uid,
-      'userEmail': user.email,
-      'items': orderItems,
-      'status': 'Placed',
-      'timestamp': Timestamp.now(),
-      'total': total,
-      'paymentId': response.paymentId,
-      'paymentStatus': 'success',
-    });
-    
-    print('✅ Order created: ${orderDocRef.id}');
-
-    // Method 1: Use currentReservationIds if available
-    bool confirmSuccess = false;
-    
-    if (currentReservationIds != null && currentReservationIds!.isNotEmpty) {
-      print('🔄 Confirming reservations using currentReservationIds: $currentReservationIds');
-      confirmSuccess = await ReservationService.confirmReservations(currentReservationIds!, orderDocRef.id);
-    } 
-    // Method 2: Use cart provider's active reservations
-    else if (cartProvider.hasActiveReservations) {
-      final reservationIds = cartProvider.activeReservations.map((r) => r.id).toList();
-      print('🔄 Confirming reservations using cartProvider reservations: $reservationIds');
-      confirmSuccess = await ReservationService.confirmReservations(reservationIds, orderDocRef.id);
-    }
-    // Method 3: Fallback - manually update stock
-    else {
-      print('⚠️ No reservations found, manually updating stock');
-      confirmSuccess = await _manuallyUpdateStock(cartProvider.cart);
-    }
-    
-    print('✅ Reservation confirmation result: $confirmSuccess');
-    
-    if (!confirmSuccess) {
-      print('⚠️ Warning: Reservation confirmation failed, but order was placed');
-      // Try manual stock update as fallback
-      await _manuallyUpdateStock(cartProvider.cart);
-    }
-    
-    // Clear current reservation tracking
-    currentReservationIds = null;
-    
-    // Close loading dialog
-    Navigator.pop(context);
-    
-    // Show success dialog
-    _showPaymentSuccessDialog(response, orderDocRef.id);
-
-  } catch (e) {
-    print('❌ Error in payment success handler: $e');
-    
-    // Close loading dialog
-    Navigator.pop(context);
-    
-    // Release reservations on error
-    if (currentReservationIds != null) {
       final cartProvider = Provider.of<CartProvider>(context, listen: false);
-      await cartProvider.releaseReservations(status: ReservationStatus.failed);
-      currentReservationIds = null;
-    }
-    
-    _showSnackBar("Error processing order: ${e.toString()}", Colors.red, Icons.error_outline);
-  }
-}
-
-// Add this fallback method
-Future<bool> _manuallyUpdateStock(Map<String, int> cartItems) async {
-  try {
-    print('🔧 Manually updating stock for items: $cartItems');
-    
-    WriteBatch batch = FirebaseFirestore.instance.batch();
-    
-    for (String itemId in cartItems.keys) {
-      final orderedQuantity = cartItems[itemId] ?? 0;
-      final docRef = FirebaseFirestore.instance.collection('menuItems').doc(itemId);
       
-      final doc = await docRef.get();
-      if (doc.exists) {
-        final data = doc.data()!;
-        final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
-        
-        if (!hasUnlimitedStock) {
-          final currentStock = data['quantity'] ?? 0;
-          final newStock = currentStock - orderedQuantity;
-          
-          batch.update(docRef, {
-            'quantity': newStock >= 0 ? newStock : 0,
-            'updatedAt': FieldValue.serverTimestamp(),
+      // Create order items list
+      final List<Map<String, dynamic>> orderItems = [];
+      cartProvider.cart.forEach((itemId, qty) {
+        final itemData = menuMap[itemId];
+        if (itemData != null) {
+          orderItems.add({
+            'id': itemId,
+            'name': itemData['name'] ?? 'Unknown',
+            'price': itemData['price'] ?? 0,
+            'quantity': qty,
+            'subtotal': (itemData['price'] ?? 0) * qty,
           });
+        }
+      });
+
+      // Create order document
+      final orderDocRef = await FirebaseFirestore.instance.collection('orders').add({
+        'userId': user.uid,
+        'userEmail': user.email,
+        'items': orderItems,
+        'status': 'Placed',
+        'timestamp': Timestamp.now(),
+        'total': total,
+        'paymentId': response.paymentId,
+        'paymentStatus': 'success',
+      });
+
+      // Confirm reservations
+      bool confirmSuccess = false;
+      
+      if (currentReservationIds != null && currentReservationIds!.isNotEmpty) {
+        confirmSuccess = await ReservationService.confirmReservations(currentReservationIds!, orderDocRef.id);
+      } 
+      else if (cartProvider.hasActiveReservations) {
+        final reservationIds = cartProvider.activeReservations.map((r) => r.id).toList();
+        confirmSuccess = await ReservationService.confirmReservations(reservationIds, orderDocRef.id);
+      }
+      else {
+        confirmSuccess = await _manuallyUpdateStock(cartProvider.cart);
+      }
+      
+      if (!confirmSuccess) {
+        await _manuallyUpdateStock(cartProvider.cart);
+      }
+      
+      // Clear current reservation tracking
+      currentReservationIds = null;
+      
+      // Close loading dialog
+      Navigator.pop(context);
+      
+      // Show success dialog
+      _showPaymentSuccessDialog(response, orderDocRef.id);
+
+    } catch (e) {
+      // Close loading dialog
+      Navigator.pop(context);
+      
+      // Release reservations on error
+      if (currentReservationIds != null) {
+        final cartProvider = Provider.of<CartProvider>(context, listen: false);
+        await cartProvider.releaseReservations(status: ReservationStatus.failed);
+        currentReservationIds = null;
+      }
+      
+      _showSnackBar("Error processing order: ${e.toString()}", Colors.red, Icons.error_outline);
+    }
+  }
+
+  // Fallback method to manually update stock
+  Future<bool> _manuallyUpdateStock(Map<String, int> cartItems) async {
+    try {
+      WriteBatch batch = FirebaseFirestore.instance.batch();
+      
+      for (String itemId in cartItems.keys) {
+        final orderedQuantity = cartItems[itemId] ?? 0;
+        final docRef = FirebaseFirestore.instance.collection('menuItems').doc(itemId);
+        
+        final doc = await docRef.get();
+        if (doc.exists) {
+          final data = doc.data()!;
+          final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
           
-          print('📦 Manual stock update: $itemId: $currentStock -> ${newStock >= 0 ? newStock : 0}');
+          if (!hasUnlimitedStock) {
+            final currentStock = data['quantity'] ?? 0;
+            final newStock = currentStock - orderedQuantity;
+            
+            batch.update(docRef, {
+              'quantity': newStock >= 0 ? newStock : 0,
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+          }
         }
       }
+      
+      await batch.commit();
+      return true;
+    } catch (e) {
+      return false;
     }
-    
-    await batch.commit();
-    print('✅ Manual stock update completed successfully');
-    return true;
-  } catch (e) {
-    print('❌ Error in manual stock update: $e');
-    return false;
   }
-}
 
   void _handlePaymentError(PaymentFailureResponse response) async {
     // Release reservations on payment failure
@@ -516,182 +472,182 @@ Future<bool> _manuallyUpdateStock(Map<String, int> cartItems) async {
   }
 
   void _showPaymentSuccessDialog(PaymentSuccessResponse response, String orderId) {
-  showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) => AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.green.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.check_circle, 
-              color: Colors.green, 
-              size: 30,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              "Order Placed Successfully!",
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.green.shade700,
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.check_circle, 
+                color: Colors.green, 
+                size: 30,
               ),
             ),
-          ),
-        ],
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFB703).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: const Color(0xFFFFB703).withOpacity(0.3),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                "Order Placed Successfully!",
+                style: GoogleFonts.poppins(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green.shade700,
+                ),
               ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "Your order has been placed successfully and will be prepared shortly.",
-                  style: GoogleFonts.poppins(fontSize: 16),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFB703).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: const Color(0xFFFFB703).withOpacity(0.3),
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      "Order ID:",
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                    ),
-                    Text(
-                      orderId.substring(0, 8),
-                      style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.bold,
-                        color: const Color(0xFFFFB703),
-                        fontSize: 16,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Your order has been placed successfully and will be prepared shortly.",
+                    style: GoogleFonts.poppins(fontSize: 16),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        "Order ID:",
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      "Order Total:",
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                    ),
-                    Text(
-                      "₹${total.toStringAsFixed(2)}",
-                      style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.bold,
-                        color: const Color(0xFFFFB703),
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Payment ID:",
-                      style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        response.paymentId ?? 'N/A',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontFamily: 'monospace',
-                          color: Colors.grey,
+                      Text(
+                        orderId.substring(0, 8),
+                        style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFFFFB703),
+                          fontSize: 16,
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        "Order Total:",
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                      ),
+                      Text(
+                        "₹${total.toStringAsFixed(2)}",
+                        style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFFFFB703),
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Payment ID:",
+                        style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          response.paymentId ?? 'N/A',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontFamily: 'monospace',
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.blue.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.info_outline,
-                  color: Colors.blue,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    "You can track your order status and get updates on preparation time.",
-                    style: GoogleFonts.poppins(
-                      fontSize: 13,
-                      color: Colors.blue.shade700,
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.info_outline,
+                    color: Colors.blue,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      "You can track your order status and get updates on preparation time.",
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        color: Colors.blue.shade700,
+                      ),
                     ),
                   ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context); // Close success dialog
+              
+              // Navigate to UserHome with Track tab selected
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const UserHome(initialIndex: 1), // Track tab
                 ),
-              ],
+                (route) => false, // Remove all previous routes
+              );
+            },
+            icon: const Icon(Icons.track_changes),
+            label: Text(
+              "TRACK ORDER",
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFB703),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           ),
         ],
       ),
-      actions: [
-        ElevatedButton.icon(
-          onPressed: () {
-            Navigator.pop(context); // Close success dialog
-            
-            // FIXED: Navigate to UserHome with Track tab selected
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const UserHome(initialIndex: 1), // Track tab
-              ),
-              (route) => false, // Remove all previous routes
-            );
-          },
-          icon: const Icon(Icons.track_changes),
-          label: Text(
-            "TRACK ORDER",
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-          ),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFFFB703),
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-}
+    );
+  }
 
   void _showSnackBar(String message, Color color, IconData icon) {
     if (mounted) {
@@ -846,16 +802,6 @@ Future<bool> _manuallyUpdateStock(Map<String, int> cartItems) async {
                           ],
                         ),
                       ),
-
-                    // Reservation Status Banner
-                    if (cartProvider.hasActiveReservations)
-                      ReservationStatusBanner(
-                        reservationState: cartProvider.reservationState,
-                        onViewDetails: () {
-                          // Implement reservation details view if needed
-                        },
-                      ),
-                    
                     // Order summary header
                     Container(
                       color: const Color(0xFFFFB703),
@@ -883,8 +829,20 @@ Future<bool> _manuallyUpdateStock(Map<String, int> cartItems) async {
                           ),
                           if (cartProvider.hasActiveReservations) ...[
                             const SizedBox(width: 8),
-                            CompactReservationIndicator(
-                              reservations: cartProvider.activeReservations,
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                "Reserved",
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
                           ],
                         ],
