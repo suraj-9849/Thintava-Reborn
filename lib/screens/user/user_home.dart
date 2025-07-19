@@ -1,4 +1,4 @@
-// lib/screens/user/user_home.dart - Enhanced with Active Order Checking
+// lib/screens/user/user_home.dart - FIXED WITH PROPER NAVIGATION HANDLING
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -11,7 +11,10 @@ import 'package:canteen_app/screens/user/order_history_screen.dart';
 import 'package:canteen_app/screens/user/profile_screen.dart';
 
 class UserHome extends StatefulWidget {
-  const UserHome({Key? key}) : super(key: key);
+  // NEW: Add initialIndex parameter for navigation
+  final int initialIndex;
+  
+  const UserHome({Key? key, this.initialIndex = 0}) : super(key: key);
 
   @override
   State<UserHome> createState() => _UserHomeState();
@@ -23,7 +26,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
   late Animation<double> _fadeAnimation;
   late Animation<double> _shimmerAnimation;
   final _authService = AuthService();
-  int _currentIndex = 0;
+  late int _currentIndex; // Remove final to allow initialization
   final PageController _pageController = PageController();
 
   // Search and filter
@@ -35,7 +38,21 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    // NEW: Initialize with the passed index or default to 0
+    _currentIndex = widget.initialIndex;
+    
     _initializeAnimations();
+    
+    // NEW: Navigate to the correct tab if initialIndex is provided
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.initialIndex != 0) {
+        _pageController.animateToPage(
+          widget.initialIndex,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+      }
+    });
     
     // Start listening for session changes
     _authService.startSessionListener(() {
@@ -123,6 +140,10 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
       await Future.delayed(const Duration(seconds: 2));
     }
     
+    // Clear cart and reservations before logout
+    final cartProvider = Provider.of<CartProvider>(context, listen: false);
+    await cartProvider.cleanup();
+    
     await _authService.logout();
     
     if (!forceLogout && context.mounted) {
@@ -158,6 +179,102 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
         .limit(1)
         .snapshots()
         .map((snapshot) => snapshot.docs.isNotEmpty ? snapshot.docs.first : null);
+  }
+
+  // NEW: Calculate available stock considering reservations
+  int _getAvailableStock(Map<String, dynamic> itemData) {
+    final hasUnlimitedStock = itemData['hasUnlimitedStock'] ?? false;
+    
+    if (hasUnlimitedStock) {
+      return 999999; // Large number for unlimited
+    }
+    
+    final totalStock = itemData['quantity'] ?? 0;
+    final reservedQuantity = itemData['reservedQuantity'] ?? 0;
+    final availableStock = totalStock - reservedQuantity;
+    
+    return availableStock > 0 ? availableStock : 0;
+  }
+
+  // NEW: Get stock status for display
+  String _getStockStatus(Map<String, dynamic> itemData) {
+    final available = itemData['available'] ?? false;
+    final hasUnlimitedStock = itemData['hasUnlimitedStock'] ?? false;
+    
+    if (!available) return 'Unavailable';
+    if (hasUnlimitedStock) return 'Available';
+    
+    final availableStock = _getAvailableStock(itemData);
+    
+    if (availableStock <= 0) return 'Out of Stock';
+    if (availableStock <= 5) return 'Low Stock ($availableStock left)';
+    return 'In Stock';
+  }
+
+  // NEW: Get stock status color
+  Color _getStockStatusColor(Map<String, dynamic> itemData) {
+    final available = itemData['available'] ?? false;
+    final hasUnlimitedStock = itemData['hasUnlimitedStock'] ?? false;
+    
+    if (!available) return Colors.grey;
+    if (hasUnlimitedStock) return Colors.blue;
+    
+    final availableStock = _getAvailableStock(itemData);
+    
+    if (availableStock <= 0) return Colors.red;
+    if (availableStock <= 5) return Colors.orange;
+    return Colors.green;
+  }
+
+  // NEW: Check if item can be added to cart
+  bool _canAddToCart(Map<String, dynamic> itemData, int currentCartQuantity) {
+    final available = itemData['available'] ?? false;
+    if (!available) return false;
+    
+    final hasUnlimitedStock = itemData['hasUnlimitedStock'] ?? false;
+    if (hasUnlimitedStock) return true;
+    
+    final availableStock = _getAvailableStock(itemData);
+    return (currentCartQuantity + 1) <= availableStock;
+  }
+
+  // NEW: Show stock error message
+  void _showStockError(String itemName, int availableStock) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.warning_rounded, color: Colors.white, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                availableStock <= 0 
+                  ? '$itemName is out of stock'
+                  : 'Only $availableStock $itemName available',
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  // NEW: Navigate to specific tab from anywhere
+  void navigateToTab(int index) {
+    setState(() {
+      _currentIndex = index;
+    });
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeInOutCubic,
+    );
   }
 
   @override
@@ -200,14 +317,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
           onTap: (index) {
-            setState(() {
-              _currentIndex = index;
-            });
-            _pageController.animateToPage(
-              index,
-              duration: const Duration(milliseconds: 400),
-              curve: Curves.easeInOutCubic,
-            );
+            navigateToTab(index); // Use the new method
           },
           type: BottomNavigationBarType.fixed,
           backgroundColor: Colors.white,
@@ -317,7 +427,9 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
                     ],
                   ),
                   label: Text(
-                    "View Cart",
+                    cartProvider.hasActiveReservations 
+                      ? "View Cart (Reserved)" 
+                      : "View Cart",
                     style: GoogleFonts.poppins(
                       fontWeight: FontWeight.w700,
                       fontSize: 14,
@@ -381,7 +493,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
     );
   }
 
-  // NEW: Active order banner
+  // Active order banner - UPDATED to use proper navigation
   Widget _buildActiveOrderBanner() {
     return StreamBuilder<DocumentSnapshot?>(
       stream: _getActiveOrderStream(),
@@ -412,14 +524,8 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
             color: Colors.transparent,
             child: InkWell(
               onTap: () {
-                setState(() {
-                  _currentIndex = 1; // Switch to tracking tab
-                });
-                _pageController.animateToPage(
-                  1,
-                  duration: const Duration(milliseconds: 400),
-                  curve: Curves.easeInOutCubic,
-                );
+                // NEW: Use navigateToTab instead of separate navigation
+                navigateToTab(1); // Switch to tracking tab
               },
               borderRadius: BorderRadius.circular(16),
               child: Container(
@@ -1049,17 +1155,23 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
     final description = data['description'] ?? '';
     final imageUrl = data['imageUrl'] as String?;
     final isVeg = data['isVeg'] ?? false;
-    final quantity = data['quantity'] ?? 0;
-    final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
     final available = data['available'] ?? true;
     
-    final isOutOfStock = !hasUnlimitedStock && quantity <= 0;
-    final isUnavailable = !available;
+    // Get stock information considering reservations
+    final availableStock = _getAvailableStock(data);
+    final stockStatus = _getStockStatus(data);
+    final stockColor = _getStockStatusColor(data);
+    final isOutOfStock = !available || availableStock <= 0;
+    final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
 
     return Consumer<CartProvider>(
       builder: (context, cartProvider, child) {
         int cartQuantity = cartProvider.getQuantity(id);
         bool hasActiveOrder = cartProvider.hasActiveOrder;
+        bool isReserved = cartProvider.isItemReserved(id);
+        
+        // Check if can add to cart considering reservations
+        bool canAdd = available && _canAddToCart(data, cartQuantity) && !hasActiveOrder;
         
         return TweenAnimationBuilder<double>(
           duration: Duration(milliseconds: 300 + (index * 100)),
@@ -1074,6 +1186,11 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(20),
+                    border: isReserved 
+                      ? Border.all(color: Colors.blue, width: 2)
+                      : isOutOfStock
+                        ? Border.all(color: Colors.red.withOpacity(0.3), width: 1)
+                        : null,
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.06),
@@ -1086,17 +1203,49 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
                     children: [
                       Padding(
                         padding: const EdgeInsets.all(16),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        child: Column(
                           children: [
-                            _buildFoodImage(imageUrl, isVeg, isOutOfStock, isUnavailable, hasActiveOrder),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: _buildFoodDetails(
-                                name, price, description, quantity, 
-                                hasUnlimitedStock, available, isOutOfStock, 
-                                isUnavailable, cartProvider, id, cartQuantity, hasActiveOrder
+                            // Reservation indicator
+                            if (isReserved)
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+                                margin: const EdgeInsets.only(bottom: 12),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.schedule, color: Colors.blue, size: 16),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      "Reserved for you (${cartProvider.getReservedQuantity(id)} item${cartProvider.getReservedQuantity(id) > 1 ? 's' : ''})",
+                                      style: GoogleFonts.poppins(
+                                        color: Colors.blue,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
+                            
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildFoodImage(imageUrl, isVeg, isOutOfStock, hasActiveOrder),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: _buildFoodDetails(
+                                    name, price, description, stockStatus, stockColor,
+                                    available, isOutOfStock, cartProvider, id, 
+                                    cartQuantity, hasActiveOrder, canAdd, availableStock,
+                                    isReserved, hasUnlimitedStock
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -1116,7 +1265,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildFoodImage(String? imageUrl, bool isVeg, bool isOutOfStock, bool isUnavailable, bool hasActiveOrder) {
+  Widget _buildFoodImage(String? imageUrl, bool isVeg, bool isOutOfStock, bool hasActiveOrder) {
     return Stack(
       children: [
         Container(
@@ -1136,7 +1285,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
             borderRadius: BorderRadius.circular(16),
             child: imageUrl != null && imageUrl.isNotEmpty
               ? ColorFiltered(
-                  colorFilter: (isOutOfStock || isUnavailable || hasActiveOrder)
+                  colorFilter: (isOutOfStock || hasActiveOrder)
                     ? const ColorFilter.mode(Colors.grey, BlendMode.saturation)
                     : const ColorFilter.mode(Colors.transparent, BlendMode.multiply),
                   child: Image.network(
@@ -1180,38 +1329,66 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
   }
 
   Widget _buildFoodDetails(String name, double price, String description, 
-      int quantity, bool hasUnlimitedStock, bool available, bool isOutOfStock, 
-      bool isUnavailable, CartProvider cartProvider, String id, int cartQuantity, bool hasActiveOrder) {
+      String stockStatus, Color stockColor, bool available, bool isOutOfStock, 
+      CartProvider cartProvider, String id, int cartQuantity, bool hasActiveOrder, 
+      bool canAdd, int availableStock, bool isReserved, bool hasUnlimitedStock) {
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Name and status
+        // Name
+        Text(
+          name,
+          style: GoogleFonts.poppins(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: (isOutOfStock || hasActiveOrder) ? Colors.grey[600] : Colors.black87,
+            decoration: (isOutOfStock || hasActiveOrder) ? TextDecoration.lineThrough : null,
+          ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        
+        const SizedBox(height: 4),
+        
+        // Stock status indicator
         Row(
           children: [
-            Expanded(
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: stockColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: stockColor.withOpacity(0.3)),
+              ),
               child: Text(
-                name,
+                stockStatus,
                 style: GoogleFonts.poppins(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: (isOutOfStock || isUnavailable || hasActiveOrder) ? Colors.grey[600] : Colors.black87,
-                  decoration: (isOutOfStock || isUnavailable || hasActiveOrder) ? TextDecoration.lineThrough : null,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: stockColor,
                 ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
               ),
             ),
-            if (hasActiveOrder)
-              _buildStatusBadge('Order Active', Colors.orange)
-            else if (isUnavailable)
-              _buildStatusBadge('Unavailable', Colors.grey)
-            else if (isOutOfStock)
-              _buildStatusBadge('Out of Stock', Colors.red)
-            else if (!hasUnlimitedStock && quantity <= 5)
-              _buildStatusBadge('Low Stock', Colors.orange)
-            else if (hasUnlimitedStock)
-              _buildStatusBadge('Available', Colors.green),
+            if (hasActiveOrder) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                ),
+                child: Text(
+                  'Order Active',
+                  style: GoogleFonts.poppins(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.orange,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
         
@@ -1221,7 +1398,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
             description,
             style: GoogleFonts.poppins(
               fontSize: 14,
-              color: (isOutOfStock || isUnavailable || hasActiveOrder) ? Colors.grey[500] : Colors.grey[600],
+              color: (isOutOfStock || hasActiveOrder) ? Colors.grey[500] : Colors.grey[600],
               height: 1.4,
             ),
             maxLines: 2,
@@ -1237,8 +1414,8 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
           style: GoogleFonts.poppins(
             fontSize: 22,
             fontWeight: FontWeight.w800,
-            color: (isOutOfStock || isUnavailable || hasActiveOrder) ? Colors.grey[500] : const Color(0xFFFFB703),
-            decoration: (isOutOfStock || isUnavailable || hasActiveOrder) ? TextDecoration.lineThrough : null,
+            color: (isOutOfStock || hasActiveOrder) ? Colors.grey[500] : const Color(0xFFFFB703),
+            decoration: (isOutOfStock || hasActiveOrder) ? TextDecoration.lineThrough : null,
           ),
         ),
         
@@ -1247,52 +1424,41 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
         // Add to cart controls
         if (hasActiveOrder)
           _buildActiveOrderButton()
-        else if (!isOutOfStock && !isUnavailable)
-          _buildCartControls(cartProvider, id, cartQuantity)
+        else if (!isOutOfStock)
+          _buildCartControls(cartProvider, id, cartQuantity, canAdd, name, availableStock, isReserved)
         else
-          _buildUnavailableButton(isUnavailable),
+          _buildUnavailableButton(!available, hasUnlimitedStock),
       ],
     );
   }
 
-  Widget _buildStatusBadge(String text, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Text(
-        text,
-        style: GoogleFonts.poppins(
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-          color: color,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCartControls(CartProvider cartProvider, String id, int cartQuantity) {
+  Widget _buildCartControls(CartProvider cartProvider, String id, int cartQuantity, 
+      bool canAdd, String itemName, int availableStock, bool isReserved) {
     if (cartQuantity > 0) {
       return Container(
         decoration: BoxDecoration(
-          color: const Color(0xFFFFB703).withOpacity(0.1),
+          color: isReserved 
+            ? Colors.blue.withOpacity(0.1) 
+            : const Color(0xFFFFB703).withOpacity(0.1),
           borderRadius: BorderRadius.circular(25),
-          border: Border.all(color: const Color(0xFFFFB703).withOpacity(0.3)),
+          border: Border.all(
+            color: isReserved 
+              ? Colors.blue.withOpacity(0.3) 
+              : const Color(0xFFFFB703).withOpacity(0.3)
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             _buildCartButton(
               icon: Icons.remove_rounded,
-              onTap: () => cartProvider.removeItem(id),
+              onTap: isReserved ? null : () => cartProvider.removeItem(id),
+              color: isReserved ? Colors.grey : const Color(0xFFFFB703),
             ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFFFFB703),
+                color: isReserved ? Colors.blue : const Color(0xFFFFB703),
                 borderRadius: BorderRadius.circular(15),
               ),
               child: Text(
@@ -1306,16 +1472,13 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
             ),
             _buildCartButton(
               icon: Icons.add_rounded,
-              onTap: () async {
+              onTap: (isReserved || !canAdd) ? null : () async {
                 final success = await cartProvider.addItem(id);
                 if (!success) {
-                  if (cartProvider.hasActiveOrder) {
-                    _showActiveOrderError();
-                  } else {
-                    _showStockError();
-                  }
+                  _showStockError(itemName, availableStock);
                 }
               },
+              color: (isReserved || !canAdd) ? Colors.grey : const Color(0xFFFFB703),
             ),
           ],
         ),
@@ -1324,18 +1487,14 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
       return Container(
         width: double.infinity,
         child: ElevatedButton.icon(
-          onPressed: () async {
+          onPressed: canAdd ? () async {
             final success = await cartProvider.addItem(id);
             if (!success) {
-              if (cartProvider.hasActiveOrder) {
-                _showActiveOrderError();
-              } else {
-                _showStockError();
-              }
+              _showStockError(itemName, availableStock);
             }
-          },
+          } : null,
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFFFB703),
+            backgroundColor: canAdd ? const Color(0xFFFFB703) : Colors.grey[400],
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             shape: RoundedRectangleBorder(
@@ -1356,14 +1515,14 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
     }
   }
 
-  Widget _buildCartButton({required IconData icon, required VoidCallback onTap}) {
+  Widget _buildCartButton({required IconData icon, required VoidCallback? onTap, required Color color}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(8),
         child: Icon(
           icon,
-          color: const Color(0xFFFFB703),
+          color: color,
           size: 20,
         ),
       ),
@@ -1401,7 +1560,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildUnavailableButton(bool isUnavailable) {
+  Widget _buildUnavailableButton(bool isUnavailable, bool hasUnlimitedStock) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -1530,31 +1689,6 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
     );
   }
 
-  void _showStockError() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.warning_rounded, color: Colors.white),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Cannot add more items - insufficient stock',
-                style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.red,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(15),
-        ),
-        margin: const EdgeInsets.all(16),
-      ),
-    );
-  }
-
   void _showActiveOrderError() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -1580,14 +1714,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
           label: 'Track Order',
           textColor: Colors.white,
           onPressed: () {
-            setState(() {
-              _currentIndex = 1;
-            });
-            _pageController.animateToPage(
-              1,
-              duration: const Duration(milliseconds: 400),
-              curve: Curves.easeInOutCubic,
-            );
+            navigateToTab(1); // Use the new navigation method
           },
         ),
       ),

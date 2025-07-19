@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:canteen_app/widgets/order_expiry_timer.dart'; // Import the new timer widget
+import 'package:canteen_app/screens/user/user_home.dart';
 
 class OrderTrackingScreen extends StatefulWidget {
   const OrderTrackingScreen({Key? key}) : super(key: key);
@@ -211,7 +212,13 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
           // If terminated, redirect to history
           if (status == 'Terminated') {
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              Navigator.pushReplacementNamed(context, '/history');
+              Navigator.pushAndRemoveUntil(
+  context,
+  MaterialPageRoute(
+    builder: (context) => const UserHome(initialIndex: 2), // History tab
+  ),
+  (route) => false,
+);
             });
           }
 
@@ -517,115 +524,121 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
                           height: 55,
                           child: ElevatedButton.icon(
                             onPressed: () async {
-                              // Show confirmation dialog
-                              final confirm = await showDialog<bool>(
-                                context: context,
-                                builder: (context) => AlertDialog(
-                                  title: Text(
-                                    "Confirm Pick Up",
-                                    style: GoogleFonts.poppins(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  content: Text(
-                                    "Have you picked up your order? This action cannot be undone.",
-                                    style: GoogleFonts.poppins(),
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.of(context).pop(false),
-                                      child: Text(
-                                        "CANCEL",
-                                        style: GoogleFonts.poppins(),
-                                      ),
-                                    ),
-                                    ElevatedButton(
-                                      onPressed: () => Navigator.of(context).pop(true),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFFFFB703),
-                                      ),
-                                      child: Text(
-                                        "CONFIRM",
-                                        style: GoogleFonts.poppins(
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ) ?? false;
-                              
-                              if (!confirm) return;
-                              
-                              // Show loading dialog
-                              showDialog(
-                                context: context,
-                                barrierDismissible: false,
-                                builder: (context) => const Center(
-                                  child: CircularProgressIndicator(
-                                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFB703)),
-                                  ),
-                                ),
-                              );
-                              
-                              try {
-                                final id = doc.id;
-                                final userId = FirebaseAuth.instance.currentUser!.uid;
+  // Show confirmation dialog
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(
+        "Confirm Pick Up",
+        style: GoogleFonts.poppins(
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      content: Text(
+        "Have you picked up your order? This action cannot be undone.",
+        style: GoogleFonts.poppins(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: Text(
+            "CANCEL",
+            style: GoogleFonts.poppins(),
+          ),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFFFFB703),
+          ),
+          child: Text(
+            "CONFIRM",
+            style: GoogleFonts.poppins(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ],
+    ),
+  ) ?? false;
+  
+  if (!confirm) return;
+  
+  // Show loading dialog
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => const Center(
+      child: CircularProgressIndicator(
+        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFB703)),
+      ),
+    ),
+  );
+  
+  try {
+    final id = doc.id;
+    final userId = FirebaseAuth.instance.currentUser!.uid;
 
-                                final orderData = {...data, 'status': 'PickedUp'};
+    final orderData = {...data, 'status': 'PickedUp'};
 
-                                await FirebaseFirestore.instance
-                                    .collection('orders')
-                                    .doc(id)
-                                    .update({
-                                  'status': 'PickedUp',
-                                  'pickedUpByUserTime': FieldValue.serverTimestamp(),
-                                });
+    await FirebaseFirestore.instance
+        .collection('orders')
+        .doc(id)
+        .update({
+      'status': 'PickedUp',
+      'pickedUpByUserTime': FieldValue.serverTimestamp(),
+    });
 
-                                await FirebaseFirestore.instance
-                                    .collection('users')
-                                    .doc(userId)
-                                    .collection('orderHistory')
-                                    .doc(id)
-                                    .set(orderData);
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .collection('orderHistory')
+        .doc(id)
+        .set(orderData);
 
-                                await FirebaseFirestore.instance
-                                    .collection('adminOrderHistory')
-                                    .doc(id)
-                                    .set(orderData);
-                                
-                                // Close loading dialog
-                                Navigator.pop(context);
-                                
-                                // Show success snackbar
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      "Order marked as picked up!",
-                                      style: GoogleFonts.poppins(),
-                                    ),
-                                    backgroundColor: Colors.green,
-                                  ),
-                                );
-                                
-                                // Navigate to history
-                                Navigator.pushReplacementNamed(context, '/history');
-                              } catch (e) {
-                                // Close loading dialog
-                                Navigator.pop(context);
-                                
-                                // Show error snackbar
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      "Error updating order: $e",
-                                      style: GoogleFonts.poppins(),
-                                    ),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
-                              }
-                            },
+    await FirebaseFirestore.instance
+        .collection('adminOrderHistory')
+        .doc(id)
+        .set(orderData);
+    
+    // Close loading dialog
+    Navigator.pop(context);
+    
+    // Show success snackbar
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          "Order marked as picked up!",
+          style: GoogleFonts.poppins(),
+        ),
+        backgroundColor: Colors.green,
+      ),
+    );
+    
+    // FIXED: Navigate to UserHome with History tab
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const UserHome(initialIndex: 2), // History tab
+      ),
+      (route) => false,
+    );
+  } catch (e) {
+    // Close loading dialog
+    Navigator.pop(context);
+    
+    // Show error snackbar
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          "Error updating order: $e",
+          style: GoogleFonts.poppins(),
+        ),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+},
                             icon: const Icon(Icons.check_circle),
                             label: Text(
                               "CONFIRM ORDER PICK UP",
