@@ -1,5 +1,5 @@
 name: canteen_app
-description: A new Flutter project.
+description: A Flutter project with single device user authentication and stock reservation system.
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -39,7 +39,7 @@ dependencies:
   # Image
   image_picker: ^1.0.4
   
-  # Device Info
+  # Device Info - REQUIRED FOR DEVICE MANAGEMENT
   device_info_plus: ^9.1.1
 
 dev_dependencies:
@@ -49,3 +49,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # Add these assets if you want to include Google logo for auth
+  # assets:
+  #   - assets/images/google_logo.png

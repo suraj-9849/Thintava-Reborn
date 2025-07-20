@@ -1,3 +1,4 @@
+// lib/main.dart - COMPLETE VERSION WITH DEVICE MANAGEMENT ENABLED
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -176,12 +177,13 @@ class _ThintavaAppState extends State<ThintavaApp> {
   void initState() {
     super.initState();
     
-    // TEMPORARILY DISABLE SESSION LISTENER TO FIX LOGIN ISSUES
-    // authService.startSessionListener(() {
-    //   // This will be called if the user is logged out on another device
-    //   _handleForcedLogout();
-    // });
-    print('🚀 Thintava App initialized with Stock Reservation System');
+    // DEVICE MANAGEMENT - ENABLED SESSION LISTENER
+    authService.startSessionListener(() {
+      // This will be called if the user is logged out on another device
+      _handleForcedLogout();
+    });
+    
+    print('🚀 Thintava App initialized with Device Management and Stock Reservation System');
     
     // NEW: Initialize stock management field for existing items (one-time migration)
     _initializeStockReservationSystem();
@@ -209,25 +211,102 @@ class _ThintavaAppState extends State<ThintavaApp> {
     }
   }
   
+  // DEVICE MANAGEMENT - FORCED LOGOUT HANDLER
   void _handleForcedLogout() {
-    // Show a notification and navigate to login screen
+    print('🚫 Device session terminated - handling forced logout');
+    
+    // Clean up cart and reservations
+    try {
+      if (navigatorKey.currentContext != null) {
+        final cartProvider = Provider.of<CartProvider>(navigatorKey.currentContext!, listen: false);
+        cartProvider.cleanup();
+        print('✅ Cart and reservations cleaned up');
+      }
+    } catch (e) {
+      print('⚠️ Error cleaning up cart during forced logout: $e');
+    }
+    
+    // Show notification dialog
     if (navigatorKey.currentContext != null) {
       showDialog(
         context: navigatorKey.currentContext!,
         barrierDismissible: false,
         builder: (context) => AlertDialog(
-          title: Text('Logged Out', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-          content: Text(
-            'You have been logged out because your account was logged in on another device.',
-            style: GoogleFonts.poppins(),
+          title: Row(
+            children: [
+              Icon(
+                Icons.devices_other,
+                color: Colors.red,
+                size: 24,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Session Expired', 
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Your account has been logged in on another device.',
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'For security reasons, you have been automatically logged out from this device.',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.blue, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Only one device can be logged in at a time for security.',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: Colors.blue[700],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           actions: [
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                NavigationUtils.navigateToAndClearStack(context, '/auth');
+                Navigator.pushNamedAndRemoveUntil(context, '/auth', (route) => false);
               },
-              child: Text('OK', style: GoogleFonts.poppins()),
+              child: Text(
+                'Sign In Again',
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFFFFB703),
+                ),
+              ),
             ),
           ],
         ),
@@ -237,8 +316,8 @@ class _ThintavaAppState extends State<ThintavaApp> {
   
   @override
   void dispose() {
-    // TEMPORARILY DISABLE SESSION LISTENER
-    // authService.stopSessionListener();
+    // DEVICE MANAGEMENT - CLEANUP SESSION LISTENER
+    authService.stopSessionListener();
     super.dispose();
   }
   
@@ -263,7 +342,7 @@ class _ThintavaAppState extends State<ThintavaApp> {
         return ChangeNotifierProvider(
           create: (context) => CartProvider()..loadFromStorage(), // Load cart on app start
           child: MaterialApp(
-            title: 'Thintava - Smart Food Ordering',
+            title: 'Thintava - Smart Food Ordering with Device Security',
             debugShowCheckedModeBanner: false,
             theme: _buildAppTheme(),
             navigatorKey: navigatorKey,

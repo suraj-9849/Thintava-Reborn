@@ -1,19 +1,25 @@
-// Simple, working AuthService
+// lib/services/auth_service.dart - WITH DEVICE MANAGEMENT ENABLED
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/services.dart';
+import 'package:canteen_app/services/session_manager.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
+  final SessionManager _sessionManager = SessionManager(); // ENABLED
 
-  // Simple Google Sign-In
+  // Flag to prevent session check during login process
+  bool _isLoggingIn = false;
+
+  // Simple Google Sign-In with Device Management
   Future<UserAuthResult> signInWithGoogle() async {
     try {
+      _isLoggingIn = true;
       print('🔑 Starting Google Sign-In process...');
       
       // Clear any previous sign-in state
@@ -39,7 +45,7 @@ class AuthService {
       
       print('🔑 Signing in to Firebase...');
       
-      // Step 4: Firebase sign-in (simple, no retry)
+      // Step 4: Firebase sign-in
       final UserCredential userCredential = await _auth.signInWithCredential(credential);
       final User? user = userCredential.user;
       
@@ -49,16 +55,26 @@ class AuthService {
       
       print('✅ Firebase sign-in successful: ${user.email}');
       
-      // Step 5: Handle user data
-      return await _handleUserData(user);
+      // Step 5: Register device session BEFORE handling user data
+      await _sessionManager.registerSession(user);
+      print('✅ Device session registered');
+      
+      // Step 6: Handle user data
+      final result = await _handleUserData(user);
+      
+      _isLoggingIn = false;
+      return result;
       
     } on PlatformException catch (e) {
+      _isLoggingIn = false;
       print('❌ Platform error: ${e.code} - ${e.message}');
       throw Exception(_getPlatformErrorMessage(e));
     } on FirebaseAuthException catch (e) {
+      _isLoggingIn = false;
       print('❌ Firebase error: ${e.code} - ${e.message}');
       throw Exception(_getFirebaseErrorMessage(e));
     } catch (e) {
+      _isLoggingIn = false;
       print('❌ General error: $e');
       
       // Handle the specific type casting error
@@ -83,6 +99,11 @@ class AuthService {
       
       if (currentUser != null) {
         print('✅ Using existing Firebase session: ${currentUser.email}');
+        
+        // Register session for fallback too
+        await _sessionManager.registerSession(currentUser);
+        print('✅ Device session registered (fallback)');
+        
         return await _handleUserData(currentUser);
       }
       
@@ -157,24 +178,6 @@ class AuthService {
     }
   }
 
-  // Async FCM token update (non-blocking)
-  void _updateFCMTokenAsync(String uid) {
-    FirebaseMessaging.instance.getToken().then((token) {
-      if (token != null && token.isNotEmpty) {
-        _db.collection('users').doc(uid).update({
-          'fcmToken': token,
-          'tokenUpdatedAt': FieldValue.serverTimestamp(),
-        }).then((_) {
-          print('✅ FCM token updated');
-        }).catchError((error) {
-          print('⚠️ FCM token update failed: $error');
-        });
-      }
-    }).catchError((error) {
-      print('⚠️ FCM token retrieval failed: $error');
-    });
-  }
-
   // Setup username
   Future<bool> setupUsername(String username) async {
     try {
@@ -230,12 +233,16 @@ class AuthService {
     }
   }
 
-  // Logout
+  // Logout with session cleanup
   Future<void> logout() async {
     try {
       final user = _auth.currentUser;
       
       if (user != null) {
+        // Clear device session FIRST
+        await _sessionManager.clearSession();
+        print('✅ Device session cleared');
+        
         // Update user status (non-blocking)
         _db.collection('users').doc(user.uid).update({
           'isActive': false,
@@ -255,12 +262,65 @@ class AuthService {
       print('❌ Logout error: $e');
       // Force logout
       try {
+        await _sessionManager.clearSession();
         await _googleSignIn.signOut();
         await _auth.signOut();
       } catch (forceError) {
         print('❌ Force logout error: $forceError');
       }
     }
+  }
+
+  // DEVICE MANAGEMENT METHODS - ENABLED
+
+  // Check if this device is still the active session
+  Future<bool> checkActiveSession() async {
+    try {
+      // SKIP session check during login process
+      if (_isLoggingIn) {
+        print('⏳ Skipping session check - login in progress');
+        return true;
+      }
+
+      final user = _auth.currentUser;
+      if (user == null) {
+        print('❌ No current user for session check');
+        return false;
+      }
+
+      return await _sessionManager.isActiveSession();
+    } catch (e) {
+      print('Error checking active session: $e');
+      return true; // Default to true to avoid blocking user during errors
+    }
+  }
+  
+  // Start listening for session changes
+  void startSessionListener(VoidCallback onForcedLogout) {
+    _sessionManager.startSessionListener(onForcedLogout);
+  }
+  
+  // Stop listening for session changes
+  void stopSessionListener() {
+    _sessionManager.stopSessionListener();
+  }
+
+  // Async FCM token update (non-blocking)
+  void _updateFCMTokenAsync(String uid) {
+    FirebaseMessaging.instance.getToken().then((token) {
+      if (token != null && token.isNotEmpty) {
+        _db.collection('users').doc(uid).update({
+          'fcmToken': token,
+          'tokenUpdatedAt': FieldValue.serverTimestamp(),
+        }).then((_) {
+          print('✅ FCM token updated');
+        }).catchError((error) {
+          print('⚠️ FCM token update failed: $error');
+        });
+      }
+    }).catchError((error) {
+      print('⚠️ FCM token retrieval failed: $error');
+    });
   }
 
   // Error message helpers
@@ -331,15 +391,6 @@ class AuthService {
       print('Error getting user data: $e');
       return null;
     }
-  }
-
-  // Session management (disabled)
-  Future<bool> checkActiveSession() async => true;
-  void startSessionListener(VoidCallback onForcedLogout) {
-    print('📱 Session listener temporarily disabled');
-  }
-  void stopSessionListener() {
-    print('🛑 Session listener stop temporarily disabled');
   }
 }
 
