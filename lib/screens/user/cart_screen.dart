@@ -1,4 +1,4 @@
-// lib/screens/user/cart_screen.dart - FIXED UI ISSUES & REMOVED DEBUG CODE
+// lib/screens/user/cart_screen.dart - FIXED WITH RAZORPAY ORDERS API FOR AUTO-CAPTURE
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +10,8 @@ import 'package:canteen_app/services/reservation_service.dart';
 import 'package:canteen_app/widgets/reservation_timer.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:canteen_app/screens/user/user_home.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+
 
 class CartScreen extends StatefulWidget {
   const CartScreen({Key? key}) : super(key: key);
@@ -24,7 +26,11 @@ class _CartScreenState extends State<CartScreen> {
   late Razorpay _razorpay;
   bool isLoading = true;
   bool isReserving = false;
-  List<String>? currentReservationIds; // Track current reservation IDs
+  List<String>? currentReservationIds;
+  String? currentRazorpayOrderId; // Store Razorpay order ID
+
+  // Razorpay credentials - MOVE TO ENVIRONMENT VARIABLES IN PRODUCTION
+   // Add your secret
 
   @override
   void initState() {
@@ -70,7 +76,39 @@ class _CartScreenState extends State<CartScreen> {
     });
   }
 
-  /// Reserve stock and proceed to payment - CLEANED UP
+  /// Create Razorpay Order using Orders API
+  /// Create Razorpay Order using Firebase Cloud Function
+Future<String?> _createRazorpayOrder(double amount) async {
+  try {
+    print('🔄 Creating Razorpay order via Firebase Function for amount: ₹$amount');
+    
+    // Call Firebase Cloud Function instead of direct API
+    final callable = FirebaseFunctions.instance.httpsCallable('createRazorpayOrder');
+    
+    final result = await callable.call({
+      'amount': (amount * 100).toInt(), // Amount in paise
+      'currency': 'INR',
+      'receipt': 'order_${DateTime.now().millisecondsSinceEpoch}',
+      'notes': {
+        'app': 'Thintava',
+        'order_type': 'food_order',
+      }
+    });
+
+    if (result.data['success'] == true) {
+      final orderId = result.data['order']['id'];
+      print('✅ Firebase Function created Razorpay order: $orderId');
+      return orderId;
+    } else {
+      throw Exception('Failed to create order: ${result.data}');
+    }
+  } catch (e) {
+    print('❌ Error calling Firebase Function: $e');
+    throw Exception('Failed to create payment order: $e');
+  }
+}
+
+  /// Reserve stock and proceed to payment - UPDATED WITH ORDERS API
   Future<void> _reserveAndProceedToPayment() async {
     final cartProvider = Provider.of<CartProvider>(context, listen: false);
     
@@ -110,17 +148,27 @@ class _CartScreenState extends State<CartScreen> {
         return;
       }
 
-      // Step 4: Store reservation IDs and proceed to payment
-      currentReservationIds = reservationResult.reservations
-          ?.map((r) => r.id)
-          .toList();
+      // Step 4: Store reservation IDs
+      currentReservationIds = reservationResult.reservations?.map((r) => r.id).toList();
 
+      // Step 5: Create Razorpay order (for auto-capture)
+      currentRazorpayOrderId = await _createRazorpayOrder(total);
+      
+      if (currentRazorpayOrderId == null) {
+        throw Exception('Failed to create payment order');
+      }
 
-      // Step 5: Proceed to payment gateway
-      _startPayment();
+      // Step 6: Proceed to payment gateway with order ID
+      _startPaymentWithOrder();
 
     } catch (e) {
-      _showSnackBar("Error reserving items: $e", Colors.red, Icons.error_outline);
+      _showSnackBar("Error processing payment: $e", Colors.red, Icons.error_outline);
+      
+      // Release reservations on error
+      if (currentReservationIds != null) {
+        await cartProvider.releaseReservations(status: ReservationStatus.failed);
+        currentReservationIds = null;
+      }
     } finally {
       setState(() {
         isReserving = false;
@@ -186,6 +234,30 @@ class _CartScreenState extends State<CartScreen> {
                       style: GoogleFonts.poppins(
                         fontSize: 12,
                         color: Colors.orange.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.green.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Payment will be automatically captured after successful authorization.',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: Colors.green.shade700,
                       ),
                     ),
                   ),
@@ -312,28 +384,56 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
-  void _startPayment() {
+  /// Start payment with Razorpay order (for auto-capture)
+  void _startPaymentWithOrder() {
+    if (currentRazorpayOrderId == null) {
+      _showSnackBar("Payment setup failed", Colors.red, Icons.error_outline);
+      return;
+    }
+
     var options = {
-      'key': 'rzp_live_FBnjPJmPGZ9JHo', // Replace with your Razorpay key
+      'key': razorpayKeyId,
       'amount': (total * 100).toInt(), // Amount in paise
+      'currency': 'INR',
       'name': 'Thintava',
-      'description': 'Food Order Payment',
+      'description': 'Food Order Payment - Auto Capture Enabled',
+      'order_id': currentRazorpayOrderId, // 🔑 THIS IS KEY FOR AUTO-CAPTURE
       'prefill': {
         'contact': '',
         'email': FirebaseAuth.instance.currentUser?.email ?? '',
       },
-      'currency': 'INR',
       'theme': {
         'color': '#FFB703',
+      },
+      'notes': {
+        'app': 'Thintava',
+        'user_id': FirebaseAuth.instance.currentUser?.uid ?? '',
+        'auto_capture': 'enabled',
       }
     };
 
     try {
+      print('🚀 Starting Razorpay payment with order ID: $currentRazorpayOrderId');
       _razorpay.open(options);
     } catch (e) {
       debugPrint("Error: $e");
       _showSnackBar("Payment error: ${e.toString()}", Colors.red, Icons.error_outline);
     }
+  }
+
+  /// Direct payment without reservation (for already reserved items)
+  void _startPayment() {
+    // For already reserved items, still create order for auto-capture
+    _createRazorpayOrder(total).then((orderId) {
+      if (orderId != null) {
+        currentRazorpayOrderId = orderId;
+        _startPaymentWithOrder();
+      } else {
+        _showSnackBar("Payment setup failed", Colors.red, Icons.error_outline);
+      }
+    }).catchError((error) {
+      _showSnackBar("Payment setup failed: $error", Colors.red, Icons.error_outline);
+    });
   }
 
   void _handlePaymentSuccess(PaymentSuccessResponse response) async {
@@ -369,7 +469,7 @@ class _CartScreenState extends State<CartScreen> {
         }
       });
 
-      // Create order document
+      // Create order document with Razorpay order ID
       final orderDocRef = await FirebaseFirestore.instance.collection('orders').add({
         'userId': user.uid,
         'userEmail': user.email,
@@ -378,7 +478,9 @@ class _CartScreenState extends State<CartScreen> {
         'timestamp': Timestamp.now(),
         'total': total,
         'paymentId': response.paymentId,
+        'razorpayOrderId': currentRazorpayOrderId, // Store Razorpay order ID
         'paymentStatus': 'success',
+        'autoCaptureEnabled': true, // Flag to indicate auto-capture was used
       });
 
       // Confirm reservations
@@ -401,6 +503,7 @@ class _CartScreenState extends State<CartScreen> {
       
       // Clear current reservation tracking
       currentReservationIds = null;
+      currentRazorpayOrderId = null;
       
       // Close loading dialog
       Navigator.pop(context);
@@ -464,11 +567,15 @@ class _CartScreenState extends State<CartScreen> {
       currentReservationIds = null;
     }
 
-    _showSnackBar("Payment failed! Items have been released.", Colors.red, Icons.payment);
+    // Clear Razorpay order ID
+    currentRazorpayOrderId = null;
+
+    print('❌ Payment failed: ${response.code} - ${response.message}');
+    _showSnackBar("Payment failed! Items have been released. Error: ${response.message}", Colors.red, Icons.payment);
   }
 
   void _handleExternalWallet(ExternalWalletResponse response) {
-    _showSnackBar("External Wallet selected.", Color(0xFFFFB703), Icons.account_balance_wallet);
+    _showSnackBar("External Wallet selected: ${response.walletName}", Color(0xFFFFB703), Icons.account_balance_wallet);
   }
 
   void _showPaymentSuccessDialog(PaymentSuccessResponse response, String orderId) {
@@ -521,7 +628,7 @@ class _CartScreenState extends State<CartScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    "Your order has been placed successfully and will be prepared shortly.",
+                    "Your order has been placed successfully and payment will be automatically captured.",
                     style: GoogleFonts.poppins(fontSize: 16),
                   ),
                   const SizedBox(height: 12),
@@ -584,10 +691,63 @@ class _CartScreenState extends State<CartScreen> {
                       ),
                     ],
                   ),
+                  if (currentRazorpayOrderId != null) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Razorpay Order:",
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            currentRazorpayOrderId!,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontFamily: 'monospace',
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
             const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.auto_awesome,
+                    color: Colors.green,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      "Payment will be automatically captured within 12 minutes of authorization.",
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        color: Colors.green.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -1243,6 +1403,33 @@ class _CartScreenState extends State<CartScreen> {
                               ],
                             ),
                             const SizedBox(height: 16),
+                            
+                            // Auto-capture info banner
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              margin: const EdgeInsets.only(bottom: 16),
+                              decoration: BoxDecoration(
+                                color: Colors.green.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.green.withOpacity(0.3)),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.auto_awesome, color: Colors.green, size: 16),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      "Auto-capture enabled - Payment will be captured automatically after authorization",
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 11,
+                                        color: Colors.green.shade700,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                             
                             // Place order button
                             SizedBox(
