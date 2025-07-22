@@ -1,4 +1,4 @@
-// lib/providers/cart_provider.dart - UPDATED WITH RESERVATION SUPPORT
+// lib/providers/cart_provider.dart - FIXED WITH CORRECT STATUS FLOW
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:canteen_app/services/stock_management_service.dart';
@@ -41,16 +41,17 @@ class CartProvider extends ChangeNotifier {
     super.dispose();
   }
   
-  // Check for active orders
+  // FIXED: Check for active orders with correct status flow
   Future<bool> _checkActiveOrder() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return false;
       
+      // FIXED: Updated to use correct status flow: Placed -> Cooking -> Cooked -> Pick Up
       final activeOrderQuery = await FirebaseFirestore.instance
           .collection('orders')
           .where('userId', isEqualTo: user.uid)
-          .where('status', whereIn: ['Placed', 'Preparing', 'Ready', 'Pick Up'])
+          .where('status', whereIn: ['Placed', 'Cooking', 'Cooked', 'Pick Up'])
           .limit(1)
           .get();
       

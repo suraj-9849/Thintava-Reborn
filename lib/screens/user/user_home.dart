@@ -1,4 +1,4 @@
-// lib/screens/user/user_home.dart - FIXED WITH PROPER NAVIGATION HANDLING
+// lib/screens/user/user_home.dart - FIXED WITH CORRECT STATUS FLOW
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -166,15 +166,16 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  // Active order checking stream
+  // FIXED: Active order checking stream with correct statuses
   Stream<DocumentSnapshot?> _getActiveOrderStream() {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return const Stream.empty();
     
+    // FIXED: Updated to use correct status flow: Placed -> Cooking -> Cooked -> Pick Up
     return FirebaseFirestore.instance
         .collection('orders')
         .where('userId', isEqualTo: user.uid)
-        .where('status', whereIn: ['Placed', 'Preparing', 'Ready', 'Pick Up'])
+        .where('status', whereIn: ['Placed', 'Cooking', 'Cooked', 'Pick Up'])
         .orderBy('timestamp', descending: true)
         .limit(1)
         .snapshots()
@@ -493,7 +494,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
     );
   }
 
-  // Active order banner - UPDATED to use proper navigation
+  // FIXED: Active order banner with correct status handling
   Widget _buildActiveOrderBanner() {
     return StreamBuilder<DocumentSnapshot?>(
       stream: _getActiveOrderStream(),
@@ -517,6 +518,23 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
           final cartProvider = Provider.of<CartProvider>(context, listen: false);
           cartProvider.clearActiveOrderStatus(); // This will trigger the check
         });
+        
+        // FIXED: Get appropriate status display
+        String displayStatus = status;
+        switch (status) {
+          case 'Placed':
+            displayStatus = 'Order Placed';
+            break;
+          case 'Cooking':
+            displayStatus = 'Being Prepared';
+            break;
+          case 'Cooked':
+            displayStatus = 'Ready to Pickup';
+            break;
+          case 'Pick Up':
+            displayStatus = 'Ready for Pickup';
+            break;
+        }
         
         return Container(
           margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -571,7 +589,7 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            "Status: $status",
+                            "Status: $displayStatus",
                             style: GoogleFonts.poppins(
                               fontSize: 14,
                               color: Colors.grey[600],
