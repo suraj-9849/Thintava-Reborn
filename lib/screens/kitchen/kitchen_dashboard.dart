@@ -1,9 +1,9 @@
-// lib/screens/kitchen/kitchen_dashboard.dart - COMPLETE FIXED VERSION
+// lib/screens/kitchen/kitchen_dashboard.dart
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:canteen_app/services/auth_service.dart';
-import 'package:canteen_app/widgets/order_expiry_timer.dart'; 
+import 'package:canteen_app/widgets/order_expiry_timer.dart'; // Import the new timer widget
 
 // Capitalize helper
 String capitalize(String s) =>
@@ -22,9 +22,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> with SingleTickerPr
   String _currentFilter = 'All';
   final _authService = AuthService();
 
-  // FIXED: Standard status values - these are the only valid ones for dropdown
-  static const List<String> validStatuses = ['Placed', 'Cooking', 'Cooked', 'Pick Up'];
-
   @override
   void initState() {
     super.initState();
@@ -42,32 +39,10 @@ class _KitchenDashboardState extends State<KitchenDashboard> with SingleTickerPr
     super.dispose();
   }
 
-  // FIXED: Helper function to normalize status values
-  String normalizeStatus(String status) {
-    // Convert all variations to the standard format with proper spacing
-    final cleanStatus = status.toLowerCase().replaceAll(' ', '').trim();
-    
-    switch (cleanStatus) {
-      case 'placed':
-        return 'Placed';
-      case 'cooking':
-        return 'Cooking';
-      case 'cooked':
-        return 'Cooked';
-      case 'pickup':
-      case 'pickuup': // Handle typos
-        return 'Pick Up'; // Always with space
-      case 'pickedup':
-        return 'PickedUp'; // Final state, not in dropdown
-      default:
-        return 'Placed'; // Default fallback
-    }
-  }
-
   Stream<QuerySnapshot> getOrdersStream() {
     return FirebaseFirestore.instance
         .collection('orders')
-        .orderBy('timestamp', descending: false) // FIXED: Ascending order - oldest first (queue behavior)
+        .orderBy('timestamp', descending: true)
         .snapshots();
   }
 
@@ -77,12 +52,10 @@ class _KitchenDashboardState extends State<KitchenDashboard> with SingleTickerPr
       final orderRef = db.collection('orders').doc(orderId);
 
       final updates = <String, Object>{'status': newStatus};
-      
-      // Set timestamps for specific statuses
       if (newStatus == 'Cooked') {
         updates['cookedTime'] = FieldValue.serverTimestamp();
       }
-      if (newStatus == 'Pick Up') { // Ensure we're checking for the correct format with space
+      if (newStatus == 'Pick Up') {
         updates['pickedUpTime'] = FieldValue.serverTimestamp();
       }
 
@@ -101,16 +74,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> with SingleTickerPr
       }
     } catch (e) {
       print('Error updating order status: $e');
-      // Optionally show error to user
-      if (mounted && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to update order status'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
     }
   }
 
@@ -160,54 +123,60 @@ class _KitchenDashboardState extends State<KitchenDashboard> with SingleTickerPr
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return Center(
-              child: Text('Error: ${snapshot.error}'),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 60, color: Colors.redAccent),
+                  const SizedBox(height: 16),
+                  Text(
+                    "Error loading orders",
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(color: Colors.redAccent),
+                  ),
+                  const SizedBox(height: 8),
+                  ElevatedButton.icon(
+                    onPressed: () => setState(() {}),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text("Try Again"),
+                  ),
+                ],
+              ),
             );
           }
-
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          
+          if (!snapshot.hasData) {
             return const Center(
               child: CircularProgressIndicator(
-                color: Color(0xFFFFB703),
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFB703)),
               ),
             );
           }
 
-          final docs = snapshot.data!.docs;
-          
-          // Filter based on current tab selection
-          final filteredDocs = docs.where((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            final rawStatus = data['status'] as String? ?? 'Placed';
-            final normalizedStatus = normalizeStatus(rawStatus);
-            
-            if (_currentFilter == 'All') return true;
-            return normalizedStatus == _currentFilter;
+          // Filter orders based on selected tab
+          final allDocs = snapshot.data!.docs.where((d) {
+            final s = d['status'];
+            return s != 'Terminated' && s != 'PickedUp';
           }).toList();
+          
+          final docs = _currentFilter == 'All' 
+              ? allDocs 
+              : allDocs.where((d) => capitalize(d['status'] ?? '') == _currentFilter).toList();
 
-          if (filteredDocs.isEmpty) {
+          if (docs.isEmpty) {
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    Icons.kitchen,
-                    size: 64,
-                    color: Colors.grey[400],
-                  ),
-                  const SizedBox(height: 16),
+                  const Icon(Icons.food_bank_outlined, size: 80, color: Color(0xFFFFB703)),
+                  const SizedBox(height: 24),
                   Text(
                     _currentFilter == 'All' 
-                        ? 'No orders found' 
-                        : 'No $_currentFilter orders',
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: Colors.grey[600],
-                      fontWeight: FontWeight.w500,
-                    ),
+                        ? "No active orders" 
+                        : "No orders with status: $_currentFilter",
+                    style: Theme.of(context).textTheme.headlineSmall,
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 16),
                   const Text(
-                    "The kitchen is quiet for now.",
+                    "All caught up! The kitchen is quiet for now.",
                     style: TextStyle(fontSize: 16, color: Colors.black54),
                   ),
                 ],
@@ -217,9 +186,9 @@ class _KitchenDashboardState extends State<KitchenDashboard> with SingleTickerPr
 
           return ListView.builder(
             padding: const EdgeInsets.all(16),
-            itemCount: filteredDocs.length,
+            itemCount: docs.length,
             itemBuilder: (ctx, i) {
-              final doc = filteredDocs[i];
+              final doc = docs[i];
               final data = doc.data()! as Map<String, dynamic>;
               return Padding(
                 padding: const EdgeInsets.only(bottom: 12),
@@ -228,7 +197,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> with SingleTickerPr
                   orderId: doc.id,
                   data: data,
                   onUpdate: updateOrderStatus,
-                  normalizeStatus: normalizeStatus, // Pass the normalizer
                 ),
               );
             },
@@ -243,14 +211,12 @@ class EnhancedOrderCard extends StatefulWidget {
   final String orderId;
   final Map<String, dynamic> data;
   final Future<void> Function(String, String) onUpdate;
-  final String Function(String) normalizeStatus; // Add normalizer function
 
   const EnhancedOrderCard({
     Key? key,
     required this.orderId,
     required this.data,
     required this.onUpdate,
-    required this.normalizeStatus,
   }) : super(key: key);
 
   @override
@@ -293,14 +259,8 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
 
   @override
   Widget build(BuildContext context) {
-    final rawStatus = widget.data['status'] ?? '';
-    final normalizedStatus = widget.normalizeStatus(rawStatus); // Use normalizer
+    final status = capitalize(widget.data['status'] ?? '');
     final shortId = widget.orderId.substring(0, 6);
-    
-    // FIXED: Ensure status is valid for dropdown
-    final dropdownStatus = _KitchenDashboardState.validStatuses.contains(normalizedStatus) 
-        ? normalizedStatus 
-        : 'Placed'; // Fallback to valid status
     
     // Get order data
     final itemsData = widget.data['items'];
@@ -356,7 +316,7 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: _getStatusColor(normalizedStatus).withOpacity(0.5),
+          color: _getStatusColor(status).withOpacity(0.5),
           width: 1.5,
         ),
       ),
@@ -377,13 +337,13 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: _getStatusColor(normalizedStatus).withOpacity(0.2),
+                      color: _getStatusColor(status).withOpacity(0.2),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      normalizedStatus,
+                      status,
                       style: TextStyle(
-                        color: _getStatusColor(normalizedStatus),
+                        color: _getStatusColor(status),
                         fontWeight: FontWeight.bold,
                         fontSize: 12,
                       ),
@@ -424,27 +384,63 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: Colors.grey[300]!),
                     ),
-                    child: Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          "Items: $totalItems",
-                          style: const TextStyle(
-                            fontSize: 11,
+                        const Text(
+                          "Items",
+                          style: TextStyle(
+                            fontSize: 12,
                             fontWeight: FontWeight.w500,
-                            color: Colors.black87,
+                            color: Colors.black54,
                           ),
                         ),
-                        const SizedBox(width: 16),
+                        const SizedBox(height: 2),
                         Text(
-                          "Total: ₹${total.toStringAsFixed(2)}",
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFFFFB703),
-                          ),
+                          totalItems > 0 
+                              ? "$totalItems item${totalItems > 1 ? 's' : ''}"
+                              : "No items",
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
+                  ),
+                  const SizedBox(height: 8),
+                  
+                  // User email section
+                  Row(
+                    children: [
+                      const Icon(Icons.person, size: 16, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          userEmail,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.black54,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  
+                  // Total amount section
+                  Row(
+                    children: [
+                      const Icon(Icons.currency_rupee, size: 16, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Total: ₹${total.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFFFFB703),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   
@@ -466,13 +462,13 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
                           height: 30,
                           padding: const EdgeInsets.symmetric(horizontal: 6),
                           decoration: BoxDecoration(
-                            color: _getStatusColor(normalizedStatus).withOpacity(0.1),
+                            color: _getStatusColor(status).withOpacity(0.1),
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: _getStatusColor(normalizedStatus).withOpacity(0.3)),
+                            border: Border.all(color: _getStatusColor(status).withOpacity(0.3)),
                           ),
                           child: DropdownButtonHideUnderline(
                             child: DropdownButton<String>(
-                              value: dropdownStatus, // FIXED: Use validated status
+                              value: status,
                               icon: const Icon(Icons.keyboard_arrow_down, size: 14),
                               isDense: true,
                               isExpanded: true,
@@ -482,7 +478,7 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
                                   widget.onUpdate(widget.orderId, newStatus);
                                 }
                               },
-                              items: _KitchenDashboardState.validStatuses // FIXED: Use constant
+                              items: ['Placed', 'Cooking', 'Cooked', 'Pick Up']
                                   .map((s) => DropdownMenuItem(
                                         value: s,
                                         child: Text(
@@ -500,7 +496,7 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
                   ),
                   
                   // Timer widget - only show if status is "Pick Up" and we have pickup time
-                  if (normalizedStatus == 'Pick Up' && pickedUpTime != null) ...[
+                  if (status == 'Pick Up' && pickedUpTime != null) ...[
                     const SizedBox(height: 8),
                     Row(
                       children: [
@@ -552,23 +548,24 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
                                 Text(
                                   item['name'],
                                   style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
                                     fontSize: 14,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
                                 Text(
-                                  "Quantity: ${item['quantity']}",
+                                  'Qty: ${item['quantity']} × ₹${item['price'].toStringAsFixed(2)}',
                                   style: TextStyle(
-                                    color: Colors.grey[600],
                                     fontSize: 12,
+                                    color: Colors.grey[600],
                                   ),
                                 ),
                               ],
                             ),
                           ),
                           Text(
-                            "₹${item['subtotal'].toStringAsFixed(2)}",
+                            '₹${item['subtotal'].toStringAsFixed(2)}',
                             style: const TextStyle(
+                              fontSize: 14,
                               fontWeight: FontWeight.bold,
                               color: Color(0xFFFFB703),
                             ),
@@ -576,36 +573,57 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
                         ],
                       ),
                     );
-                  }).toList(),
-                
-                // User email info
-                Container(
-                  margin: const EdgeInsets.only(top: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.person, color: Colors.blue, size: 16),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          "Customer: $userEmail",
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.blue,
-                            fontWeight: FontWeight.w500,
-                          ),
+                  }).toList()
+                else
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[300]!),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.inbox_outlined,
+                          size: 32,
+                          color: Colors.grey[400],
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 8),
+                        const Text(
+                          "No items in this order",
+                          style: TextStyle(
+                            fontStyle: FontStyle.italic,
+                            color: Colors.black54,
+                            fontSize: 13,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+              if (_isExpanded) ...[
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.center,
+                  child: Icon(
+                    Icons.keyboard_arrow_up,
+                    color: Colors.black54,
+                  ),
+                ),
+              ] else ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.center,
+                  child: Icon(
+                    Icons.keyboard_arrow_down,
+                    color: Colors.black54,
                   ),
                 ),
               ],
-            ],
+            ]
           ),
         ),
       ),
