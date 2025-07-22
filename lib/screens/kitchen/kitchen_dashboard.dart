@@ -40,9 +40,10 @@ class _KitchenDashboardState extends State<KitchenDashboard> with SingleTickerPr
   }
 
   Stream<QuerySnapshot> getOrdersStream() {
-    // Get all orders without ordering first, then we'll sort client-side
+    // FIXED: Change to ascending order for FIFO queue (oldest orders first)
     return FirebaseFirestore.instance
         .collection('orders')
+        .orderBy('timestamp', descending: false) // CHANGED: false for FIFO
         .snapshots();
   }
 
@@ -151,39 +152,15 @@ class _KitchenDashboardState extends State<KitchenDashboard> with SingleTickerPr
             );
           }
 
-          // Filter orders based on selected tab
+          // Filter orders based on selected tab - orders are already in FIFO order from query
           final allDocs = snapshot.data!.docs.where((d) {
             final s = d['status'];
             return s != 'Terminated' && s != 'PickedUp';
           }).toList();
           
-          // Apply filter
-          List<QueryDocumentSnapshot> docs;
-          if (_currentFilter == 'All') {
-            docs = allDocs;
-          } else {
-            docs = allDocs.where((d) => capitalize(d['status'] ?? '') == _currentFilter).toList();
-          }
-          
-          // Sort by timestamp - OLDEST FIRST for queue system
-          docs.sort((a, b) {
-            final aData = a.data() as Map<String, dynamic>;
-            final bData = b.data() as Map<String, dynamic>;
-            
-            final aTimestamp = aData['timestamp'] as Timestamp?;
-            final bTimestamp = bData['timestamp'] as Timestamp?;
-            
-            // Handle null timestamps
-            if (aTimestamp == null && bTimestamp == null) return 0;
-            if (aTimestamp == null) return 1;
-            if (bTimestamp == null) return -1;
-            
-            // Sort in ASCENDING order (oldest first)
-            return aTimestamp.seconds.compareTo(bTimestamp.seconds);
-          });
-          
-          // If you're still seeing newest first, uncomment the line below to reverse:
-          // docs = docs.reversed.toList();
+          final docs = _currentFilter == 'All' 
+              ? allDocs 
+              : allDocs.where((d) => capitalize(d['status'] ?? '') == _currentFilter).toList();
 
           if (docs.isEmpty) {
             return Center(
