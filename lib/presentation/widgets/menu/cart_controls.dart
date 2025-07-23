@@ -1,4 +1,9 @@
 // lib/presentation/widgets/menu/cart_controls.dart
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+import '../../../providers/cart_provider.dart';
+
 class CartControls extends StatelessWidget {
   final String itemId;
   final int cartQuantity;
@@ -124,4 +129,3 @@ class CartControls extends StatelessWidget {
     );
   }
 }
-

@@ -1,4 +1,6 @@
 // lib/presentation/widgets/order/active_order_banner.dart
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/utils/user_utils.dart';
@@ -31,7 +33,8 @@ class ActiveOrderBanner extends StatelessWidget {
         final shortOrderId = orderId.length > 6 ? orderId.substring(0, 6) : orderId;
         
         final statusType = UserUtils.getOrderStatusType(status);
-        final displayStatus = statusType.displayName;
+        // Quick fix: use a helper function instead of .displayName
+        final displayStatus = _getDisplayStatus(statusType);
         
         return Container(
           margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -115,6 +118,27 @@ class ActiveOrderBanner extends StatelessWidget {
         );
       },
     );
+  }
+
+  // Helper function to get display status without extension
+  String _getDisplayStatus(dynamic statusType) {
+    final statusString = statusType.toString().split('.').last;
+    switch (statusString) {
+      case 'placed':
+        return 'Order Placed';
+      case 'cooking':
+        return 'Being Prepared';
+      case 'cooked':
+        return 'Ready';
+      case 'pickUp':
+        return 'Ready for Pickup';
+      case 'pickedUp':
+        return 'Completed';
+      case 'terminated':
+        return 'Cancelled';
+      default:
+        return 'Unknown Status';
+    }
   }
 
   Stream<DocumentSnapshot?> _getActiveOrderStream() {

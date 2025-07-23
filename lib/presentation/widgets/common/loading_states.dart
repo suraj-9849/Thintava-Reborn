@@ -1,4 +1,6 @@
 // lib/presentation/widgets/common/loading_states.dart
+import 'package:flutter/material.dart';
+
 class LoadingGrid extends StatefulWidget {
   final int itemCount;
   
@@ -132,4 +134,3 @@ class _LoadingGridState extends State<LoadingGrid>
     );
   }
 }
-

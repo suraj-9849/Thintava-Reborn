@@ -1,4 +1,6 @@
 // lib/presentation/widgets/common/custom_card.dart
+import 'package:flutter/material.dart';
+
 class CustomCard extends StatelessWidget {
   final Widget child;
   final EdgeInsets? padding;

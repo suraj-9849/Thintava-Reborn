@@ -1,4 +1,9 @@
 // lib/presentation/widgets/common/stock_indicator.dart
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../../core/enums/user_enums.dart';
+import '../../../core/utils/user_utils.dart';
+
 class StockIndicator extends StatelessWidget {
   final StockStatusType status;
   final int? availableStock;

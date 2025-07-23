@@ -1,4 +1,7 @@
 // lib/presentation/widgets/menu/search_filter_bar.dart
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+
 class SearchFilterBar extends StatelessWidget {
   final TextEditingController searchController;
   final String searchQuery;

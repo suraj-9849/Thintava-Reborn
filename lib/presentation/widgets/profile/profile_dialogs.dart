@@ -1,4 +1,6 @@
 // lib/presentation/widgets/profile/profile_dialogs.dart
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class ProfileDialogs {
