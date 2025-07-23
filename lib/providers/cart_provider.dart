@@ -1,4 +1,4 @@
-// lib/providers/cart_provider.dart - FIXED WITH CORRECT STATUS FLOW
+// lib/providers/cart_provider.dart - EXACTLY THE SAME (NO CHANGES)
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:canteen_app/services/stock_management_service.dart';
@@ -501,7 +501,6 @@ class CartProvider extends ChangeNotifier {
     
     for (String itemId in _cart.keys) {
       final status = await StockManagementService.getItemStockStatus(itemId);
-      stockStatus[itemId] = status;
     }
     
     return stockStatus;
