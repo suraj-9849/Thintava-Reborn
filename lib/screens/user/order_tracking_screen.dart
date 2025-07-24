@@ -1,4 +1,4 @@
-// lib/screens/user/order_tracking_screen.dart - OPTIMIZED VERSION
+// lib/screens/user/order_tracking_screen.dart - FINAL FIXED VERSION
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -22,6 +22,7 @@ class OrderTrackingScreen extends StatefulWidget {
 class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _progressAnimation;
+  bool _isTimerExpired = false;
 
   @override
   void initState() {
@@ -56,17 +57,14 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
   }
 
   void _handleTimerExpired() {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Your order pickup time has expired! Please contact support if needed.',
-            style: GoogleFonts.poppins(),
-          ),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 5),
-        ),
-      );
+    if (mounted && !_isTimerExpired) {
+      setState(() {
+        _isTimerExpired = true;
+      });
+      
+      // FIXED: Don't show error snackbar during timer expiry
+      // The Cloud Function will handle the termination automatically
+      print('⏰ Order pickup timer expired - waiting for backend termination');
     }
   }
 
@@ -127,6 +125,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
           final status = data['status'] ?? 'Unknown';
           final statusType = UserUtils.getOrderStatusType(status);
           
+          // FIXED: Handle terminated orders immediately
           if (statusType == OrderStatusType.terminated) {
             return TerminatedOrderState(
               orderId: doc.id,
@@ -260,8 +259,8 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
                         child: OrderProgressBar(currentStatus: statusType),
                       ),
                       
-                      // Timer widget
-                      if (statusType == OrderStatusType.pickUp && pickedUpTime != null)
+                      // Timer widget - FIXED: Only show if not expired and not terminated
+                      if (statusType == OrderStatusType.pickUp && pickedUpTime != null && !_isTimerExpired)
                         Container(
                           margin: const EdgeInsets.only(bottom: 16),
                           child: Center(
@@ -273,13 +272,53 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
                           ),
                         ),
                       
-                      // Pickup button
-                      if (statusType == OrderStatusType.pickUp)
+                      // FIXED: Only show pickup button if timer hasn't expired and order isn't terminated
+                      if (statusType == OrderStatusType.pickUp && !_isTimerExpired)
                         Container(
                           margin: const EdgeInsets.symmetric(vertical: 16),
                           child: PickupButton(
                             orderId: doc.id,
                             orderData: data,
+                          ),
+                        ),
+                      
+                      // FIXED: Show expired message if timer expired but order not yet terminated
+                      if (statusType == OrderStatusType.pickUp && _isTimerExpired)
+                        Container(
+                          margin: const EdgeInsets.symmetric(vertical: 16),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.hourglass_empty, color: Colors.orange, size: 20),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      "Pickup time has expired",
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.orange[700],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                "Your order will be terminated automatically. You can still collect it by showing your Order ID to kitchen staff.",
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  color: Colors.grey[700],
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       

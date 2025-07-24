@@ -1,4 +1,4 @@
-// lib/presentation/widgets/history/order_history_card.dart
+// lib/presentation/widgets/history/order_history_card.dart - FIXED VERSION
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -46,6 +46,51 @@ class OrderHistoryCard extends StatelessWidget {
     final total = data['total'] ?? 0.0;
     final shortOrderId = orderId.length > 6 ? orderId.substring(0, 6) : orderId;
     
+    // FIXED: Special handling for terminated orders
+    Widget statusWidget;
+    if (statusType == OrderStatusType.terminated) {
+      // Check if terminated order is from today
+      final now = DateTime.now();
+      final isToday = timestamp.year == now.year && 
+                     timestamp.month == now.month && 
+                     timestamp.day == now.day;
+      
+      statusWidget = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: isToday ? Colors.orange.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isToday ? Colors.orange.withOpacity(0.3) : Colors.red.withOpacity(0.3),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isToday ? Icons.access_time : Icons.cancel,
+              color: isToday ? Colors.orange : Colors.red,
+              size: 12,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              isToday ? 'Time Expired' : 'Terminated',
+              style: GoogleFonts.poppins(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: isToday ? Colors.orange : Colors.red,
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      statusWidget = StatusIndicator(
+        status: statusType,
+        isCompact: true,
+      );
+    }
+    
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -59,7 +104,7 @@ class OrderHistoryCard extends StatelessWidget {
           ),
         ],
         border: Border.all(
-          color: UserUtils.getStatusColor(statusType).withOpacity(0.3),
+          color: _getBorderColor(statusType, timestamp).withOpacity(0.3),
           width: 1.5,
         ),
       ),
@@ -69,10 +114,10 @@ class OrderHistoryCard extends StatelessWidget {
         ),
         child: ExpansionTile(
           leading: CircleAvatar(
-            backgroundColor: UserUtils.getStatusColor(statusType).withOpacity(0.2),
+            backgroundColor: _getBorderColor(statusType, timestamp).withOpacity(0.2),
             child: Icon(
-              UserUtils.getStatusIcon(statusType),
-              color: UserUtils.getStatusColor(statusType),
+              _getStatusIcon(statusType, timestamp),
+              color: _getBorderColor(statusType, timestamp),
             ),
           ),
           title: Text(
@@ -101,10 +146,7 @@ class OrderHistoryCard extends StatelessWidget {
                 children: [
                   Flexible(
                     flex: 1,
-                    child: StatusIndicator(
-                      status: statusType,
-                      isCompact: true,
-                    ),
+                    child: statusWidget,
                   ),
                   const SizedBox(width: 8),
                   Flexible(
@@ -150,12 +192,73 @@ class OrderHistoryCard extends StatelessWidget {
                       color: Colors.black54,
                     ),
                   ),
+                
+                // FIXED: Show pickup instructions for terminated orders from today
+                if (statusType == OrderStatusType.terminated && _isFromToday(timestamp))
+                  Container(
+                    margin: const EdgeInsets.only(top: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFB703).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFFFB703).withOpacity(0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.info_outline, color: Color(0xFFFFB703), size: 16),
+                            const SizedBox(width: 6),
+                            Text(
+                              "Still available for pickup today!",
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFFFFB703),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          "Show Order ID to kitchen staff: $orderId",
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ],
         ),
       ),
     );
+  }
+
+  // FIXED: Helper methods for terminated orders
+  Color _getBorderColor(OrderStatusType statusType, DateTime timestamp) {
+    if (statusType == OrderStatusType.terminated) {
+      return _isFromToday(timestamp) ? Colors.orange : Colors.red;
+    }
+    return UserUtils.getStatusColor(statusType);
+  }
+
+  IconData _getStatusIcon(OrderStatusType statusType, DateTime timestamp) {
+    if (statusType == OrderStatusType.terminated) {
+      return _isFromToday(timestamp) ? Icons.access_time : Icons.cancel;
+    }
+    return UserUtils.getStatusIcon(statusType);
+  }
+
+  bool _isFromToday(DateTime timestamp) {
+    final now = DateTime.now();
+    return timestamp.year == now.year && 
+           timestamp.month == now.month && 
+           timestamp.day == now.day;
   }
 
   List<Map<String, dynamic>> _processOrderItems(dynamic itemsData) {

@@ -1,4 +1,4 @@
-// lib/providers/cart_provider.dart - EXACTLY THE SAME (NO CHANGES)
+// lib/providers/cart_provider.dart - FIXED VERSION (UPDATED ACTIVE ORDER CHECK)
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:canteen_app/services/stock_management_service.dart';
@@ -41,13 +41,13 @@ class CartProvider extends ChangeNotifier {
     super.dispose();
   }
   
-  // FIXED: Check for active orders with correct status flow
+  // FIXED: Check for active orders with correct status flow (EXCLUDING TERMINATED ORDERS)
   Future<bool> _checkActiveOrder() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return false;
       
-      // FIXED: Updated to use correct status flow: Placed -> Cooking -> Cooked -> Pick Up
+      // FIXED: Exclude 'Terminated' status from active orders check
       final activeOrderQuery = await FirebaseFirestore.instance
           .collection('orders')
           .where('userId', isEqualTo: user.uid)

@@ -1,11 +1,11 @@
-// lib/presentation/widgets/order/pickup_button.dart
+// lib/presentation/widgets/order/pickup_button.dart - FIXED VERSION
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../screens/user/user_home.dart';
 
-class PickupButton extends StatelessWidget {
+class PickupButton extends StatefulWidget {
   final String orderId;
   final Map<String, dynamic> orderData;
   
@@ -16,32 +16,50 @@ class PickupButton extends StatelessWidget {
   }) : super(key: key);
 
   @override
+  State<PickupButton> createState() => _PickupButtonState();
+}
+
+class _PickupButtonState extends State<PickupButton> {
+  bool _isProcessing = false;
+
+  @override
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
       height: 55,
       child: ElevatedButton.icon(
-        onPressed: () => _handlePickup(context),
-        icon: const Icon(Icons.check_circle),
+        onPressed: _isProcessing ? null : () => _handlePickup(context),
+        icon: _isProcessing 
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            )
+          : const Icon(Icons.check_circle),
         label: Text(
-          "CONFIRM ORDER PICK UP",
+          _isProcessing ? "PROCESSING..." : "CONFIRM ORDER PICK UP",
           style: GoogleFonts.poppins(
             fontWeight: FontWeight.bold,
           ),
         ),
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFFFFB703),
+          backgroundColor: _isProcessing ? Colors.grey : const Color(0xFFFFB703),
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          elevation: 3,
+          elevation: _isProcessing ? 0 : 3,
         ),
       ),
     );
   }
 
   Future<void> _handlePickup(BuildContext context) async {
+    if (_isProcessing) return;
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -81,23 +99,18 @@ class PickupButton extends StatelessWidget {
     
     if (!confirm) return;
     
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(
-          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFB703)),
-        ),
-      ),
-    );
+    // Set processing state
+    setState(() {
+      _isProcessing = true;
+    });
     
     try {
       final userId = FirebaseAuth.instance.currentUser!.uid;
-      final updatedOrderData = {...orderData, 'status': 'PickedUp'};
+      final updatedOrderData = {...widget.orderData, 'status': 'PickedUp'};
 
       await FirebaseFirestore.instance
           .collection('orders')
-          .doc(orderId)
+          .doc(widget.orderId)
           .update({
         'status': 'PickedUp',
         'pickedUpByUserTime': FieldValue.serverTimestamp(),
@@ -107,45 +120,49 @@ class PickupButton extends StatelessWidget {
           .collection('users')
           .doc(userId)
           .collection('orderHistory')
-          .doc(orderId)
+          .doc(widget.orderId)
           .set(updatedOrderData);
 
       await FirebaseFirestore.instance
           .collection('adminOrderHistory')
-          .doc(orderId)
+          .doc(widget.orderId)
           .set(updatedOrderData);
       
-      Navigator.pop(context);
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            "Order marked as picked up!",
-            style: GoogleFonts.poppins(),
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              "Order marked as picked up!",
+              style: GoogleFonts.poppins(),
+            ),
+            backgroundColor: Colors.green,
           ),
-          backgroundColor: Colors.green,
-        ),
-      );
-      
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(
-          builder: (context) => const UserHome(initialIndex: 2),
-        ),
-        (route) => false,
-      );
+        );
+        
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const UserHome(initialIndex: 2),
+          ),
+          (route) => false,
+        );
+      }
     } catch (e) {
-      Navigator.pop(context);
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            "Error updating order: $e",
-            style: GoogleFonts.poppins(),
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              "Error updating order: $e",
+              style: GoogleFonts.poppins(),
+            ),
+            backgroundColor: Colors.red,
           ),
-          backgroundColor: Colors.red,
-        ),
-      );
+        );
+      }
     }
   }
 }

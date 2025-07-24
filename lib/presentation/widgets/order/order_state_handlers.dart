@@ -1,4 +1,4 @@
-// lib/presentation/widgets/order/order_state_handlers.dart
+// lib/presentation/widgets/order/order_state_handlers.dart - FINAL FIXED VERSION
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -82,6 +82,13 @@ class TerminatedOrderState extends StatelessWidget {
     final total = orderData['total'] ?? 0.0;
     final timestamp = orderData['timestamp'] as Timestamp?;
     final orderDate = timestamp?.toDate() ?? DateTime.now();
+    final shortOrderId = orderId.length > 6 ? orderId.substring(0, 6) : orderId;
+    
+    // Check if order is from today
+    final now = DateTime.now();
+    final isToday = orderDate.year == now.year && 
+                   orderDate.month == now.month && 
+                   orderDate.day == now.day;
     
     return Center(
       child: Container(
@@ -104,27 +111,27 @@ class TerminatedOrderState extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.1),
+                color: isToday ? Colors.orange.withOpacity(0.1) : Colors.red.withOpacity(0.1),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
-                Icons.cancel,
+              child: Icon(
+                isToday ? Icons.access_time : Icons.cancel,
                 size: 48,
-                color: Colors.red,
+                color: isToday ? Colors.orange : Colors.red,
               ),
             ),
             const SizedBox(height: 16),
             Text(
-              "Order Cancelled",
+              isToday ? "Order Time Expired" : "Order Terminated",
               style: GoogleFonts.poppins(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
-                color: Colors.red,
+                color: isToday ? Colors.orange : Colors.red,
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              "Order #${orderId.substring(0, 8)}",
+              "Order #$shortOrderId",
               style: GoogleFonts.poppins(
                 fontSize: 16,
                 color: Colors.grey[600],
@@ -182,29 +189,104 @@ class TerminatedOrderState extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.withOpacity(0.3)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline, color: Colors.orange, size: 16),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      "This order was cancelled due to pickup timeout. If you have any questions, please contact support.",
+            
+            if (isToday) ...[
+              // Show pickup instructions for same-day orders
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFB703).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFFFB703).withOpacity(0.3)),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          color: const Color(0xFFFFB703),
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            "Your order is still available for pickup!",
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFFFFB703),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      "Show this Order ID to the kitchen staff:",
                       style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: Colors.orange.shade700,
+                        fontSize: 13,
+                        color: Colors.grey[700],
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFFFB703)),
+                      ),
+                      child: Text(
+                        // FIXED: Display order ID as-is from database
+                        orderId,
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFFFFB703),
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      "⚠️ Valid only for today",
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.orange[700],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
+            ] else ...[
+              // Show expired message for old orders
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.red, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "This order has expired and is no longer available for pickup.",
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: Colors.red.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            
             const SizedBox(height: 24),
             Row(
               children: [

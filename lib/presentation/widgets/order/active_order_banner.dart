@@ -1,4 +1,4 @@
-// lib/presentation/widgets/order/active_order_banner.dart
+// lib/presentation/widgets/order/active_order_banner.dart - FIXED VERSION
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -33,7 +33,12 @@ class ActiveOrderBanner extends StatelessWidget {
         final shortOrderId = orderId.length > 6 ? orderId.substring(0, 6) : orderId;
         
         final statusType = UserUtils.getOrderStatusType(status);
-        // Quick fix: use a helper function instead of .displayName
+        
+        // FIXED: Don't show banner for terminated orders
+        if (statusType.toString().split('.').last == 'terminated') {
+          return const SizedBox();
+        }
+        
         final displayStatus = _getDisplayStatus(statusType);
         
         return Container(
@@ -145,6 +150,7 @@ class ActiveOrderBanner extends StatelessWidget {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return const Stream.empty();
     
+    // FIXED: Exclude terminated orders from active order stream
     return FirebaseFirestore.instance
         .collection('orders')
         .where('userId', isEqualTo: user.uid)
