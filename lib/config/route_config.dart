@@ -1,4 +1,4 @@
-// lib/config/route_config.dart - UPDATED WITH PROPER NAVIGATION
+// lib/config/route_config.dart - UPDATED TO REMOVE KITCHEN DASHBOARD ROUTE
 import 'package:flutter/material.dart';
 import 'package:canteen_app/screens/auth/auth_menu.dart';
 import 'package:canteen_app/screens/auth/username_setup_screen.dart';
@@ -12,8 +12,7 @@ import 'package:canteen_app/screens/admin/menu_management_screen.dart';
 import 'package:canteen_app/screens/admin/admin_order_history_screen.dart';
 import 'package:canteen_app/screens/admin/admin_kitchen_view_screen.dart';
 import 'package:canteen_app/screens/admin/admin_live_orders.dart';
-import 'package:canteen_app/screens/kitchen/kitchen_dashboard.dart';
-import 'package:canteen_app/screens/kitchen/kitchen_home.dart';
+import 'package:canteen_app/screens/kitchen/kitchen_home.dart'; // Now serves as the main dashboard
 import 'package:canteen_app/screens/splash/splash_screen.dart';
 
 class RouteConfig {
@@ -45,10 +44,10 @@ class RouteConfig {
       '/admin/admin-history': (_) => const AdminOrderHistoryScreen(),
       '/admin/admin-kitchen-view': (_) => const AdminKitchenViewScreen(),
       
-      // Kitchen routes
-      '/kitchen': (_) => const KitchenDashboard(),
-      '/kitchen-menu': (_) => const KitchenHome(),
-      '/kitchen-dashboard': (_) => const KitchenDashboard(),
+      // Kitchen routes - SIMPLIFIED TO JUST ONE MAIN ROUTE
+      '/kitchen': (_) => const KitchenHome(), // Now serves as the main dashboard
+      '/kitchen-menu': (_) => const KitchenHome(), // Redirect to main kitchen dashboard
+      '/kitchen-home': (_) => const KitchenHome(), // Redirect to main kitchen dashboard
       
       // App routes
       '/splash': (context) => const SplashScreen(),
@@ -76,5 +75,16 @@ class RouteConfig {
   
   static void navigateToProfile(BuildContext context) {
     navigateToUserHome(context, initialIndex: 3);
+  }
+
+  // NEW: Kitchen navigation helper
+  static void navigateToKitchenDashboard(BuildContext context) {
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const KitchenHome(),
+      ),
+      (route) => false,
+    );
   }
 }

@@ -1,3 +1,4 @@
+// lib/screens/splash/splash_screen.dart - UPDATED TO NAVIGATE TO KITCHEN HOME DIRECTLY
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -147,13 +148,13 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
       print("🎯 User role: $role");
 
-      // Navigate based on role
+      // Navigate based on role - UPDATED KITCHEN NAVIGATION
       if (role == 'admin') {
         print("🏠 Navigating to admin home");
         Navigator.pushReplacementNamed(context, '/admin/home');
       } else if (role == 'kitchen') {
-        print("👨‍🍳 Navigating to kitchen home");
-        Navigator.pushReplacementNamed(context, '/kitchen-menu');
+        print("👨‍🍳 Navigating to kitchen dashboard (now main kitchen home)");
+        Navigator.pushReplacementNamed(context, '/kitchen'); // Changed from '/kitchen-menu' to '/kitchen'
       } else {
         print("👤 Navigating to user home");
         Navigator.pushReplacementNamed(context, '/user/user-home');

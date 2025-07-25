@@ -1,4 +1,4 @@
-// lib/presentation/widgets/common/status_indicator.dart
+// lib/presentation/widgets/common/status_indicator.dart - FIXED OVERFLOW VERSION
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/enums/user_enums.dart';
@@ -24,12 +24,12 @@ class StatusIndicator extends StatelessWidget {
     
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: isCompact ? 6 : 8,
+        horizontal: isCompact ? 4 : 8,
         vertical: isCompact ? 2 : 4,
       ),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(isCompact ? 8 : 12),
+        borderRadius: BorderRadius.circular(isCompact ? 6 : 12),
         border: Border.all(color: color.withOpacity(0.3)),
       ),
       child: Row(
@@ -39,16 +39,21 @@ class StatusIndicator extends StatelessWidget {
             Icon(
               icon,
               color: color,
-              size: isCompact ? 12 : 16,
+              size: isCompact ? 10 : 16,
             ),
-            SizedBox(width: isCompact ? 4 : 6),
+            SizedBox(width: isCompact ? 2 : 6),
           ],
-          Text(
-            text,
-            style: GoogleFonts.poppins(
-              fontSize: isCompact ? 10 : 12,
-              fontWeight: FontWeight.w600,
-              color: color,
+          // FIXED: Use Flexible to prevent overflow
+          Flexible(
+            child: Text(
+              text,
+              style: GoogleFonts.poppins(
+                fontSize: isCompact ? 9 : 12,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
             ),
           ),
         ],

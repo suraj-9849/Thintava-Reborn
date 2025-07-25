@@ -1,4 +1,4 @@
-// lib/presentation/widgets/history/order_history_card.dart - FIXED VERSION
+// lib/presentation/widgets/history/order_history_card.dart - FIXED OVERFLOW VERSION
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -56,10 +56,10 @@ class OrderHistoryCard extends StatelessWidget {
                      timestamp.day == now.day;
       
       statusWidget = Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(
           color: isToday ? Colors.orange.withOpacity(0.1) : Colors.red.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
           border: Border.all(
             color: isToday ? Colors.orange.withOpacity(0.3) : Colors.red.withOpacity(0.3),
           ),
@@ -70,15 +70,18 @@ class OrderHistoryCard extends StatelessWidget {
             Icon(
               isToday ? Icons.access_time : Icons.cancel,
               color: isToday ? Colors.orange : Colors.red,
-              size: 12,
+              size: 10,
             ),
-            const SizedBox(width: 4),
-            Text(
-              isToday ? 'Time Expired' : 'Terminated',
-              style: GoogleFonts.poppins(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: isToday ? Colors.orange : Colors.red,
+            const SizedBox(width: 2),
+            Flexible(
+              child: Text(
+                isToday ? 'Expired' : 'Terminated',
+                style: GoogleFonts.poppins(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w600,
+                  color: isToday ? Colors.orange : Colors.red,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
@@ -140,29 +143,40 @@ class OrderHistoryCard extends StatelessWidget {
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 4),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Flexible(
-                    flex: 1,
-                    child: statusWidget,
-                  ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    flex: 1,
-                    child: Text(
-                      "₹${total.toStringAsFixed(2)}",
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFFFFB703),
+              const SizedBox(height: 6),
+              // FIXED: Use Intrinsic widgets to prevent overflow
+              IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Status widget with flexible sizing
+                    Flexible(
+                      flex: 2,
+                      child: Container(
+                        alignment: Alignment.centerLeft,
+                        child: statusWidget,
                       ),
-                      textAlign: TextAlign.end,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    // Price with flexible sizing
+                    Flexible(
+                      flex: 1,
+                      child: Container(
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          "₹${total.toStringAsFixed(2)}",
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFFFFB703),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.end,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -210,12 +224,14 @@ class OrderHistoryCard extends StatelessWidget {
                           children: [
                             const Icon(Icons.info_outline, color: Color(0xFFFFB703), size: 16),
                             const SizedBox(width: 6),
-                            Text(
-                              "Still available for pickup today!",
-                              style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: const Color(0xFFFFB703),
+                            Expanded(
+                              child: Text(
+                                "Still available for pickup today!",
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFFFFB703),
+                                ),
                               ),
                             ),
                           ],
@@ -313,8 +329,9 @@ class OrderHistoryCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            // Item details in a column layout
+            // FIXED: Item details with proper flex handling
             Expanded(
+              flex: 3,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -330,7 +347,9 @@ class OrderHistoryCard extends StatelessWidget {
                     maxLines: 1,
                   ),
                   const SizedBox(height: 2),
-                  Row(
+                  // FIXED: Wrap quantity and price info properly
+                  Wrap(
+                    spacing: 8,
                     children: [
                       Text(
                         "Qty: ${item['quantity']}",
@@ -340,8 +359,7 @@ class OrderHistoryCard extends StatelessWidget {
                           fontWeight: FontWeight.w500,
                         ),
                       ),
-                      if (item['price'] != null && item['price'] > 0) ...[
-                        const SizedBox(width: 8),
+                      if (item['price'] != null && item['price'] > 0)
                         Text(
                           "₹${item['price'].toStringAsFixed(2)} each",
                           style: GoogleFonts.poppins(
@@ -349,20 +367,27 @@ class OrderHistoryCard extends StatelessWidget {
                             color: Colors.black54,
                           ),
                         ),
-                      ],
                     ],
                   ),
                 ],
               ),
             ),
-            // Subtotal (if available)
+            // FIXED: Subtotal with constrained width
             if (item['subtotal'] != null && item['subtotal'] > 0)
-              Text(
-                "₹${item['subtotal'].toStringAsFixed(2)}",
-                style: GoogleFonts.poppins(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFFFFB703),
+              Flexible(
+                flex: 1,
+                child: Container(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    "₹${item['subtotal'].toStringAsFixed(2)}",
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFFFFB703),
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.end,
+                  ),
                 ),
               ),
           ],
