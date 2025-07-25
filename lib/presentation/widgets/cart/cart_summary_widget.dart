@@ -44,15 +44,10 @@ class CartSummaryWidget extends StatelessWidget {
           _buildBillDetails(),
           const SizedBox(height: 16),
           
-          // Auto-capture info banner
-          _buildAutoCaptureInfo(),
           
           // Place order button
           _buildOrderButton(),
           
-          // Info text
-          const SizedBox(height: 8),
-          _buildInfoText(),
         ],
       ),
     );
@@ -138,33 +133,6 @@ class CartSummaryWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildAutoCaptureInfo() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.green.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.green.withOpacity(0.3)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.auto_awesome, color: Colors.green, size: 16),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              "Auto-capture enabled - Payment will be captured automatically after authorization",
-              style: GoogleFonts.poppins(
-                fontSize: 11,
-                color: Colors.green.shade700,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildOrderButton() {
     return SizedBox(
@@ -211,18 +179,18 @@ class CartSummaryWidget extends StatelessWidget {
           : Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  hasActiveReservations 
-                    ? Icons.payment 
-                    : Icons.schedule,
-                ),
+                // Icon(
+                //   hasActiveReservations 
+                //     ? Icons.payment 
+                //     : Icons.schedule,
+                // ),
                 const SizedBox(width: 8),
                 Text(
                   hasActiveReservations
                     ? "Pay Now • ₹${total.toStringAsFixed(2)}"
-                    : "Reserve & Pay • ₹${total.toStringAsFixed(2)}",
+                    : "Pay Now• ₹${total.toStringAsFixed(2)}",
                   style: GoogleFonts.poppins(
-                    fontSize: 16,
+                    fontSize: 14,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -232,19 +200,4 @@ class CartSummaryWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildInfoText() {
-    return Center(
-      child: Text(
-        hasActiveReservations 
-          ? "Items are reserved for you. Complete payment to confirm order."
-          : "Items will be reserved while you complete payment",
-        style: GoogleFonts.poppins(
-          fontSize: 12,
-          color: Colors.grey[600],
-          fontStyle: FontStyle.italic,
-        ),
-        textAlign: TextAlign.center,
-      ),
-    );
-  }
 }

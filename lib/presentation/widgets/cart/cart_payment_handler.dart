@@ -360,7 +360,7 @@ class CartPaymentHandler {
     currentRazorpayOrderId = null;
 
     print('❌ Payment failed: ${response.code} - ${response.message}');
-    _showSnackBar("Payment failed! Items have been released. Error: ${response.message}", Colors.red, Icons.payment);
+    // _showSnackBar("Payment failed! Items have been released. Error: ${response.message}", Colors.red, Icons.payment);
   }
 
   void _handleExternalWallet(ExternalWalletResponse response) {
