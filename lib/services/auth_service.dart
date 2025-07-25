@@ -1,4 +1,4 @@
-// lib/services/auth_service.dart - WITH DEVICE MANAGEMENT ENABLED
+// lib/services/auth_service.dart - REMOVE USERNAME SETUP REQUIREMENT
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -59,7 +59,7 @@ class AuthService {
       await _sessionManager.registerSession(user);
       print('✅ Device session registered');
       
-      // Step 6: Handle user data
+      // Step 6: Handle user data (no username setup needed)
       final result = await _handleUserData(user);
       
       _isLoggingIn = false;
@@ -114,7 +114,7 @@ class AuthService {
     }
   }
 
-  // Handle user data after successful authentication
+  // Handle user data after successful authentication - SIMPLIFIED
   Future<UserAuthResult> _handleUserData(User user) async {
     try {
       print('📝 Processing user data for: ${user.uid}');
@@ -123,7 +123,7 @@ class AuthService {
       final userDoc = await _db.collection('users').doc(user.uid).get();
       
       if (!userDoc.exists) {
-        // New user - create document
+        // New user - create document with all necessary info
         print('🆕 Creating new user document');
         
         await _db.collection('users').doc(user.uid).set({
@@ -133,8 +133,9 @@ class AuthService {
           'role': 'user',
           'createdAt': FieldValue.serverTimestamp(),
           'provider': 'google',
-          'needsUsernameSetup': true,
           'isActive': true,
+          // Remove username setup requirement
+          'profileComplete': true,
         });
         
         // Update FCM token
@@ -143,19 +144,22 @@ class AuthService {
         return UserAuthResult(
           user: user,
           isNewUser: true,
-          needsUsernameSetup: true,
+          needsUsernameSetup: false, // Changed to false
         );
       } else {
         // Existing user
         print('👤 Existing user found');
         
         final userData = userDoc.data() as Map<String, dynamic>;
-        final needsUsernameSetup = userData['needsUsernameSetup'] ?? false;
         
-        // Update last login
+        // Update user profile to ensure it's complete
         await _db.collection('users').doc(user.uid).update({
           'lastLoginTime': FieldValue.serverTimestamp(),
           'isActive': true,
+          'profileComplete': true,
+          // Update display name and photo if they changed
+          'displayName': user.displayName,
+          'photoURL': user.photoURL,
         });
         
         // Update FCM token
@@ -164,7 +168,7 @@ class AuthService {
         return UserAuthResult(
           user: user,
           isNewUser: false,
-          needsUsernameSetup: needsUsernameSetup,
+          needsUsernameSetup: false, // Always false now
         );
       }
     } catch (e) {
@@ -172,65 +176,18 @@ class AuthService {
       // Return success anyway if Firebase auth worked
       return UserAuthResult(
         user: user,
-        isNewUser: true,
-        needsUsernameSetup: true,
+        isNewUser: false,
+        needsUsernameSetup: false, // Always false
       );
     }
   }
 
-  // Setup username
+  // REMOVE OR KEEP AS LEGACY - setupUsername method
+  @Deprecated('Username setup no longer required - using Gmail display names')
   Future<bool> setupUsername(String username) async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) {
-        throw Exception('No authenticated user');
-      }
-      
-      final trimmedUsername = username.trim();
-      
-      // Validate username
-      if (trimmedUsername.isEmpty) {
-        throw Exception('Please enter a username');
-      }
-      
-      if (trimmedUsername.length < 3) {
-        throw Exception('Username must be at least 3 characters');
-      }
-      
-      if (trimmedUsername.length > 20) {
-        throw Exception('Username must be less than 20 characters');
-      }
-      
-      // Check for valid characters
-      if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(trimmedUsername)) {
-        throw Exception('Username can only contain letters, numbers, and underscores');
-      }
-      
-      // Check if username exists
-      final querySnapshot = await _db
-          .collection('users')
-          .where('username', isEqualTo: trimmedUsername)
-          .limit(1)
-          .get();
-      
-      if (querySnapshot.docs.isNotEmpty) {
-        throw Exception('Username is already taken');
-      }
-      
-      // Update user document
-      await _db.collection('users').doc(user.uid).update({
-        'username': trimmedUsername,
-        'needsUsernameSetup': false,
-        'usernameSetupAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      
-      print('✅ Username setup completed: $trimmedUsername');
-      return true;
-    } catch (e) {
-      print('❌ Username setup error: $e');
-      rethrow;
-    }
+    // Keep for backward compatibility but make it a no-op
+    print('⚠️ setupUsername called but no longer required');
+    return true;
   }
 
   // Logout with session cleanup
@@ -355,6 +312,8 @@ class AuthService {
   bool get isLoggedIn => _auth.currentUser != null;
   String? get currentUserEmail => _auth.currentUser?.email;
   String? get currentUserUid => _auth.currentUser?.uid;
+  String? get currentUserDisplayName => _auth.currentUser?.displayName;
+  String? get currentUserPhotoURL => _auth.currentUser?.photoURL;
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
   // User data methods
@@ -392,9 +351,21 @@ class AuthService {
       return null;
     }
   }
+
+  // Helper method to get user display name
+  String getUserDisplayName() {
+    final user = currentUser;
+    if (user?.displayName != null && user!.displayName!.isNotEmpty) {
+      return user.displayName!;
+    } else if (user?.email != null) {
+      // Extract name from email if display name is not available
+      return user!.email!.split('@')[0];
+    }
+    return 'User';
+  }
 }
 
-// Result class
+// Updated result class
 class UserAuthResult {
   final User user;
   final bool isNewUser;

@@ -29,15 +29,9 @@ class _AuthMenuState extends State<AuthMenu> {
       if (mounted) {
         print('✅ Google Sign-In successful, processing result...');
         
-        if (result.needsUsernameSetup) {
-          // Navigate to username setup screen
-          print('📝 User needs username setup, navigating...');
-          Navigator.pushReplacementNamed(context, '/username-setup');
-        } else {
-          // User is ready, navigate to splash which will route appropriately
-          print('🏠 User ready, navigating to splash...');
-          Navigator.pushReplacementNamed(context, '/splash');
-        }
+        // No more username setup - directly navigate to splash
+        print('🏠 User ready, navigating to splash...');
+        Navigator.pushReplacementNamed(context, '/splash');
       }
     } catch (e) {
       print('❌ Google Sign-In error: $e');
@@ -293,7 +287,7 @@ class _AuthMenuState extends State<AuthMenu> {
                             
                             const SizedBox(height: 24),
                             
-                            // Benefits section
+                            // Benefits section - Updated to reflect no username setup
                             Container(
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
@@ -314,6 +308,26 @@ class _AuthMenuState extends State<AuthMenu> {
                                     ),
                                   ),
                                   const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.flash_on,
+                                        size: 16,
+                                        color: Color(0xFFFFB703),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'Quick setup with your Google profile',
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 12,
+                                            color: Colors.black87,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
                                   Row(
                                     children: [
                                       const Icon(
@@ -357,14 +371,14 @@ class _AuthMenuState extends State<AuthMenu> {
                                   Row(
                                     children: [
                                       const Icon(
-                                        Icons.notifications,
+                                        Icons.security,
                                         size: 16,
                                         color: Color(0xFFFFB703),
                                       ),
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: Text(
-                                          'Get notified about order updates',
+                                          'Secure device-based authentication',
                                           style: GoogleFonts.poppins(
                                             fontSize: 12,
                                             color: Colors.black87,

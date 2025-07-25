@@ -1,4 +1,4 @@
-// lib/main.dart - COMPLETE VERSION WITH DEVICE MANAGEMENT ENABLED
+// lib/main.dart - COMPLETE VERSION WITH DEVICE MANAGEMENT - NO USERNAME SETUP
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
