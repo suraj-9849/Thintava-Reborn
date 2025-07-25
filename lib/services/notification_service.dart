@@ -1,3 +1,4 @@
+// lib/services/notification_service.dart - FIXED VERSION FOR MISSING PRICE DATA
 import 'dart:async';
 import 'dart:typed_data'; // Add this import for Int64List
 import 'package:firebase_core/firebase_core.dart';
@@ -145,14 +146,14 @@ class NotificationService {
     // Handle notification that opened the app from terminated state
     RemoteMessage? initialMessage = await FirebaseMessaging.instance.getInitialMessage();
     if (initialMessage != null && _isOrderRelatedNotification(initialMessage)) {
-      print('📱 App opened from notification: ${initialMessage.data}');
+      print('📱 App opened from terminated state by order notification');
       _handleNotificationNavigation(initialMessage.data);
     }
 
     // Handle notification that opened the app from background state
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      print('📱 App opened from background by order notification');
       if (_isOrderRelatedNotification(message)) {
-        print('📱 App opened from background by notification: ${message.data}');
         _handleNotificationNavigation(message.data);
       }
     });
@@ -185,7 +186,7 @@ class NotificationService {
       color = const Color(0xFFFF5722);
     }
 
-    // Create rich notification content
+    // Create rich notification content - FIXED FOR MISSING PRICE DATA
     String expandedText = _createExpandedNotificationText(message.data);
     
     final androidDetails = AndroidNotificationDetails(
@@ -238,6 +239,7 @@ class NotificationService {
     print('📱 Enhanced local notification shown for type: $type');
   }
 
+  // FIXED: Remove pricing information from notification text
   static String _createExpandedNotificationText(Map<String, dynamic> data) {
     final type = data['type']?.toString() ?? '';
     final orderId = data['orderId']?.toString() ?? '';
@@ -246,30 +248,38 @@ class NotificationService {
     switch (type) {
       case 'NEW_ORDER':
         final itemCount = data['itemCount']?.toString() ?? '0';
-        final orderTotal = data['orderTotal']?.toString() ?? '0';
         final customerEmail = data['customerEmail']?.toString() ?? 'Unknown';
+        // REMOVED: orderTotal/pricing information
         return '<b>New Order #$shortOrderId</b><br/>'
                '📦 $itemCount items<br/>'
-               '💰 ₹$orderTotal<br/>'
                '👤 $customerEmail<br/>'
                '<i>Tap to view in kitchen dashboard</i>';
                
       case 'ORDER_STATUS_UPDATE':
         final oldStatus = data['oldStatus']?.toString() ?? '';
         final newStatus = data['newStatus']?.toString() ?? '';
-        final orderTotal = data['orderTotal']?.toString() ?? '0';
         final itemCount = data['itemCount']?.toString() ?? '0';
+        // REMOVED: orderTotal/pricing information
         return '<b>Order #$shortOrderId Updated</b><br/>'
                '📋 Status: $oldStatus → $newStatus<br/>'
-               '📦 $itemCount items • ₹$orderTotal<br/>'
+               '📦 $itemCount items<br/>'
                '<i>Tap to track your order</i>';
                
       case 'ORDER_EXPIRING':
-        final orderTotal = data['orderTotal']?.toString() ?? '0';
-        return '<b>⚠️ Order #$shortOrderId Expiring!</b><br/>'
-               '💰 Worth ₹$orderTotal<br/>'
+        // REMOVED: orderTotal/pricing information
+        return '<b>⚠ Order #$shortOrderId Expiring!</b><br/>'
                '⏰ Expires in 1 minute<br/>'
                '<b><i>COLLECT NOW!</i></b>';
+               
+      case 'PAYMENT_CAPTURED':
+        return '<b>💰 Payment Confirmed</b><br/>'
+               'Order #$shortOrderId payment processed<br/>'
+               '<i>Order is being prepared</i>';
+               
+      case 'WELCOME':
+        return '<b>🎉 Welcome to Thintava!</b><br/>'
+               'Explore our delicious menu<br/>'
+               '<i>Tap to start ordering</i>';
                
       default:
         return 'Tap to view order details';
@@ -284,6 +294,10 @@ class NotificationService {
         return 'Updates when your order status changes';
       case 'ORDER_EXPIRING':
         return 'Critical alerts when orders are about to expire';
+      case 'PAYMENT_CAPTURED':
+        return 'Payment confirmation notifications';
+      case 'WELCOME':
+        return 'Welcome messages for new users';
       default:
         return 'General order notifications';
     }
@@ -337,8 +351,10 @@ class NotificationService {
           break;
         default:
           // Default navigation based on type
-          if (type.contains('ORDER')) {
+          if (type.contains('ORDER') || type == 'PAYMENT_CAPTURED') {
             onNotificationTap!('/track');
+          } else if (type == 'WELCOME') {
+            onNotificationTap!('/home');
           }
       }
     }
@@ -396,7 +412,7 @@ class NotificationService {
     );
 
     await flutterLocalNotificationsPlugin.show(
-      999999, // Test notification ID
+      999999,
       '🧪 Test Order Notification',
       'Testing enhanced order notification system',
       details,

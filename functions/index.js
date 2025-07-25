@@ -1,4 +1,4 @@
-// functions/index.js - COMPLETE WITH RAZORPAY INTEGRATION
+// functions/index.js - COMPLETE WITH RAZORPAY INTEGRATION - FIXED PRICING ISSUE
 const functions = require('firebase-functions/v1');
 const admin = require('firebase-admin');
 
@@ -66,7 +66,7 @@ exports.terminateStalePickups = functions.pubsub
     return null;
   });
 
-// 🚀 Enhanced function: notify kitchen when a new order is created
+// 🚀 Enhanced function: notify kitchen when a new order is created - FIXED PRICING
 exports.notifyKitchenOnNewOrder = functions.firestore
   .document('orders/{orderId}')
   .onCreate(async (snap, context) => {
@@ -92,14 +92,25 @@ exports.notifyKitchenOnNewOrder = functions.firestore
         return null;
       }
 
+      // Calculate item count from order data
+      let itemCount = 0;
+      if (newOrder.items && Array.isArray(newOrder.items)) {
+        itemCount = newOrder.items.reduce((total, item) => {
+          return total + (item.quantity || 1);
+        }, 0);
+      }
+
       const payload = {
         notification: {
           title: 'New Order Received',
-          body: `A new order #${context.params.orderId.substring(0, 6)} has been placed. Check the kitchen panel.`,
+          body: `A new order #${context.params.orderId.substring(0, 6)} has been placed. ${itemCount} items total.`,
         },
         data: {
           type: 'NEW_ORDER',
           orderId: context.params.orderId,
+          itemCount: itemCount.toString(),
+          customerEmail: newOrder.userEmail || 'Unknown',
+          // REMOVED: orderTotal to hide pricing
         }
       };
 
@@ -117,7 +128,7 @@ exports.notifyKitchenOnNewOrder = functions.firestore
     }
   });
 
-// 🚀 Enhanced function: notify user when order status changes
+// 🚀 Enhanced function: notify user when order status changes - FIXED PRICING
 exports.notifyUserOnOrderStatusChange = functions.firestore
   .document('orders/{orderId}')
   .onUpdate(async (change, context) => {
@@ -147,6 +158,14 @@ exports.notifyUserOnOrderStatusChange = functions.firestore
       if (!fcmToken) {
         console.log('No FCM token found for user:', userId);
         return null;
+      }
+
+      // Calculate item count from order data
+      let itemCount = 0;
+      if (orderData.items && Array.isArray(orderData.items)) {
+        itemCount = orderData.items.reduce((total, item) => {
+          return total + (item.quantity || 1);
+        }, 0);
       }
 
       // Create status-specific messages
@@ -179,6 +198,8 @@ exports.notifyUserOnOrderStatusChange = functions.firestore
           orderId: context.params.orderId,
           newStatus: afterStatus,
           oldStatus: beforeStatus,
+          itemCount: itemCount.toString(),
+          // REMOVED: orderTotal to hide pricing
         }
       };
       
@@ -238,75 +259,630 @@ exports.notifyUserOnSessionTermination = functions.firestore
           data: {
             type: 'SESSION_TERMINATED',
             userId: userId,
-            timestamp: sessionData.logoutTime ? sessionData.logoutTime.toDate().toString() : new Date().toString(),
-            previousDevice: sessionData.deviceInfo ? JSON.stringify(sessionData.deviceInfo) : '',
-            reason: 'another_device_login',
+            timestamp: sessionData.logoutTime ? sessionData.logoutTime.toString() : new Date().toISOString(),
+            device: deviceInfo,
           }
         };
         
-        // Send the notification
-        try {
-          const result = await admin.messaging().send({
-            token: fcmToken,
-            notification: payload.notification,
-            data: payload.data,
-            android: {
-              notification: {
-                channelId: 'thintava_security',
-                priority: 'high',
-                defaultSound: true,
-                defaultVibrateTimings: true,
-                color: '#FF5722'
-              }
-            },
-            apns: {
-              payload: {
-                aps: {
-                  sound: 'default',
-                  badge: 1,
-                  category: 'security'
-                }
-              }
-            }
-          });
-          console.log(`✅ Session termination notification sent to ${fcmToken.substring(0, 20)}... for user ${userId}:`, result);
-          return result;
-        } catch (error) {
-          // Token might be invalid
-          console.error(`❌ Error sending session termination notification to ${fcmToken.substring(0, 20)}...:`, error);
-          return null;
-        }
+        const result = await admin.messaging().send({
+          token: fcmToken,
+          notification: payload.notification,
+          data: payload.data
+        });
+        
+        console.log('Session termination notification sent successfully:', result);
+        return result;
       } else {
-        console.log(`⚠️ No notification sent - logoutReason: ${sessionData.logoutReason}, fcmToken: ${!!sessionData.fcmToken}`);
+        console.log('Not sending session notification - no logout reason or FCM token');
+        return null;
       }
-      
-      return null;
     } catch (error) {
-      console.error('❌ Error in notifyUserOnSessionTermination:', error);
+      console.error('Error sending session termination notification:', error);
       return null;
     }
   });
 
-// 🔥 NEW FUNCTION: Clean up expired sessions periodically
+// 🔥 Enhanced welcome notification function for new user registrations
+exports.sendWelcomeNotification = functions.firestore
+  .document('users/{userId}')
+  .onCreate(async (snap, context) => {
+    try {
+      const newUserData = snap.data();
+      const userId = context.params.userId;
+      
+      console.log(`🎉 New user registered: ${userId}`);
+      
+      // Wait 5 seconds to ensure FCM token is saved
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      // Get updated user data with FCM token
+      const updatedUserDoc = await admin.firestore().collection('users').doc(userId).get();
+      const updatedUserData = updatedUserDoc.data();
+      
+      if (updatedUserData && updatedUserData.fcmToken) {
+        console.log(`📱 Sending welcome notification to: ${updatedUserData.email}`);
+        
+        const payload = {
+          notification: {
+            title: '🎉 Welcome to Thintava! 🍽️',
+            body: 'Start exploring our delicious menu and place your first order!',
+          },
+          data: {
+            type: 'WELCOME',
+            userId: userId,
+          }
+        };
+        
+        const result = await admin.messaging().send({
+          token: updatedUserData.fcmToken,
+          notification: payload.notification,
+          data: payload.data
+        });
+        
+        console.log('Welcome notification sent successfully:', result);
+        return result;
+      } else {
+        console.log('No FCM token available for welcome notification');
+        return null;
+      }
+    } catch (error) {
+      console.error('Error sending welcome notification:', error);
+      return null;
+    }
+  });
+
+// ============================================================================
+// NEW RAZORPAY FUNCTIONS - AUTO-CAPTURE INTEGRATION
+// ============================================================================
+
+// 🔥 Create Razorpay order for auto-capture
+exports.createRazorpayOrder = functions.https.onCall(async (data, context) => {
+  try {
+    // Check if user is authenticated
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { amount, currency = 'INR', receipt, notes = {} } = data;
+
+    // Validate required fields
+    if (!amount || amount <= 0) {
+      throw new functions.https.HttpsError('invalid-argument', 'Valid amount is required');
+    }
+
+    console.log(`🔄 Creating Razorpay order for user ${context.auth.uid}, amount: ${amount}`);
+
+    // Create order with Razorpay
+    const orderOptions = {
+      amount: amount, // Amount in paise
+      currency: currency,
+      receipt: receipt || `order_${Date.now()}`,
+      payment_capture: 1, // 🔑 AUTO-CAPTURE ENABLED
+      notes: {
+        ...notes,
+        userId: context.auth.uid,
+        userEmail: context.auth.token.email || '',
+      }
+    };
+
+    const razorpayOrder = await razorpay.orders.create(orderOptions);
+    
+    console.log(`✅ Razorpay order created: ${razorpayOrder.id}`);
+
+    // Store order info in Firestore for tracking
+    await admin.firestore().collection('razorpay_orders').doc(razorpayOrder.id).set({
+      razorpayOrderId: razorpayOrder.id,
+      userId: context.auth.uid,
+      amount: amount,
+      currency: currency,
+      status: razorpayOrder.status,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      notes: orderOptions.notes,
+      autoCaptureEnabled: true,
+    });
+
+    // Return order details to client
+    return {
+      success: true,
+      orderId: razorpayOrder.id,
+      amount: razorpayOrder.amount,
+      currency: razorpayOrder.currency,
+      status: razorpayOrder.status,
+      autoCaptureEnabled: true,
+    };
+
+  } catch (error) {
+    console.error('❌ Error creating Razorpay order:', error);
+    throw new functions.https.HttpsError('internal', 'Failed to create order', error.message);
+  }
+});
+
+// 🔥 Verify Razorpay payment
+exports.verifyRazorpayPayment = functions.https.onCall(async (data, context) => {
+  try {
+    // Check if user is authenticated
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = data;
+
+    // Validate required fields
+    if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
+      throw new functions.https.HttpsError('invalid-argument', 'Payment ID, Order ID, and Signature are required');
+    }
+
+    console.log(`🔍 Verifying payment: ${razorpay_payment_id} for order: ${razorpay_order_id}`);
+
+    // Create signature verification string
+    const generated_signature = crypto
+      .createHmac('sha256', functions.config().razorpay.key_secret)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest('hex');
+
+    // Verify signature
+    const isSignatureValid = generated_signature === razorpay_signature;
+
+    if (!isSignatureValid) {
+      console.log('❌ Invalid payment signature');
+      throw new functions.https.HttpsError('permission-denied', 'Invalid payment signature');
+    }
+
+    console.log('✅ Payment signature verified successfully');
+
+    // Get payment details from Razorpay
+    const payment = await razorpay.payments.fetch(razorpay_payment_id);
+    
+    // Store payment info in Firestore
+    await admin.firestore().collection('razorpay_payments').doc(razorpay_payment_id).set({
+      paymentId: razorpay_payment_id,
+      orderId: razorpay_order_id,
+      signature: razorpay_signature,
+      amount: payment.amount,
+      status: payment.status,
+      method: payment.method,
+      userId: context.auth.uid,
+      verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+      razorpayData: payment,
+      autoCaptured: payment.captured || false,
+    });
+
+    // Update order status
+    await admin.firestore().collection('razorpay_orders').doc(razorpay_order_id).update({
+      paymentId: razorpay_payment_id,
+      paymentStatus: payment.status,
+      paymentVerified: true,
+      verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+      autoCaptured: payment.captured || false,
+    });
+
+    console.log(`✅ Payment verification completed for: ${razorpay_payment_id}`);
+
+    return {
+      success: true,
+      paymentId: razorpay_payment_id,
+      status: payment.status,
+      amount: payment.amount,
+      method: payment.method,
+      captured: payment.captured || false,
+      verified: true,
+    };
+
+  } catch (error) {
+    console.error('❌ Error verifying payment:', error);
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+    throw new functions.https.HttpsError('internal', 'Payment verification failed', error.message);
+  }
+});
+
+// 🔥 Razorpay webhook handler for auto-capture events
+exports.handleRazorpayWebhook = functions.https.onRequest(async (req, res) => {
+  try {
+    console.log('📨 Razorpay webhook received');
+    
+    // Verify webhook signature
+    const webhookSignature = req.headers['x-razorpay-signature'];
+    const webhookSecret = functions.config().razorpay.webhook_secret;
+    
+    if (webhookSecret && webhookSignature) {
+      const expectedSignature = crypto
+        .createHmac('sha256', webhookSecret)
+        .update(JSON.stringify(req.body))
+        .digest('hex');
+      
+      if (expectedSignature !== webhookSignature) {
+        console.log('❌ Invalid webhook signature');
+        return res.status(400).send('Invalid signature');
+      }
+    }
+
+    const event = req.body;
+    console.log(`📨 Webhook event: ${event.event}`);
+
+    // Handle different webhook events
+    switch (event.event) {
+      case 'payment.captured':
+        await handlePaymentCaptured(event.payload.payment.entity);
+        break;
+      
+      case 'payment.failed':
+        await handlePaymentFailed(event.payload.payment.entity);
+        break;
+        
+      case 'order.paid':
+        await handleOrderPaid(event.payload.order.entity);
+        break;
+      
+      default:
+        console.log(`🔄 Unhandled webhook event: ${event.event}`);
+    }
+
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error('❌ Error handling webhook:', error);
+    res.status(500).send('Internal server error');
+  }
+});
+
+// Helper function to handle payment captured event
+async function handlePaymentCaptured(payment) {
+  try {
+    console.log(`✅ Payment auto-captured: ${payment.id} for amount ${payment.amount}`);
+    
+    // Update payment status in Firestore
+    await admin.firestore().collection('razorpay_payments').doc(payment.id).set({
+      paymentId: payment.id,
+      orderId: payment.order_id,
+      amount: payment.amount,
+      status: 'captured',
+      capturedAt: admin.firestore.FieldValue.serverTimestamp(),
+      method: payment.method,
+      razorpayData: payment,
+      awaitingCapture: false,
+      autoCaptured: true,
+    }, { merge: true });
+
+    // Find and update the corresponding order
+    const ordersSnapshot = await admin.firestore()
+      .collection('orders')
+      .where('paymentId', '==', payment.id)
+      .limit(1)
+      .get();
+
+    if (!ordersSnapshot.empty) {
+      const orderDoc = ordersSnapshot.docs[0];
+      await orderDoc.ref.update({
+        paymentCaptured: true,
+        paymentCapturedAt: admin.firestore.FieldValue.serverTimestamp(),
+        paymentMethod: payment.method,
+        autoCaptured: true,
+      });
+      
+      console.log(`✅ Order ${orderDoc.id} updated with auto-capture status`);
+
+      // Send notification to kitchen about confirmed payment - NO PRICING
+      const kitchenUsers = await admin.firestore().collection('users')
+        .where('role', '==', 'kitchen')
+        .get();
+
+      if (!kitchenUsers.empty) {
+        const kitchenUser = kitchenUsers.docs[0].data();
+        const kitchenFcmToken = kitchenUser.fcmToken;
+
+        if (kitchenFcmToken) {
+          await admin.messaging().send({
+            token: kitchenFcmToken,
+            notification: {
+              title: '💰 Payment Confirmed',
+              body: `Order ${orderDoc.id.substring(0, 6)} payment captured automatically. Start preparation!`,
+            },
+            data: {
+              type: 'PAYMENT_CAPTURED',
+              orderId: orderDoc.id,
+              paymentId: payment.id,
+              // REMOVED: amount to hide pricing
+            }
+          });
+        }
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error handling payment captured:', error);
+  }
+}
+
+// Helper function to handle payment failed event
+async function handlePaymentFailed(payment) {
+  try {
+    console.log(`❌ Payment failed: ${payment.id} - ${payment.error_description}`);
+    
+    // Update payment status
+    await admin.firestore().collection('razorpay_payments').doc(payment.id).set({
+      paymentId: payment.id,
+      orderId: payment.order_id,
+      amount: payment.amount,
+      status: 'failed',
+      failedAt: admin.firestore.FieldValue.serverTimestamp(),
+      errorCode: payment.error_code,
+      errorDescription: payment.error_description,
+      razorpayData: payment,
+    }, { merge: true });
+
+    // Handle order cleanup if needed
+    const ordersSnapshot = await admin.firestore()
+      .collection('orders')
+      .where('paymentId', '==', payment.id)
+      .limit(1)
+      .get();
+
+    if (!ordersSnapshot.empty) {
+      const orderDoc = ordersSnapshot.docs[0];
+      await orderDoc.ref.update({
+        paymentFailed: true,
+        paymentFailedAt: admin.firestore.FieldValue.serverTimestamp(),
+        paymentError: payment.error_description,
+        status: 'Payment Failed',
+      });
+      
+      console.log(`❌ Order ${orderDoc.id} marked as payment failed`);
+    }
+
+  } catch (error) {
+    console.error('❌ Error handling payment failed:', error);
+  }
+}
+
+// Helper function to handle order paid event
+async function handleOrderPaid(order) {
+  try {
+    console.log(`💰 Order paid: ${order.id} for amount ${order.amount_paid}`);
+    
+    // Update order status
+    await admin.firestore().collection('razorpay_orders').doc(order.id).update({
+      status: 'paid',
+      amountPaid: order.amount_paid,
+      paidAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+  } catch (error) {
+    console.error('❌ Error handling order paid:', error);
+  }
+}
+
+// 🔥 Function to get payment analytics (for admin)
+exports.getPaymentAnalytics = functions.https.onCall(async (data, context) => {
+  try {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    // Check if user is admin
+    const userDoc = await admin.firestore().collection('users').doc(context.auth.uid).get();
+    if (!userDoc.exists || userDoc.data().role !== 'admin') {
+      throw new functions.https.HttpsError('permission-denied', 'Admin access required');
+    }
+
+    const { startDate, endDate } = data;
+    const start = startDate ? admin.firestore.Timestamp.fromDate(new Date(startDate)) : 
+                  admin.firestore.Timestamp.fromDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+    const end = endDate ? admin.firestore.Timestamp.fromDate(new Date(endDate)) : 
+                admin.firestore.Timestamp.now();
+
+    // Get payment data
+    const paymentsSnapshot = await admin.firestore()
+      .collection('razorpay_payments')
+      .where('verifiedAt', '>=', start)
+      .where('verifiedAt', '<=', end)
+      .orderBy('verifiedAt', 'desc')
+      .get();
+
+    let totalAmount = 0;
+    let successfulPayments = 0;
+    let failedPayments = 0;
+    const paymentMethods = {};
+
+    paymentsSnapshot.forEach(doc => {
+      const payment = doc.data();
+      
+      if (payment.status === 'captured') {
+        totalAmount += payment.amount || 0;
+        successfulPayments++;
+      } else if (payment.status === 'failed') {
+        failedPayments++;
+      }
+
+      const method = payment.method || 'unknown';
+      paymentMethods[method] = (paymentMethods[method] || 0) + 1;
+    });
+
+    return {
+      success: true,
+      analytics: {
+        totalAmount: totalAmount,
+        successfulPayments: successfulPayments,
+        failedPayments: failedPayments,
+        totalTransactions: successfulPayments + failedPayments,
+        successRate: successfulPayments > 0 ? (successfulPayments / (successfulPayments + failedPayments)) * 100 : 0,
+        paymentMethods: paymentMethods,
+        period: {
+          start: start.toDate().toISOString(),
+          end: end.toDate().toISOString(),
+        }
+      }
+    };
+
+  } catch (error) {
+    console.error('❌ Error getting payment analytics:', error);
+    throw new functions.https.HttpsError('internal', 'Failed to get payment analytics', error.message);
+  }
+});
+
+// 🔥 Function to refund a payment (for admin)
+exports.refundPayment = functions.https.onCall(async (data, context) => {
+  try {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    // Check if user is admin
+    const userDoc = await admin.firestore().collection('users').doc(context.auth.uid).get();
+    if (!userDoc.exists || userDoc.data().role !== 'admin') {
+      throw new functions.https.HttpsError('permission-denied', 'Admin access required');
+    }
+
+    const { paymentId, amount, notes } = data;
+
+    if (!paymentId) {
+      throw new functions.https.HttpsError('invalid-argument', 'Payment ID is required');
+    }
+
+    console.log(`🔄 Processing refund for payment: ${paymentId}`);
+
+    // Create refund with Razorpay
+    const refundOptions = {
+      payment_id: paymentId,
+      notes: notes || { reason: 'Admin refund' }
+    };
+
+    if (amount) {
+      refundOptions.amount = amount;
+    }
+
+    const refund = await razorpay.payments.refund(paymentId, refundOptions);
+
+    // Store refund info in Firestore
+    await admin.firestore().collection('razorpay_refunds').doc(refund.id).set({
+      refundId: refund.id,
+      paymentId: paymentId,
+      amount: refund.amount,
+      status: refund.status,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      processedBy: context.auth.uid,
+      notes: refundOptions.notes,
+      razorpayData: refund,
+    });
+
+    // Update payment record
+    await admin.firestore().collection('razorpay_payments').doc(paymentId).update({
+      refunded: true,
+      refundId: refund.id,
+      refundAmount: refund.amount,
+      refundedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    console.log(`✅ Refund processed: ${refund.id}`);
+
+    return {
+      success: true,
+      refundId: refund.id,
+      amount: refund.amount,
+      status: refund.status,
+    };
+
+  } catch (error) {
+    console.error('❌ Error processing refund:', error);
+    throw new functions.https.HttpsError('internal', 'Failed to process refund', error.message);
+  }
+});
+
+// 🔥 Function to get order status with payment info
+exports.getOrderWithPaymentStatus = functions.https.onCall(async (data, context) => {
+  try {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { orderId } = data;
+
+    if (!orderId) {
+      throw new functions.https.HttpsError('invalid-argument', 'Order ID is required');
+    }
+
+    // Get order from either active orders or user's order history
+    let orderDoc = await admin.firestore().collection('orders').doc(orderId).get();
+    
+    if (!orderDoc.exists) {
+      // Try user's order history
+      orderDoc = await admin.firestore()
+        .collection('users')
+        .doc(context.auth.uid)
+        .collection('orderHistory')
+        .doc(orderId)
+        .get();
+    }
+
+    if (!orderDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'Order not found');
+    }
+
+    const orderData = orderDoc.data();
+
+    // Verify user owns this order
+    if (orderData.userId !== context.auth.uid) {
+      throw new functions.https.HttpsError('permission-denied', 'Access denied');
+    }
+
+    // Get payment information if available
+    let paymentInfo = null;
+    if (orderData.paymentId) {
+      const paymentDoc = await admin.firestore()
+        .collection('razorpay_payments')
+        .doc(orderData.paymentId)
+        .get();
+      
+      if (paymentDoc.exists) {
+        const paymentData = paymentDoc.data();
+        paymentInfo = {
+          paymentId: paymentData.paymentId,
+          status: paymentData.status,
+          method: paymentData.method,
+          amount: paymentData.amount,
+          captured: paymentData.autoCaptured || false,
+          verifiedAt: paymentData.verifiedAt,
+          refunded: paymentData.refunded || false,
+        };
+      }
+    }
+
+    return {
+      success: true,
+      order: {
+        id: orderId,
+        ...orderData,
+        payment: paymentInfo,
+      }
+    };
+
+  } catch (error) {
+    console.error('❌ Error getting order with payment status:', error);
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+    throw new functions.https.HttpsError('internal', 'Failed to get order status', error.message);
+  }
+});
+
+// 🔥 NEW FUNCTION: Clean up expired session history
 exports.cleanupExpiredSessions = functions.pubsub
   .schedule('every 24 hours')
   .onRun(async (context) => {
-    console.log('🧹 Starting cleanup of expired sessions');
-    
-    const db = admin.firestore();
-    const cutoffTime = admin.firestore.Timestamp.fromMillis(
-      Date.now() - (30 * 24 * 60 * 60 * 1000) // 30 days ago
-    );
-    
     try {
-      // Query for old session history entries
+      const db = admin.firestore();
+      const now = admin.firestore.Timestamp.now();
+      
+      // Clean up session history older than 30 days
+      const thirtyDaysAgo = admin.firestore.Timestamp.fromMillis(now.toMillis() - 30 * 24 * 60 * 60 * 1000);
+      
+      // Get all session history documents older than 30 days
       const expiredSessions = await db.collectionGroup('history')
-        .where('logoutTime', '<', cutoffTime)
+        .where('logoutTime', '<', thirtyDaysAgo)
         .limit(500) // Process in batches
         .get();
       
       if (expiredSessions.empty) {
-        console.log('No expired sessions to clean up');
+        console.log('No expired session records to clean up');
         return null;
       }
       
@@ -460,59 +1036,47 @@ exports.forceLogoutUser = functions.https.onRequest(async (req, res) => {
     
     const db = admin.firestore();
     
-    // Get current session
+    // Get user's current session
     const sessionDoc = await db.collection('user_sessions').doc(userId).get();
     
-    if (!sessionDoc.exists) {
-      res.status(404).json({ error: 'No active session found for user' });
-      return;
-    }
-    
-    const sessionData = sessionDoc.data();
-    
-    // Add to history before clearing
-    await db.collection('user_sessions')
-      .doc(userId)
-      .collection('history')
-      .add({
-        deviceId: sessionData.activeDeviceId,
-        fcmToken: sessionData.activeDeviceFcmToken,
-        deviceInfo: sessionData.deviceInfo,
-        loginTime: sessionData.lastLoginTime,
-        logoutTime: admin.firestore.FieldValue.serverTimestamp(),
-        logoutReason: reason || 'Force logout by admin',
-        platform: sessionData.deviceInfo?.platform || 'unknown',
-      });
-    
-    // Delete the session
-    await db.collection('user_sessions').doc(userId).delete();
-    
-    // Send notification if FCM token exists
-    if (sessionData.activeDeviceFcmToken) {
-      try {
-        await admin.messaging().send({
-          token: sessionData.activeDeviceFcmToken,
-          notification: {
-            title: '🔐 Account Security',
-            body: 'Your session has been terminated by an administrator for security reasons.',
-          },
-          data: {
-            type: 'ADMIN_LOGOUT',
-            reason: reason || 'Administrative action',
-            timestamp: new Date().toISOString(),
-          }
-        });
-        console.log('Force logout notification sent');
-      } catch (notificationError) {
-        console.error('Error sending force logout notification:', notificationError);
+    if (sessionDoc.exists) {
+      const sessionData = sessionDoc.data();
+      
+      // Store logout history
+      if (sessionData.fcmToken) {
+        await db.collection('user_sessions')
+          .doc(userId)
+          .collection('history')
+          .add({
+            sessionId: sessionData.sessionId || 'unknown',
+            deviceId: sessionData.activeDeviceId || 'unknown',
+            fcmToken: sessionData.fcmToken,
+            logoutTime: admin.firestore.FieldValue.serverTimestamp(),
+            logoutReason: reason || 'Admin forced logout',
+            deviceInfo: sessionData.deviceInfo || {},
+            adminForced: true,
+          });
       }
+      
+      // Delete the active session
+      await sessionDoc.ref.delete();
+      
+      // Revoke Firebase Auth tokens (optional)
+      try {
+        await admin.auth().revokeRefreshTokens(userId);
+        console.log(`✅ Revoked refresh tokens for user ${userId}`);
+      } catch (authError) {
+        console.log(`⚠️ Could not revoke tokens for user ${userId}:`, authError);
+      }
+      
+      console.log(`✅ Forced logout completed for user ${userId}`);
+      res.status(200).json({ 
+        success: true, 
+        message: `User ${userId} has been logged out from all devices` 
+      });
+    } else {
+      res.status(404).json({ error: 'No active session found for user' });
     }
-    
-    res.status(200).json({ 
-      message: 'User successfully logged out from all devices',
-      userId: userId,
-      reason: reason || 'Force logout by admin'
-    });
     
   } catch (error) {
     console.error('❌ Error forcing user logout:', error);
@@ -520,80 +1084,81 @@ exports.forceLogoutUser = functions.https.onRequest(async (req, res) => {
   }
 });
 
-// 🚀 NEW: Send welcome notification on user registration
-exports.sendWelcomeNotification = functions.firestore
-  .document('users/{userId}')
-  .onCreate(async (snap, context) => {
-    try {
-      const userData = snap.data();
-      const userId = context.params.userId;
-      
-      console.log(`New user registered: ${userId}`);
-      
-      // Wait a bit for FCM token to be set
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Get updated user data with FCM token
-      const userDoc = await admin.firestore().collection('users').doc(userId).get();
-      const updatedUserData = userDoc.data();
-      
-      if (updatedUserData && updatedUserData.fcmToken) {
-        const payload = {
-          notification: {
-            title: 'Welcome to Thintava! 🍽️',
-            body: 'Start exploring our delicious menu and place your first order!',
-          },
-          data: {
-            type: 'WELCOME',
-            userId: userId,
-          }
-        };
-        
-        const result = await admin.messaging().send({
-          token: updatedUserData.fcmToken,
-          notification: payload.notification,
-          data: payload.data
-        });
-        
-        console.log('Welcome notification sent successfully:', result);
-        return result;
-      } else {
-        console.log('No FCM token available for welcome notification');
-        return null;
-      }
-    } catch (error) {
-      console.error('Error sending welcome notification:', error);
-      return null;
+// 🔥 Razorpay webhook handler for auto-capture events (COMPLETE VERSION)
+exports.razorpayWebhook = functions.https.onRequest(async (req, res) => {
+  try {
+    if (req.method !== 'POST') {
+      return res.status(405).send('Method Not Allowed');
     }
-  });
 
-// ============================================================================
-// NEW RAZORPAY FUNCTIONS - AUTO-CAPTURE INTEGRATION
-// ============================================================================
+    const signature = req.headers['x-razorpay-signature'];
+    const body = JSON.stringify(req.body);
+    
+    // Verify webhook signature if webhook secret is configured
+    const webhookSecret = functions.config().razorpay?.webhook_secret;
+    if (webhookSecret && signature) {
+      const expectedSignature = crypto
+        .createHmac('sha256', webhookSecret)
+        .update(body)
+        .digest('hex');
 
-// 🔥 Create Razorpay order for auto-capture
+      if (signature !== expectedSignature) {
+        console.log('❌ Invalid webhook signature');
+        return res.status(400).send('Invalid signature');
+      }
+    }
+
+    const event = req.body;
+    console.log(`📨 Razorpay webhook received: ${event.event}`);
+
+    // Handle different webhook events
+    switch (event.event) {
+      case 'payment.captured':
+        await handlePaymentCaptured(event.payload.payment.entity);
+        break;
+      
+      case 'payment.failed':
+        await handlePaymentFailed(event.payload.payment.entity);
+        break;
+        
+      case 'order.paid':
+        await handleOrderPaid(event.payload.order.entity);
+        break;
+      
+      default:
+        console.log(`🔄 Unhandled webhook event: ${event.event}`);
+    }
+
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error('❌ Error handling Razorpay webhook:', error);
+    res.status(500).send('Internal server error');
+  }
+});
+
+// 🔥 Function to create Razorpay order with auto-capture (COMPLETE VERSION)
 exports.createRazorpayOrder = functions.https.onCall(async (data, context) => {
   try {
-    // Check if user is authenticated
+    // Check authentication
     if (!context.auth) {
       throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
     }
 
     const { amount, currency = 'INR', receipt, notes = {} } = data;
 
-    // Validate required fields
+    // Validate amount
     if (!amount || amount <= 0) {
       throw new functions.https.HttpsError('invalid-argument', 'Valid amount is required');
     }
 
     console.log(`🔄 Creating Razorpay order for user ${context.auth.uid}, amount: ${amount}`);
 
-    // Create order with Razorpay
+    // Create order options with auto-capture enabled
     const orderOptions = {
       amount: amount, // Amount in paise
       currency: currency,
       receipt: receipt || `order_${Date.now()}`,
-      payment_capture: 1, // 🔑 AUTO-CAPTURE ENABLED
+      payment_capture: 1, // Enable auto-capture
       notes: {
         ...notes,
         userId: context.auth.uid,
@@ -644,394 +1209,4 @@ exports.createRazorpayOrder = functions.https.onCall(async (data, context) => {
   }
 });
 
-// 🔥 Webhook to handle Razorpay events (for auto-capture tracking)
-exports.razorpayWebhook = functions.https.onRequest(async (req, res) => {
-  try {
-    if (req.method !== 'POST') {
-      return res.status(405).send('Method Not Allowed');
-    }
-
-    const signature = req.headers['x-razorpay-signature'];
-    const body = JSON.stringify(req.body);
-    
-    // Verify webhook signature
-    const expectedSignature = crypto
-      .createHmac('sha256', functions.config().razorpay.webhook_secret)
-      .update(body)
-      .digest('hex');
-
-    if (signature !== expectedSignature) {
-      console.error('❌ Invalid webhook signature');
-      return res.status(400).send('Invalid signature');
-    }
-
-    const event = req.body;
-    console.log(`📨 Razorpay webhook received: ${event.event}`);
-
-    // Handle different events
-    switch (event.event) {
-      case 'payment.captured':
-        await handlePaymentCaptured(event.payload.payment.entity);
-        break;
-        
-      case 'payment.failed':
-        await handlePaymentFailed(event.payload.payment.entity);
-        break;
-        
-      case 'payment.authorized':
-        await handlePaymentAuthorized(event.payload.payment.entity);
-        break;
-        
-      case 'order.paid':
-        await handleOrderPaid(event.payload.order.entity);
-        break;
-        
-      default:
-        console.log(`Unhandled event type: ${event.event}`);
-    }
-
-    res.status(200).send('OK');
-
-  } catch (error) {
-    console.error('❌ Error processing webhook:', error);
-    res.status(500).send('Internal Server Error');
-  }
-});
-
-// Helper function to handle payment authorized event
-async function handlePaymentAuthorized(payment) {
-  try {
-    console.log(`💳 Payment authorized: ${payment.id} for amount ${payment.amount} - waiting for auto-capture`);
-    
-    // Update payment status in Firestore
-    await admin.firestore().collection('razorpay_payments').doc(payment.id).set({
-      paymentId: payment.id,
-      orderId: payment.order_id,
-      amount: payment.amount,
-      status: 'authorized',
-      authorizedAt: admin.firestore.FieldValue.serverTimestamp(),
-      method: payment.method,
-      razorpayData: payment,
-      awaitingCapture: true,
-    }, { merge: true });
-
-    console.log(`✅ Payment ${payment.id} marked as authorized - auto-capture should happen within 12 minutes`);
-
-  } catch (error) {
-    console.error('❌ Error handling payment authorized:', error);
-  }
-}
-
-// Helper function to handle payment captured event
-async function handlePaymentCaptured(payment) {
-  try {
-    console.log(`✅ Payment auto-captured: ${payment.id} for amount ${payment.amount}`);
-    
-    // Update payment status in Firestore
-    await admin.firestore().collection('razorpay_payments').doc(payment.id).set({
-      paymentId: payment.id,
-      orderId: payment.order_id,
-      amount: payment.amount,
-      status: 'captured',
-      capturedAt: admin.firestore.FieldValue.serverTimestamp(),
-      method: payment.method,
-      razorpayData: payment,
-      awaitingCapture: false,
-      autoCaptured: true,
-    }, { merge: true });
-
-    // Find and update the corresponding order
-    const ordersSnapshot = await admin.firestore()
-      .collection('orders')
-      .where('paymentId', '==', payment.id)
-      .limit(1)
-      .get();
-
-    if (!ordersSnapshot.empty) {
-      const orderDoc = ordersSnapshot.docs[0];
-      await orderDoc.ref.update({
-        paymentCaptured: true,
-        paymentCapturedAt: admin.firestore.FieldValue.serverTimestamp(),
-        paymentMethod: payment.method,
-        autoCaptured: true,
-      });
-      
-      console.log(`✅ Order ${orderDoc.id} updated with auto-capture status`);
-
-      // Send notification to kitchen about confirmed payment
-      const kitchenUsers = await admin.firestore().collection('users')
-        .where('role', '==', 'kitchen')
-        .get();
-
-      if (!kitchenUsers.empty) {
-        const kitchenUser = kitchenUsers.docs[0].data();
-        const kitchenFcmToken = kitchenUser.fcmToken;
-
-        if (kitchenFcmToken) {
-          await admin.messaging().send({
-            token: kitchenFcmToken,
-            notification: {
-              title: '💰 Payment Confirmed',
-              body: `Order ${orderDoc.id.substring(0, 6)} payment captured automatically. Start preparation!`,
-            },
-            data: {
-              type: 'PAYMENT_CAPTURED',
-              orderId: orderDoc.id,
-              paymentId: payment.id,
-            }
-          });
-        }
-      }
-    }
-
-  } catch (error) {
-    console.error('❌ Error handling payment captured:', error);
-  }
-}
-
-// Helper function to handle payment failed event
-async function handlePaymentFailed(payment) {
-  try {
-    console.log(`❌ Payment failed: ${payment.id} - ${payment.error_description}`);
-    
-    // Update payment status
-    await admin.firestore().collection('razorpay_payments').doc(payment.id).set({
-      paymentId: payment.id,
-      orderId: payment.order_id,
-      amount: payment.amount,
-      status: 'failed',
-      failedAt: admin.firestore.FieldValue.serverTimestamp(),
-      errorCode: payment.error_code,
-      errorDescription: payment.error_description,
-      razorpayData: payment,
-    }, { merge: true });
-
-    // Handle order cleanup if needed
-    const ordersSnapshot = await admin.firestore()
-      .collection('orders')
-      .where('paymentId', '==', payment.id)
-      .limit(1)
-      .get();
-
-    if (!ordersSnapshot.empty) {
-      const orderDoc = ordersSnapshot.docs[0];
-      await orderDoc.ref.update({
-        paymentFailed: true,
-        paymentFailedAt: admin.firestore.FieldValue.serverTimestamp(),
-        paymentError: payment.error_description,
-        status: 'Payment Failed',
-      });
-      
-      console.log(`❌ Order ${orderDoc.id} marked as payment failed`);
-    }
-
-  } catch (error) {
-    console.error('❌ Error handling payment failed:', error);
-  }
-}
-
-// Helper function to handle order paid event
-async function handleOrderPaid(order) {
-  try {
-    console.log(`💰 Order paid: ${order.id} for amount ${order.amount_paid}`);
-    
-    // Update order status
-    await admin.firestore().collection('razorpay_orders').doc(order.id).update({
-      status: 'paid',
-      amountPaid: order.amount_paid,
-      paidAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-
-  } catch (error) {
-    console.error('❌ Error handling order paid:', error);
-  }
-}
-
-// 🔥 Function to get payment analytics (for admin)
-exports.getPaymentAnalytics = functions.https.onCall(async (data, context) => {
-  try {
-    if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
-    }
-
-    // Check if user is admin
-    const userDoc = await admin.firestore().collection('users').doc(context.auth.uid).get();
-    if (!userDoc.exists || userDoc.data().role !== 'admin') {
-      throw new functions.https.HttpsError('permission-denied', 'Admin access required');
-    }
-
-    const { startDate, endDate } = data;
-    const start = startDate ? admin.firestore.Timestamp.fromDate(new Date(startDate)) : 
-                  admin.firestore.Timestamp.fromDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
-    const end = endDate ? admin.firestore.Timestamp.fromDate(new Date(endDate)) : 
-                admin.firestore.Timestamp.now();
-
-    // Get payment statistics
-    const paymentsSnapshot = await admin.firestore()
-      .collection('razorpay_payments')
-      .where('capturedAt', '>=', start)
-      .where('capturedAt', '<=', end)
-      .get();
-
-    let totalAmount = 0;
-    let totalCount = 0;
-    let autoCapturedCount = 0;
-    const methodStats = {};
-    
-    paymentsSnapshot.forEach(doc => {
-      const payment = doc.data();
-      if (payment.status === 'captured') {
-        totalAmount += payment.amount || 0;
-        totalCount++;
-        
-        if (payment.autoCaptured) {
-          autoCapturedCount++;
-        }
-        
-        const method = payment.method || 'unknown';
-        methodStats[method] = (methodStats[method] || 0) + 1;
-      }
-    });
-
-    return {
-      success: true,
-      analytics: {
-        totalAmount: totalAmount,
-        totalCount: totalCount,
-        autoCapturedCount: autoCapturedCount,
-        autoCaptureRate: totalCount > 0 ? (autoCapturedCount / totalCount * 100).toFixed(2) : 0,
-        averageAmount: totalCount > 0 ? totalAmount / totalCount : 0,
-        methodBreakdown: methodStats,
-        period: {
-          start: start.toDate().toISOString(),
-          end: end.toDate().toISOString(),
-        }
-      }
-    };
-
-  } catch (error) {
-    console.error('❌ Error getting payment analytics:', error);
-    throw new functions.https.HttpsError('internal', 'Failed to get analytics');
-  }
-});
-
-// 🔥 Clean up expired reservations for stock management
-exports.cleanupExpiredReservations = functions.pubsub
-  .schedule('every 5 minutes')
-  .onRun(async (context) => {
-    console.log('🧹 Starting cleanup of expired stock reservations');
-    
-    const db = admin.firestore();
-    const now = admin.firestore.Timestamp.now();
-    
-    try {
-      // Query for expired reservations
-      const expiredReservations = await db.collection('stockReservations')
-        .where('status', '==', 'active')
-        .where('expiresAt', '<', now)
-        .limit(100)
-        .get();
-      
-      if (expiredReservations.empty) {
-        console.log('No expired reservations to clean up');
-        return null;
-      }
-      
-      const batch = db.batch();
-      let cleanupCount = 0;
-      
-      // Group reservations by item to batch stock updates
-      const itemUpdates = {};
-      
-      expiredReservations.forEach(doc => {
-        const reservation = doc.data();
-        
-        // Update reservation status
-        batch.update(doc.ref, {
-          status: 'expired',
-          expiredAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        
-        // Track stock to release
-        if (!itemUpdates[reservation.itemId]) {
-          itemUpdates[reservation.itemId] = 0;
-        }
-        itemUpdates[reservation.itemId] += reservation.quantity;
-        cleanupCount++;
-      });
-      
-      // Update menu items to release reserved stock
-      for (const [itemId, quantityToRelease] of Object.entries(itemUpdates)) {
-        const itemRef = db.collection('menuItems').doc(itemId);
-        const itemDoc = await itemRef.get();
-        
-        if (itemDoc.exists) {
-          const itemData = itemDoc.data();
-          const currentReserved = itemData.reservedQuantity || 0;
-          const newReserved = Math.max(0, currentReserved - quantityToRelease);
-          
-          batch.update(itemRef, {
-            reservedQuantity: newReserved,
-            lastReservationUpdate: admin.firestore.FieldValue.serverTimestamp(),
-          });
-        }
-      }
-      
-      await batch.commit();
-      console.log(`✅ Cleaned up ${cleanupCount} expired reservations and released stock for ${Object.keys(itemUpdates).length} items`);
-      
-      return null;
-    } catch (error) {
-      console.error('❌ Error cleaning up expired reservations:', error);
-      return null;
-    }
-  });
-
-// 🔥 Initialize reserved quantity field for existing menu items (one-time migration)
-exports.initializeReservedQuantityField = functions.https.onCall(async (data, context) => {
-  try {
-    if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
-    }
-
-    // Check if user is admin
-    const userDoc = await admin.firestore().collection('users').doc(context.auth.uid).get();
-    if (!userDoc.exists || userDoc.data().role !== 'admin') {
-      throw new functions.https.HttpsError('permission-denied', 'Admin access required');
-    }
-
-    console.log('🔄 Initializing reservedQuantity field for existing menu items');
-
-    const snapshot = await admin.firestore().collection('menuItems').get();
-    const batch = admin.firestore().batch();
-    let updateCount = 0;
-
-    snapshot.forEach(doc => {
-      const data = doc.data();
-      if (!data.hasOwnProperty('reservedQuantity')) {
-        batch.update(doc.ref, {
-          reservedQuantity: 0,
-          lastReservationUpdate: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        updateCount++;
-      }
-    });
-
-    if (updateCount > 0) {
-      await batch.commit();
-      console.log(`✅ Initialized reservedQuantity field for ${updateCount} menu items`);
-    } else {
-      console.log('ℹ️ All menu items already have reservedQuantity field');
-    }
-
-    return {
-      success: true,
-      message: `Initialized reservedQuantity field for ${updateCount} menu items`,
-      updatedCount: updateCount,
-    };
-
-  } catch (error) {
-    console.error('❌ Error initializing reservedQuantity field:', error);
-    throw new functions.https.HttpsError('internal', 'Failed to initialize fields');
-  }
-});
+console.log('🚀 Firebase Functions loaded successfully with ALL features: Razorpay integration, device management, session monitoring, and fixed pricing notifications!');
