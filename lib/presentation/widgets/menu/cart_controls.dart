@@ -1,4 +1,4 @@
-// lib/presentation/widgets/menu/cart_controls.dart
+// lib/presentation/widgets/menu/cart_controls.dart - FIXED VERSION
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -72,9 +72,17 @@ class CartControls extends StatelessWidget {
           _buildCartButton(
             icon: Icons.add_rounded,
             onTap: (isReserved || !canAdd) ? null : () async {
+              // FIXED: Better error handling for active orders
               final success = await cartProvider.addItem(itemId);
-              if (!success && onStockError != null) {
-                onStockError!();
+              if (!success) {
+                if (cartProvider.hasActiveOrder) {
+                  // Trigger the onStockError callback which will re-check active order
+                  if (onStockError != null) {
+                    onStockError!();
+                  }
+                } else if (onStockError != null) {
+                  onStockError!();
+                }
               }
             },
             color: (isReserved || !canAdd) ? Colors.grey : const Color(0xFFFFB703),
@@ -89,9 +97,17 @@ class CartControls extends StatelessWidget {
       width: double.infinity,
       child: ElevatedButton.icon(
         onPressed: canAdd ? () async {
+          // FIXED: Better error handling for active orders
           final success = await cartProvider.addItem(itemId);
-          if (!success && onStockError != null) {
-            onStockError!();
+          if (!success) {
+            if (cartProvider.hasActiveOrder) {
+              // Trigger the onStockError callback which will re-check active order
+              if (onStockError != null) {
+                onStockError!();
+              }
+            } else if (onStockError != null) {
+              onStockError!();
+            }
           }
         } : null,
         style: ElevatedButton.styleFrom(
