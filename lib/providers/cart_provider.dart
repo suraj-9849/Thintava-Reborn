@@ -1,4 +1,4 @@
-// lib/providers/cart_provider.dart - FIXED VERSION (UPDATED ACTIVE ORDER CHECK)
+// lib/providers/cart_provider.dart - UPDATED VERSION (REMOVED ACTIVE ORDER FEATURE)
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:canteen_app/services/stock_management_service.dart';
@@ -12,8 +12,6 @@ import 'dart:async';
 class CartProvider extends ChangeNotifier {
   Map<String, int> _cart = {};
   bool _isValidatingStock = false;
-  bool _hasActiveOrder = false;
-  String? _activeOrderId;
   
   // Reservation-related fields
   List<StockReservation> _activeReservations = [];
@@ -26,8 +24,6 @@ class CartProvider extends ChangeNotifier {
   bool get isEmpty => _cart.isEmpty;
   List<String> get itemIds => _cart.keys.toList();
   bool get isValidatingStock => _isValidatingStock;
-  bool get hasActiveOrder => _hasActiveOrder;
-  String? get activeOrderId => _activeOrderId;
   
   // Reservation getters
   List<StockReservation> get activeReservations => List.unmodifiable(_activeReservations);
@@ -39,36 +35,6 @@ class CartProvider extends ChangeNotifier {
   void dispose() {
     _reservationSubscription?.cancel();
     super.dispose();
-  }
-  
-  // FIXED: Check for active orders with correct status flow (EXCLUDING TERMINATED ORDERS)
-  Future<bool> _checkActiveOrder() async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return false;
-      
-      // FIXED: Exclude 'Terminated' status from active orders check
-      final activeOrderQuery = await FirebaseFirestore.instance
-          .collection('orders')
-          .where('userId', isEqualTo: user.uid)
-          .where('status', whereIn: ['Placed', 'Cooking', 'Cooked', 'Pick Up'])
-          .limit(1)
-          .get();
-      
-      if (activeOrderQuery.docs.isNotEmpty) {
-        _hasActiveOrder = true;
-        _activeOrderId = activeOrderQuery.docs.first.id;
-        print('🚫 Active order found: $_activeOrderId');
-        return true;
-      } else {
-        _hasActiveOrder = false;
-        _activeOrderId = null;
-        return false;
-      }
-    } catch (e) {
-      print('❌ Error checking active order: $e');
-      return false;
-    }
   }
   
   // Start listening to reservation changes
@@ -117,14 +83,8 @@ class CartProvider extends ChangeNotifier {
     );
   }
   
-  // Add item to cart with stock validation and active order check
+  // Add item to cart with stock validation
   Future<bool> addItem(String itemId, {int quantity = 1}) async {
-    // Check for active order first
-    if (await _checkActiveOrder()) {
-      notifyListeners();
-      return false;
-    }
-    
     final currentQuantity = _cart[itemId] ?? 0;
     
     // Check if we can add this quantity (considering reservations)
@@ -170,14 +130,8 @@ class CartProvider extends ChangeNotifier {
     }
   }
   
-  // Update item quantity with stock validation and active order check
+  // Update item quantity with stock validation
   Future<bool> updateQuantity(String itemId, int quantity) async {
-    // Check for active order first
-    if (await _checkActiveOrder()) {
-      notifyListeners();
-      return false;
-    }
-    
     if (quantity <= 0) {
       _cart.remove(itemId);
       await _saveToStorage();
@@ -208,25 +162,12 @@ class CartProvider extends ChangeNotifier {
     print('Cart cleared');
   }
   
-  // Clear active order status
-  void clearActiveOrderStatus() {
-    _hasActiveOrder = false;
-    _activeOrderId = null;
-    notifyListeners();
-    print('Active order status cleared');
-  }
-  
   // ======================== RESERVATION METHODS ========================
   
   /// Reserve items in cart before payment
   Future<ReservationResult> reserveCartItems({Duration? duration}) async {
     if (_cart.isEmpty) {
       return ReservationResult.failure('Cart is empty');
-    }
-    
-    // Check for active order first
-    if (await _checkActiveOrder()) {
-      return ReservationResult.failure('You have an active order. Complete it before placing a new one.');
     }
     
     _isReserving = true;
@@ -305,14 +246,6 @@ class CartProvider extends ChangeNotifier {
       return {'canReserve': false, 'error': 'Cart is empty'};
     }
     
-    // Check for active order
-    if (await _checkActiveOrder()) {
-      return {
-        'canReserve': false, 
-        'error': 'You have an active order. Complete it before placing a new one.'
-      };
-    }
-    
     return await ReservationService.checkCartReservability(_cart);
   }
   
@@ -353,21 +286,10 @@ class CartProvider extends ChangeNotifier {
     return total;
   }
   
-  // Validate entire cart against current stock and active order
+  // Validate entire cart against current stock
   Future<CartValidationResult> validateCartStock() async {
     _isValidatingStock = true;
     notifyListeners();
-    
-    // Check for active order first
-    if (await _checkActiveOrder()) {
-      _isValidatingStock = false;
-      notifyListeners();
-      return CartValidationResult(
-        isValid: false,
-        itemsToRemove: [],
-        itemsToUpdate: {},
-      );
-    }
     
     final result = await StockManagementService.validateCart(_cart);
     
@@ -414,9 +336,6 @@ class CartProvider extends ChangeNotifier {
   Future<bool> canProceedToCheckout() async {
     if (_cart.isEmpty) return false;
     
-    // Check for active order
-    if (await _checkActiveOrder()) return false;
-    
     // Check if stock is available
     final stockCheck = await checkStockAvailability();
     return stockCheck.isValid;
@@ -444,9 +363,6 @@ class CartProvider extends ChangeNotifier {
         final Map<String, dynamic> decoded = json.decode(cartJson);
         _cart = decoded.map((key, value) => MapEntry(key, value as int));
         
-        // Check for active order on load
-        await _checkActiveOrder();
-        
         // Start reservation listener
         _startReservationListener();
         
@@ -459,14 +375,11 @@ class CartProvider extends ChangeNotifier {
         print('📱 Cart loaded from storage: $_cart');
       } else {
         print('📱 No cart data found in storage');
-        // Still check for active order even if no cart data
-        await _checkActiveOrder();
         _startReservationListener();
       }
     } catch (e) {
       print('❌ Error loading cart from storage: $e');
       _cart = {};
-      await _checkActiveOrder();
       _startReservationListener();
     }
     notifyListeners();
@@ -508,11 +421,6 @@ class CartProvider extends ChangeNotifier {
   
   // Get maximum addable quantity for an item
   Future<int> getMaxAddableQuantity(String itemId) async {
-    // Check for active order first
-    if (await _checkActiveOrder()) {
-      return 0;
-    }
-    
     final currentCartQuantity = getQuantity(itemId);
     
     try {
@@ -537,7 +445,6 @@ class CartProvider extends ChangeNotifier {
       });
       print('Total items: $itemCount');
     }
-    print('Active Order: $_hasActiveOrder');
     print('Active Reservations: ${_activeReservations.length}');
     print('====================');
   }
@@ -545,18 +452,6 @@ class CartProvider extends ChangeNotifier {
   // Get items that have stock issues
   Future<List<CartStockIssue>> getCartStockIssues() async {
     List<CartStockIssue> issues = [];
-    
-    // Check for active order first
-    if (await _checkActiveOrder()) {
-      issues.add(CartStockIssue(
-        itemId: 'active_order',
-        issueType: StockIssueType.unavailable,
-        currentQuantity: 0,
-        availableQuantity: 0,
-        message: 'You have an active order. Complete it before placing a new one.',
-      ));
-      return issues;
-    }
     
     final stockStatuses = await getCartItemsStockStatus();
     
@@ -612,8 +507,6 @@ class CartProvider extends ChangeNotifier {
     await releaseReservations();
     _reservationSubscription?.cancel();
     _cart.clear();
-    _hasActiveOrder = false;
-    _activeOrderId = null;
     _activeReservations.clear();
     _updateReservationState();
     await clearStorage();

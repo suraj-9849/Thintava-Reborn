@@ -1,4 +1,4 @@
-// lib/presentation/widgets/menu/menu_item_card.dart
+// lib/presentation/widgets/menu/menu_item_card.dart - UPDATED VERSION (REMOVED ACTIVE ORDER FEATURE)
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -12,7 +12,7 @@ class MenuItemCard extends StatelessWidget {
   final String id;
   final Map<String, dynamic> data;
   final int index;
-  final bool hasActiveOrder;
+  final bool hasActiveOrder; // Keep parameter but always false
   final VoidCallback? onStockError;
   
   const MenuItemCard({
@@ -20,7 +20,7 @@ class MenuItemCard extends StatelessWidget {
     required this.id,
     required this.data,
     required this.index,
-    this.hasActiveOrder = false,
+    this.hasActiveOrder = false, // Always false now
     this.onStockError,
   }) : super(key: key);
 
@@ -44,7 +44,7 @@ class MenuItemCard extends StatelessWidget {
       builder: (context, cartProvider, child) {
         final cartQuantity = cartProvider.getQuantity(id);
         final isReserved = cartProvider.isItemReserved(id);
-        final canAdd = available && UserUtils.canAddToCart(data, cartQuantity) && !hasActiveOrder;
+        final canAdd = available && UserUtils.canAddToCart(data, cartQuantity);
         
         return TweenAnimationBuilder<double>(
           duration: Duration(milliseconds: 300 + (index * 100)),
@@ -82,13 +82,13 @@ class MenuItemCard extends StatelessWidget {
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildFoodImage(imageUrl, isVeg, isOutOfStock, hasActiveOrder),
+                                _buildFoodImage(imageUrl, isVeg, isOutOfStock),
                                 const SizedBox(width: 16),
                                 Expanded(
                                   child: _buildFoodDetails(
                                     name, price, description, stockStatus,
                                     available, isOutOfStock, cartProvider, cartQuantity,
-                                    hasActiveOrder, canAdd, availableStock, isReserved,
+                                    canAdd, availableStock, isReserved,
                                     hasUnlimitedStock, context
                                   ),
                                 ),
@@ -98,7 +98,6 @@ class MenuItemCard extends StatelessWidget {
                         ),
                       ),
                       if (isOutOfStock && !hasUnlimitedStock) _buildOutOfStockOverlay(),
-                      if (hasActiveOrder) _buildActiveOrderOverlay(),
                     ],
                   ),
                 ),
@@ -137,7 +136,7 @@ class MenuItemCard extends StatelessWidget {
     );
   }
 
-  Widget _buildFoodImage(String? imageUrl, bool isVeg, bool isOutOfStock, bool hasActiveOrder) {
+  Widget _buildFoodImage(String? imageUrl, bool isVeg, bool isOutOfStock) {
     return Stack(
       children: [
         Container(
@@ -157,7 +156,7 @@ class MenuItemCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             child: imageUrl != null && imageUrl.isNotEmpty
               ? ColorFiltered(
-                  colorFilter: (isOutOfStock || hasActiveOrder)
+                  colorFilter: isOutOfStock
                     ? const ColorFilter.mode(Colors.grey, BlendMode.saturation)
                     : const ColorFilter.mode(Colors.transparent, BlendMode.multiply),
                   child: Image.network(
@@ -218,7 +217,7 @@ class MenuItemCard extends StatelessWidget {
 
   Widget _buildFoodDetails(String name, double price, String description, 
       StockStatusType stockStatus, bool available, bool isOutOfStock, 
-      CartProvider cartProvider, int cartQuantity, bool hasActiveOrder, 
+      CartProvider cartProvider, int cartQuantity, 
       bool canAdd, int availableStock, bool isReserved, bool hasUnlimitedStock,
       BuildContext context) {
     
@@ -231,8 +230,8 @@ class MenuItemCard extends StatelessWidget {
           style: GoogleFonts.poppins(
             fontSize: 18,
             fontWeight: FontWeight.w700,
-            color: (isOutOfStock || hasActiveOrder) ? Colors.grey[600] : Colors.black87,
-            decoration: (isOutOfStock || hasActiveOrder) ? TextDecoration.lineThrough : null,
+            color: isOutOfStock ? Colors.grey[600] : Colors.black87,
+            decoration: isOutOfStock ? TextDecoration.lineThrough : null,
           ),
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
@@ -241,7 +240,7 @@ class MenuItemCard extends StatelessWidget {
         const SizedBox(height: 4),
         
         // Status indicators
-        _buildStatusIndicators(stockStatus, availableStock, hasActiveOrder),
+        _buildStatusIndicators(stockStatus, availableStock),
         
         if (description.isNotEmpty) ...[
           const SizedBox(height: 8),
@@ -249,7 +248,7 @@ class MenuItemCard extends StatelessWidget {
             description,
             style: GoogleFonts.poppins(
               fontSize: 14,
-              color: (isOutOfStock || hasActiveOrder) ? Colors.grey[500] : Colors.grey[600],
+              color: isOutOfStock ? Colors.grey[500] : Colors.grey[600],
               height: 1.4,
             ),
             maxLines: 2,
@@ -265,21 +264,21 @@ class MenuItemCard extends StatelessWidget {
           style: GoogleFonts.poppins(
             fontSize: 22,
             fontWeight: FontWeight.w800,
-            color: (isOutOfStock || hasActiveOrder) ? Colors.grey[500] : const Color(0xFFFFB703),
-            decoration: (isOutOfStock || hasActiveOrder) ? TextDecoration.lineThrough : null,
+            color: isOutOfStock ? Colors.grey[500] : const Color(0xFFFFB703),
+            decoration: isOutOfStock ? TextDecoration.lineThrough : null,
           ),
         ),
         
         const SizedBox(height: 16),
         
         // Cart controls
-        _buildCartSection(hasActiveOrder, isOutOfStock, available, hasUnlimitedStock,
+        _buildCartSection(isOutOfStock, available, hasUnlimitedStock,
             cartProvider, cartQuantity, canAdd, availableStock, isReserved, context),
       ],
     );
   }
 
-  Widget _buildStatusIndicators(StockStatusType stockStatus, int availableStock, bool hasActiveOrder) {
+  Widget _buildStatusIndicators(StockStatusType stockStatus, int availableStock) {
     return Row(
       children: [
         StockIndicator(
@@ -287,36 +286,15 @@ class MenuItemCard extends StatelessWidget {
           availableStock: availableStock,
           isCompact: true,
         ),
-        if (hasActiveOrder) ...[
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.orange.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.orange.withOpacity(0.3)),
-            ),
-            child: Text(
-              'Order Active',
-              style: GoogleFonts.poppins(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: Colors.orange,
-              ),
-            ),
-          ),
-        ],
       ],
     );
   }
 
-  Widget _buildCartSection(bool hasActiveOrder, bool isOutOfStock, bool available,
+  Widget _buildCartSection(bool isOutOfStock, bool available,
       bool hasUnlimitedStock, CartProvider cartProvider, int cartQuantity, 
       bool canAdd, int availableStock, bool isReserved, BuildContext context) {
     
-    if (hasActiveOrder) {
-      return _buildActiveOrderButton();
-    } else if (!isOutOfStock) {
+    if (!isOutOfStock) {
       return CartControls(
         itemId: id,
         cartQuantity: cartQuantity,
@@ -327,37 +305,6 @@ class MenuItemCard extends StatelessWidget {
     } else {
       return _buildUnavailableButton(!available, hasUnlimitedStock);
     }
-  }
-
-  Widget _buildActiveOrderButton() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.orange[100],
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: Colors.orange.withOpacity(0.3)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.restaurant_menu,
-            color: Colors.orange[700],
-            size: 18,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'Complete Active Order First',
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              color: Colors.orange[700],
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _buildUnavailableButton(bool isUnavailable, bool hasUnlimitedStock) {
@@ -419,53 +366,6 @@ class MenuItemCard extends StatelessWidget {
                 fontSize: 14,
                 letterSpacing: 1,
               ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActiveOrderOverlay() {
-    return Positioned.fill(
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.9),
-          borderRadius: BorderRadius.circular(25),
-        ),
-        child: Center(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.orange,
-              borderRadius: BorderRadius.circular(25),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.orange.withOpacity(0.3),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.restaurant_menu,
-                  color: Colors.white,
-                  size: 16,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'ACTIVE ORDER',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                    letterSpacing: 1,
-                  ),
-                ),
-              ],
             ),
           ),
         ),

@@ -1,4 +1,4 @@
-// lib/screens/user/home/widgets/menu_grid.dart
+// lib/screens/user/home/widgets/menu_grid.dart - UPDATED VERSION (REMOVED ACTIVE ORDER FEATURE)
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
@@ -79,7 +79,7 @@ class MenuGrid extends StatelessWidget {
                   id: id,
                   data: data,
                   index: index,
-                  hasActiveOrder: cartProvider.hasActiveOrder,
+                  hasActiveOrder: false, // Always false now
                 );
               },
             );
