@@ -1,4 +1,4 @@
-// lib/screens/user/home/home_tab.dart - UPDATED VERSION (REMOVED ACTIVE ORDER FEATURE)
+// lib/screens/user/home/home_tab.dart - FIXED VERSION WITH CORRECT UI COLORS
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -113,12 +113,13 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin {
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
+          // FIXED: Changed to match your app's primary color scheme
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Color(0xFF004D40),
-              Color(0xFF00695C),
+              Color(0xFFFFB703), // Your primary yellow/orange color
+              Color(0xFFFFC107), // Slightly lighter shade
             ],
           ),
         ),
@@ -127,7 +128,24 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin {
             opacity: widget.fadeAnimation,
             child: Column(
               children: [
-                const EnhancedHeader(),
+                // Enhanced Header with correct colors
+                Container(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 15),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          "Hello ${FirebaseAuth.instance.currentUser?.displayName?.split(' ')[0] ?? FirebaseAuth.instance.currentUser?.email?.split('@')[0] ?? 'Friend'}! 👋",
+                          style: GoogleFonts.poppins(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white, // White text on yellow background
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 
                 Expanded(
                   child: Container(
@@ -152,7 +170,37 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin {
   Widget _buildContent() {
     return Column(
       children: [
-        const MenuSectionHeader(),
+        // Menu Section Header
+        Container(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 15),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFB703).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: const Icon(
+                  Icons.restaurant_menu_rounded,
+                  color: Color(0xFFFFB703),
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  "Our Menu",
+                  style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.black87,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
         
         SearchFilterBar(
           searchController: _searchController,

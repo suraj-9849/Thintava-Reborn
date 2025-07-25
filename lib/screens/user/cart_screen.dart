@@ -1,4 +1,4 @@
-// lib/screens/user/cart_screen.dart - FIXED WITH RAZORPAY ORDERS API FOR AUTO-CAPTURE
+// lib/screens/user/cart_screen.dart - UPDATED VERSION (REMOVED ACTIVE ORDER FEATURE)
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -11,7 +11,6 @@ import 'package:canteen_app/widgets/reservation_timer.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:canteen_app/screens/user/user_home.dart';
 import 'package:cloud_functions/cloud_functions.dart';
-
 
 class CartScreen extends StatefulWidget {
   const CartScreen({Key? key}) : super(key: key);
@@ -27,10 +26,7 @@ class _CartScreenState extends State<CartScreen> {
   bool isLoading = true;
   bool isReserving = false;
   List<String>? currentReservationIds;
-  String? currentRazorpayOrderId; // Store Razorpay order ID
-
-  // Razorpay credentials - MOVE TO ENVIRONMENT VARIABLES IN PRODUCTION
-   // Add your secret
+  String? currentRazorpayOrderId;
 
   @override
   void initState() {
@@ -76,39 +72,37 @@ class _CartScreenState extends State<CartScreen> {
     });
   }
 
-  /// Create Razorpay Order using Orders API
   /// Create Razorpay Order using Firebase Cloud Function
-Future<String?> _createRazorpayOrder(double amount) async {
-  try {
-    print('🔄 Creating Razorpay order via Firebase Function for amount: ₹$amount');
-    
-    // Call Firebase Cloud Function instead of direct API
-    final callable = FirebaseFunctions.instance.httpsCallable('createRazorpayOrder');
-    
-    final result = await callable.call({
-      'amount': (amount * 100).toInt(), // Amount in paise
-      'currency': 'INR',
-      'receipt': 'order_${DateTime.now().millisecondsSinceEpoch}',
-      'notes': {
-        'app': 'Thintava',
-        'order_type': 'food_order',
+  Future<String?> _createRazorpayOrder(double amount) async {
+    try {
+      print('🔄 Creating Razorpay order via Firebase Function for amount: ₹$amount');
+      
+      final callable = FirebaseFunctions.instance.httpsCallable('createRazorpayOrder');
+      
+      final result = await callable.call({
+        'amount': (amount * 100).toInt(),
+        'currency': 'INR',
+        'receipt': 'order_${DateTime.now().millisecondsSinceEpoch}',
+        'notes': {
+          'app': 'Thintava',
+          'order_type': 'food_order',
+        }
+      });
+
+      if (result.data['success'] == true) {
+        final orderId = result.data['order']['id'];
+        print('✅ Firebase Function created Razorpay order: $orderId');
+        return orderId;
+      } else {
+        throw Exception('Failed to create order: ${result.data}');
       }
-    });
-
-    if (result.data['success'] == true) {
-      final orderId = result.data['order']['id'];
-      print('✅ Firebase Function created Razorpay order: $orderId');
-      return orderId;
-    } else {
-      throw Exception('Failed to create order: ${result.data}');
+    } catch (e) {
+      print('❌ Error calling Firebase Function: $e');
+      throw Exception('Failed to create payment order: $e');
     }
-  } catch (e) {
-    print('❌ Error calling Firebase Function: $e');
-    throw Exception('Failed to create payment order: $e');
   }
-}
 
-  /// Reserve stock and proceed to payment - UPDATED WITH ORDERS API
+  /// Reserve stock and proceed to payment
   Future<void> _reserveAndProceedToPayment() async {
     final cartProvider = Provider.of<CartProvider>(context, listen: false);
     
@@ -151,14 +145,14 @@ Future<String?> _createRazorpayOrder(double amount) async {
       // Step 4: Store reservation IDs
       currentReservationIds = reservationResult.reservations?.map((r) => r.id).toList();
 
-      // Step 5: Create Razorpay order (for auto-capture)
+      // Step 5: Create Razorpay order for auto-capture
       currentRazorpayOrderId = await _createRazorpayOrder(total);
       
       if (currentRazorpayOrderId == null) {
         throw Exception('Failed to create payment order');
       }
 
-      // Step 6: Proceed to payment gateway with order ID
+      // Step 6: Proceed to payment gateway
       _startPaymentWithOrder();
 
     } catch (e) {
@@ -393,11 +387,11 @@ Future<String?> _createRazorpayOrder(double amount) async {
 
     var options = {
       'key': 'rzp_live_cDOinLBuxva4w0',
-      'amount': (total * 100).toInt(), // Amount in paise
+      'amount': (total * 100).toInt(),
       'currency': 'INR',
       'name': 'Thintava',
       'description': 'Food Order Payment - Auto Capture Enabled',
-      'order_id': currentRazorpayOrderId, // 🔑 THIS IS KEY FOR AUTO-CAPTURE
+      'order_id': currentRazorpayOrderId,
       'prefill': {
         'contact': '',
         'email': FirebaseAuth.instance.currentUser?.email ?? '',
@@ -423,7 +417,6 @@ Future<String?> _createRazorpayOrder(double amount) async {
 
   /// Direct payment without reservation (for already reserved items)
   void _startPayment() {
-    // For already reserved items, still create order for auto-capture
     _createRazorpayOrder(total).then((orderId) {
       if (orderId != null) {
         currentRazorpayOrderId = orderId;
@@ -437,7 +430,6 @@ Future<String?> _createRazorpayOrder(double amount) async {
   }
 
   void _handlePaymentSuccess(PaymentSuccessResponse response) async {
-    // Show loading indicator
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -469,7 +461,7 @@ Future<String?> _createRazorpayOrder(double amount) async {
         }
       });
 
-      // Create order document with Razorpay order ID
+      // Create order document
       final orderDocRef = await FirebaseFirestore.instance.collection('orders').add({
         'userId': user.uid,
         'userEmail': user.email,
@@ -478,9 +470,9 @@ Future<String?> _createRazorpayOrder(double amount) async {
         'timestamp': Timestamp.now(),
         'total': total,
         'paymentId': response.paymentId,
-        'razorpayOrderId': currentRazorpayOrderId, // Store Razorpay order ID
+        'razorpayOrderId': currentRazorpayOrderId,
         'paymentStatus': 'success',
-        'autoCaptureEnabled': true, // Flag to indicate auto-capture was used
+        'autoCaptureEnabled': true,
       });
 
       // Confirm reservations
@@ -501,21 +493,16 @@ Future<String?> _createRazorpayOrder(double amount) async {
         await _manuallyUpdateStock(cartProvider.cart);
       }
       
-      // Clear current reservation tracking
+      // Clear tracking
       currentReservationIds = null;
       currentRazorpayOrderId = null;
       
-      // Close loading dialog
       Navigator.pop(context);
-      
-      // Show success dialog
       _showPaymentSuccessDialog(response, orderDocRef.id);
 
     } catch (e) {
-      // Close loading dialog
       Navigator.pop(context);
       
-      // Release reservations on error
       if (currentReservationIds != null) {
         final cartProvider = Provider.of<CartProvider>(context, listen: false);
         await cartProvider.releaseReservations(status: ReservationStatus.failed);
@@ -526,7 +513,6 @@ Future<String?> _createRazorpayOrder(double amount) async {
     }
   }
 
-  // Fallback method to manually update stock
   Future<bool> _manuallyUpdateStock(Map<String, int> cartItems) async {
     try {
       WriteBatch batch = FirebaseFirestore.instance.batch();
@@ -560,14 +546,12 @@ Future<String?> _createRazorpayOrder(double amount) async {
   }
 
   void _handlePaymentError(PaymentFailureResponse response) async {
-    // Release reservations on payment failure
     if (currentReservationIds != null) {
       final cartProvider = Provider.of<CartProvider>(context, listen: false);
       await cartProvider.releaseReservations(status: ReservationStatus.failed);
       currentReservationIds = null;
     }
 
-    // Clear Razorpay order ID
     currentRazorpayOrderId = null;
 
     print('❌ Payment failed: ${response.code} - ${response.message}');
@@ -691,32 +675,6 @@ Future<String?> _createRazorpayOrder(double amount) async {
                       ),
                     ],
                   ),
-                  if (currentRazorpayOrderId != null) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Razorpay Order:",
-                          style: GoogleFonts.poppins(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            currentRazorpayOrderId!,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontFamily: 'monospace',
-                              color: Colors.grey,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
                 ],
               ),
             ),
@@ -779,15 +737,13 @@ Future<String?> _createRazorpayOrder(double amount) async {
         actions: [
           ElevatedButton.icon(
             onPressed: () {
-              Navigator.pop(context); // Close success dialog
-              
-              // Navigate to UserHome with Track tab selected
+              Navigator.pop(context);
               Navigator.pushAndRemoveUntil(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const UserHome(initialIndex: 1), // Track tab
+                  builder: (context) => const UserHome(initialIndex: 1),
                 ),
-                (route) => false, // Remove all previous routes
+                (route) => false,
               );
             },
             icon: const Icon(Icons.track_changes),
@@ -838,7 +794,6 @@ Future<String?> _createRazorpayOrder(double amount) async {
   Widget build(BuildContext context) {
     return Consumer<CartProvider>(
       builder: (context, cartProvider, child) {
-        // Recalculate total when cart changes
         WidgetsBinding.instance.addPostFrameCallback((_) {
           recalcTotal();
         });
@@ -904,64 +859,6 @@ Future<String?> _createRazorpayOrder(double amount) async {
                 )
               : Column(
                   children: [
-                    // Active Order Warning Banner
-                    if (cartProvider.hasActiveOrder)
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade100,
-                          border: Border.all(color: Colors.orange.shade300),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.warning_amber_rounded,
-                              color: Colors.orange.shade700,
-                              size: 24,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    "Active Order Detected",
-                                    style: GoogleFonts.poppins(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.orange.shade700,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                  Text(
-                                    "Complete your current order before placing a new one.",
-                                    style: GoogleFonts.poppins(
-                                      color: Colors.orange.shade700,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                Navigator.pushNamedAndRemoveUntil(
-                                  context,
-                                  '/track',
-                                  (route) => route.settings.name == '/user/user-home',
-                                );
-                              },
-                              child: Text(
-                                "Track",
-                                style: GoogleFonts.poppins(
-                                  color: Colors.orange.shade700,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                     // Order summary header
                     Container(
                       color: const Color(0xFFFFB703),
@@ -1224,7 +1121,7 @@ Future<String?> _createRazorpayOrder(double amount) async {
                                                   ),
                                                   const SizedBox(height: 8),
                                                   
-                                                  // Quantity controls (disabled if reserved)
+                                                  // Quantity controls
                                                   Row(
                                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                                     children: [
@@ -1309,7 +1206,7 @@ Future<String?> _createRazorpayOrder(double amount) async {
                             ),
                     ),
                     
-                    // Order Summary
+                    // Order Summary - Fixed checkout section
                     if (!cartProvider.isEmpty)
                       Container(
                         padding: const EdgeInsets.all(16),
@@ -1436,13 +1333,13 @@ Future<String?> _createRazorpayOrder(double amount) async {
                               width: double.infinity,
                               height: 50,
                               child: ElevatedButton(
-                                onPressed: (cartProvider.hasActiveOrder || isReserving) 
+                                onPressed: isReserving 
                                   ? null 
                                   : (cartProvider.hasActiveReservations 
-                                      ? _startPayment  // If already reserved, go directly to payment
-                                      : _reserveAndProceedToPayment), // If not reserved, reserve first
+                                      ? _startPayment
+                                      : _reserveAndProceedToPayment),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: (cartProvider.hasActiveOrder || isReserving)
+                                  backgroundColor: isReserving
                                     ? Colors.grey[400] 
                                     : const Color(0xFFFFB703),
                                   foregroundColor: Colors.white,
@@ -1477,19 +1374,15 @@ Future<String?> _createRazorpayOrder(double amount) async {
                                       mainAxisAlignment: MainAxisAlignment.center,
                                       children: [
                                         Icon(
-                                          cartProvider.hasActiveOrder 
-                                            ? Icons.block 
-                                            : (cartProvider.hasActiveReservations 
-                                                ? Icons.payment 
-                                                : Icons.schedule),
+                                          cartProvider.hasActiveReservations 
+                                            ? Icons.payment 
+                                            : Icons.schedule,
                                         ),
                                         const SizedBox(width: 8),
                                         Text(
-                                          cartProvider.hasActiveOrder
-                                            ? "Complete Active Order First"
-                                            : (cartProvider.hasActiveReservations
-                                                ? "Pay Now • ₹${total.toStringAsFixed(2)}"
-                                                : "Reserve & Pay • ₹${total.toStringAsFixed(2)}"),
+                                          cartProvider.hasActiveReservations
+                                            ? "Pay Now • ₹${total.toStringAsFixed(2)}"
+                                            : "Reserve & Pay • ₹${total.toStringAsFixed(2)}",
                                           style: GoogleFonts.poppins(
                                             fontSize: 16,
                                             fontWeight: FontWeight.bold,
@@ -1501,22 +1394,20 @@ Future<String?> _createRazorpayOrder(double amount) async {
                             ),
                             
                             // Info text
-                            if (!cartProvider.hasActiveOrder) ...[
-                              const SizedBox(height: 8),
-                              Center(
-                                child: Text(
-                                  cartProvider.hasActiveReservations 
-                                    ? "Items are reserved for you. Complete payment to confirm order."
-                                    : "Items will be reserved while you complete payment",
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 12,
-                                    color: Colors.grey[600],
-                                    fontStyle: FontStyle.italic,
-                                  ),
-                                  textAlign: TextAlign.center,
+                            const SizedBox(height: 8),
+                            Center(
+                              child: Text(
+                                cartProvider.hasActiveReservations 
+                                  ? "Items are reserved for you. Complete payment to confirm order."
+                                  : "Items will be reserved while you complete payment",
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                  fontStyle: FontStyle.italic,
                                 ),
+                                textAlign: TextAlign.center,
                               ),
-                            ],
+                            ),
                           ],
                         ),
                       ),
