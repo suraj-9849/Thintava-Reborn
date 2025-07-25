@@ -1,4 +1,4 @@
-// lib/screens/user/profile_screen.dart - OPTIMIZED VERSION
+// lib/screens/user/profile_screen.dart - OPTIMIZED VERSION WITH FEEDBACK SECTION
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -212,6 +212,21 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     
                     const SizedBox(height: 25),
                     
+                    // NEW: Feedback Section
+                    MenuSection(
+                      title: "Feedback",
+                      items: [
+                        MenuItemData(
+                          icon: Icons.feedback_outlined,
+                          title: "Send Feedback",
+                          subtitle: "Share your thoughts and suggestions",
+                          onTap: () => ProfileDialogs.showFeedbackInfoDialog(context),
+                        ),
+                      ],
+                    ),
+                    
+                    const SizedBox(height: 25),
+                    
                     MenuSection(
                       title: "Orders",
                       items: [
@@ -240,15 +255,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                           title: "Help & Support",
                           subtitle: "Get help with your account or orders",
                           onTap: () => ProfileDialogs.showHelpDialog(context),
-                        ),
-                        MenuItemData(
-                          icon: Icons.feedback_outlined,
-                          title: "Send Feedback",
-                          subtitle: "Help us improve our service",
-                          onTap: () => ProfileDialogs.showFeedbackDialog(
-                            context, 
-                            _showComingSoonSnackBar,
-                          ),
                         ),
                         MenuItemData(
                           icon: Icons.info_outline,
