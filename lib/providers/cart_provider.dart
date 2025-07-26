@@ -1,4 +1,4 @@
-// lib/providers/cart_provider.dart - UPDATED VERSION (REMOVED ACTIVE ORDER FEATURE)
+// lib/providers/cart_provider.dart - COMPLETE FIXED VERSION
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:canteen_app/services/stock_management_service.dart';
@@ -46,15 +46,20 @@ class CartProvider extends ChangeNotifier {
     _reservationSubscription = ReservationService
         .watchUserReservations(user.uid)
         .listen((reservations) {
+      print('🔄 Reservation listener triggered: ${reservations.length} reservations');
+      
       _activeReservations = reservations;
       _updateReservationState();
       notifyListeners();
     });
+    
+    print('👂 Started reservation listener for user: ${user.uid}');
   }
   
   void _updateReservationState() {
     if (_activeReservations.isEmpty) {
       _reservationState = CartReservationState();
+      print('📊 Reservation state cleared - no active reservations');
       return;
     }
     
@@ -62,6 +67,7 @@ class CartProvider extends ChangeNotifier {
     
     if (activeReservations.isEmpty) {
       _reservationState = CartReservationState();
+      print('📊 Reservation state cleared - no active reservations after filtering');
       return;
     }
     
@@ -81,10 +87,45 @@ class CartProvider extends ChangeNotifier {
       earliestExpiry: earliestExpiry,
       reservedQuantities: reservedQuantities,
     );
+    
+    print('📊 Reservation state updated: ${activeReservations.length} active reservations');
   }
   
-  // Add item to cart with stock validation
+  // FIXED: Add sync method to check reservations when app loads
+  Future<void> _syncReservationState() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    
+    try {
+      print('🔄 Syncing reservation state on app load...');
+      
+      // Get current reservations from Firebase
+      final currentReservations = await ReservationService.getUserActiveReservations(user.uid);
+      
+      print('📊 Found ${currentReservations.length} active reservations from Firebase');
+      
+      _activeReservations = currentReservations;
+      _updateReservationState();
+      
+      // If we have no active reservations but cart items exist, allow editing
+      if (!hasActiveReservations && _cart.isNotEmpty) {
+        print('✅ No active reservations - cart items are editable');
+      }
+      
+      notifyListeners();
+    } catch (e) {
+      print('❌ Error syncing reservation state: $e');
+    }
+  }
+  
+  // FIXED: Add item to cart with stock validation and reservation check
   Future<bool> addItem(String itemId, {int quantity = 1}) async {
+    // FIXED: Check if item is currently reserved
+    if (isItemReserved(itemId)) {
+      print('❌ Cannot modify reserved item: $itemId');
+      return false;
+    }
+    
     final currentQuantity = _cart[itemId] ?? 0;
     
     // Check if we can add this quantity (considering reservations)
@@ -106,8 +147,14 @@ class CartProvider extends ChangeNotifier {
     }
   }
   
-  // Remove one quantity of item
+  // FIXED: Remove one quantity of item with reservation check
   void removeItem(String itemId) {
+    // FIXED: Check if item is currently reserved
+    if (isItemReserved(itemId)) {
+      print('❌ Cannot modify reserved item: $itemId');
+      return;
+    }
+    
     if (_cart.containsKey(itemId)) {
       if (_cart[itemId]! > 1) {
         _cart[itemId] = _cart[itemId]! - 1;
@@ -120,8 +167,14 @@ class CartProvider extends ChangeNotifier {
     }
   }
   
-  // Remove item completely
+  // FIXED: Remove item completely with reservation check
   void removeItemCompletely(String itemId) {
+    // FIXED: Check if item is currently reserved
+    if (isItemReserved(itemId)) {
+      print('❌ Cannot modify reserved item: $itemId');
+      return;
+    }
+    
     if (_cart.containsKey(itemId)) {
       _cart.remove(itemId);
       _saveToStorage();
@@ -132,6 +185,12 @@ class CartProvider extends ChangeNotifier {
   
   // Update item quantity with stock validation
   Future<bool> updateQuantity(String itemId, int quantity) async {
+    // FIXED: Check if item is currently reserved
+    if (isItemReserved(itemId)) {
+      print('❌ Cannot modify reserved item: $itemId');
+      return false;
+    }
+    
     if (quantity <= 0) {
       _cart.remove(itemId);
       await _saveToStorage();
@@ -154,8 +213,33 @@ class CartProvider extends ChangeNotifier {
     }
   }
   
-  // Clear entire cart
+  // FIXED: Clear entire cart with reservation respect
   void clearCart() {
+    // FIXED: Only allow clearing if no items are reserved
+    final reservedItems = _cart.keys.where(isItemReserved).toList();
+    if (reservedItems.isNotEmpty) {
+      print('❌ Cannot clear cart - ${reservedItems.length} items are reserved');
+      
+      // Clear only non-reserved items
+      final itemsToRemove = <String>[];
+      _cart.forEach((itemId, quantity) {
+        if (!isItemReserved(itemId)) {
+          itemsToRemove.add(itemId);
+        }
+      });
+      
+      for (String itemId in itemsToRemove) {
+        _cart.remove(itemId);
+      }
+      
+      if (itemsToRemove.isNotEmpty) {
+        _saveToStorage();
+        notifyListeners();
+        print('🧹 Cleared ${itemsToRemove.length} non-reserved items from cart');
+      }
+      return;
+    }
+    
     _cart.clear();
     _saveToStorage();
     notifyListeners();
@@ -353,7 +437,7 @@ class CartProvider extends ChangeNotifier {
     }
   }
   
-  // Load cart from local storage
+  // FIXED: Load cart from local storage with proper reservation sync
   Future<void> loadFromStorage() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -363,24 +447,30 @@ class CartProvider extends ChangeNotifier {
         final Map<String, dynamic> decoded = json.decode(cartJson);
         _cart = decoded.map((key, value) => MapEntry(key, value as int));
         
-        // Start reservation listener
-        _startReservationListener();
-        
-        // Validate loaded cart against current stock
+        print('📱 Cart loaded from storage: $_cart');
+      } else {
+        print('📱 No cart data found in storage');
+      }
+      
+      // FIXED: Always start reservation listener and sync state
+      _startReservationListener();
+      
+      // FIXED: Sync reservation state to check if items are still reserved
+      await _syncReservationState();
+      
+      // Validate loaded cart against current stock
+      if (_cart.isNotEmpty) {
         final validationResult = await validateCartStock();
         if (!validationResult.isValid) {
           await autoFixCart(validationResult);
         }
-        
-        print('📱 Cart loaded from storage: $_cart');
-      } else {
-        print('📱 No cart data found in storage');
-        _startReservationListener();
       }
+      
     } catch (e) {
       print('❌ Error loading cart from storage: $e');
       _cart = {};
       _startReservationListener();
+      await _syncReservationState();
     }
     notifyListeners();
   }
@@ -441,11 +531,13 @@ class CartProvider extends ChangeNotifier {
       print('Cart is empty');
     } else {
       _cart.forEach((itemId, quantity) {
-        print('$itemId: $quantity');
+        final isReservedItem = isItemReserved(itemId);
+        print('$itemId: $quantity ${isReservedItem ? "(RESERVED)" : "(EDITABLE)"}');
       });
       print('Total items: $itemCount');
     }
     print('Active Reservations: ${_activeReservations.length}');
+    print('Has Active Reservations: $hasActiveReservations');
     print('====================');
   }
   
@@ -502,7 +594,40 @@ class CartProvider extends ChangeNotifier {
     notifyListeners();
   }
   
-  // Cleanup method (call on logout)
+  // FIXED: Add method to manually refresh reservation state
+  Future<void> refreshReservationState() async {
+    print('🔄 Manually refreshing reservation state...');
+    await _syncReservationState();
+  }
+  
+  // FIXED: Add method to check if any cart modifications are allowed
+  bool canModifyCart() {
+    return !hasActiveReservations;
+  }
+  
+  // FIXED: Get non-reserved items that can be modified
+  Map<String, int> getNonReservedItems() {
+    Map<String, int> nonReservedItems = {};
+    _cart.forEach((itemId, quantity) {
+      if (!isItemReserved(itemId)) {
+        nonReservedItems[itemId] = quantity;
+      }
+    });
+    return nonReservedItems;
+  }
+  
+  // FIXED: Get only reserved items
+  Map<String, int> getReservedItems() {
+    Map<String, int> reservedItems = {};
+    _cart.forEach((itemId, quantity) {
+      if (isItemReserved(itemId)) {
+        reservedItems[itemId] = quantity;
+      }
+    });
+    return reservedItems;
+  }
+  
+  // FIXED: Enhanced cleanup method with proper reservation sync
   Future<void> cleanup() async {
     await releaseReservations();
     _reservationSubscription?.cancel();
@@ -511,6 +636,7 @@ class CartProvider extends ChangeNotifier {
     _updateReservationState();
     await clearStorage();
     notifyListeners();
+    print('🧹 CartProvider cleanup completed');
   }
 }
 

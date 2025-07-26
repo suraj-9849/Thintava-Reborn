@@ -1,4 +1,4 @@
-// lib/screens/user/cart_screen.dart - UPDATED WITH DEBUG FEATURES
+// lib/screens/user/cart_screen.dart - COMPLETE FIXED VERSION
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -9,8 +9,8 @@ import 'package:canteen_app/presentation/widgets/cart/cart_summary_widget.dart';
 import 'package:canteen_app/presentation/widgets/cart/cart_payment_handler.dart';
 import 'package:canteen_app/presentation/widgets/cart/active_order_banner.dart';
 import 'package:canteen_app/services/active_order_service.dart';
-import 'package:canteen_app/services/enhanced_app_lifecycle_handler.dart'; // FIXED IMPORT
-import 'package:canteen_app/widgets/debug_lifecycle_widget.dart'; // NEW IMPORT
+import 'package:canteen_app/services/enhanced_app_lifecycle_handler.dart';
+import 'package:canteen_app/widgets/debug_lifecycle_widget.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({Key? key}) : super(key: key);
@@ -126,6 +126,34 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   void _showClearCartDialog() {
+    final cartProvider = Provider.of<CartProvider>(context, listen: false);
+    
+    // Check if cart can be cleared
+    if (!cartProvider.canModifyCart()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.warning, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  "Cannot clear cart - some items are reserved",
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(16),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -135,7 +163,7 @@ class _CartScreenState extends State<CartScreen> {
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
         ),
         content: Text(
-          "Are you sure you want to clear your cart? Any active reservations will be released.",
+          "Are you sure you want to clear your cart? This will remove all editable items.",
           style: GoogleFonts.poppins(),
         ),
         actions: [
@@ -146,13 +174,84 @@ class _CartScreenState extends State<CartScreen> {
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
-              final cartProvider = Provider.of<CartProvider>(context, listen: false);
-              await cartProvider.releaseReservations();
               cartProvider.clearCart();
+              
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Row(
+                    children: [
+                      const Icon(Icons.check, color: Colors.white),
+                      const SizedBox(width: 12),
+                      Text(
+                        "Editable items cleared successfully",
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ),
+                  backgroundColor: Colors.green,
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  margin: const EdgeInsets.all(16),
+                ),
+              );
             },
             child: Text("CLEAR", style: GoogleFonts.poppins()),
           ),
         ],
+      ),
+    );
+  }
+
+  // Manual sync reservations
+  Future<void> _syncReservations() async {
+    final cartProvider = Provider.of<CartProvider>(context, listen: false);
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              "Syncing reservations...",
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.blue,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+    
+    await cartProvider.refreshReservationState();
+    
+    // Show result
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.sync, color: Colors.white),
+            const SizedBox(width: 12),
+            Text(
+              "Reservations synced: ${cartProvider.hasActiveReservations ? 'Found active reservations' : 'No active reservations'}",
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
       ),
     );
   }
@@ -194,6 +293,14 @@ class _CartScreenState extends State<CartScreen> {
       ),
       elevation: 0,
       actions: [
+        // Sync reservations button (debug mode)
+        if (_debugMode)
+          IconButton(
+            onPressed: _syncReservations,
+            icon: const Icon(Icons.sync, color: Colors.white),
+            tooltip: "Sync Reservations",
+          ),
+        
         if (!cartProvider.isEmpty)
           TextButton.icon(
             onPressed: _showClearCartDialog,
@@ -208,9 +315,10 @@ class _CartScreenState extends State<CartScreen> {
           IconButton(
             onPressed: () {
               EnhancedAppLifecycleHandler.instance.debugCurrentState();
+              cartProvider.printCart(); // This will show which items are reserved
             },
             icon: const Icon(Icons.bug_report, color: Colors.white),
-            tooltip: "Debug Lifecycle",
+            tooltip: "Debug State",
           ),
       ],
     );
@@ -240,6 +348,10 @@ class _CartScreenState extends State<CartScreen> {
             },
           ),
         
+        // Reservation Status Banner
+        if (cartProvider.hasActiveReservations)
+          _buildReservationStatusBanner(cartProvider),
+        
         // Debug Widget (only in debug mode)
         if (_debugMode)
           const DebugLifecycleWidget(),
@@ -255,6 +367,93 @@ class _CartScreenState extends State<CartScreen> {
             onPayNow: _startPayment,
           ),
       ],
+    );
+  }
+
+  // Reservation status banner
+  Widget _buildReservationStatusBanner(CartProvider cartProvider) {
+    final reservedCount = cartProvider.getReservedItems().length;
+    final editableCount = cartProvider.getNonReservedItems().length;
+    
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.blue, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.info_outline, color: Colors.blue, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                "Cart Status",
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue.shade800,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              if (reservedCount > 0) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                  ),
+                  child: Text(
+                    "$reservedCount Reserved",
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.blue,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+              if (editableCount > 0) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.withOpacity(0.3)),
+                  ),
+                  child: Text(
+                    "$editableCount Editable",
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.green,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            reservedCount > 0 
+              ? "Reserved items cannot be modified. Complete payment or wait for expiry."
+              : "All items are editable. You can modify quantities or remove items.",
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              color: Colors.grey[700],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

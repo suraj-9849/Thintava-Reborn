@@ -1,4 +1,4 @@
-// lib/presentation/widgets/cart/cart_item_widget.dart
+// lib/presentation/widgets/cart/cart_item_widget.dart - COMPLETE FIXED VERSION
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -24,7 +24,6 @@ class CartItemWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final price = item['price'] ?? 0;
-    final isVeg = item['isVeg'] ?? false;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -33,11 +32,13 @@ class CartItemWidget extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: isReserved 
           ? Border.all(color: Colors.blue, width: 2)
-          : null,
+          : Border.all(color: Colors.grey.shade200, width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 5,
+            color: isReserved 
+              ? Colors.blue.withOpacity(0.1)
+              : Colors.black.withOpacity(0.05),
+            blurRadius: isReserved ? 8 : 5,
             offset: const Offset(0, 2),
           ),
         ],
@@ -46,40 +47,11 @@ class CartItemWidget extends StatelessWidget {
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            // Reservation indicator
+            // Status indicator
             if (isReserved)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-                margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.schedule, color: Colors.blue, size: 16),
-                    const SizedBox(width: 6),
-                    Text(
-                      "Reserved for you",
-                      style: GoogleFonts.poppins(
-                        color: Colors.blue,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const Spacer(),
-                    if (cartProvider.reservationState.earliestExpiry != null)
-                      ReservationTimer(
-                        expiryTime: cartProvider.reservationState.earliestExpiry!,
-                        showBackground: false,
-                        showIcon: false,
-                        textStyle: GoogleFonts.poppins(fontSize: 10),
-                      ),
-                  ],
-                ),
-              ),
+              _buildReservationIndicator()
+            else
+              _buildEditableIndicator(),
             
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -90,12 +62,77 @@ class CartItemWidget extends StatelessWidget {
                 
                 // Dish details
                 Expanded(
-                  child: _buildItemDetails(price),
+                  child: _buildItemDetails(price, context),
                 ),
               ],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // Reservation indicator
+  Widget _buildReservationIndicator() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.blue.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.blue.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.lock, color: Colors.blue, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              "Reserved - Cannot modify during reservation",
+              style: GoogleFonts.poppins(
+                color: Colors.blue,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if (cartProvider.reservationState.earliestExpiry != null)
+            ReservationTimer(
+              expiryTime: cartProvider.reservationState.earliestExpiry!,
+              showBackground: false,
+              showIcon: false,
+              textStyle: GoogleFonts.poppins(fontSize: 10),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // Editable indicator for non-reserved items
+  Widget _buildEditableIndicator() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.green.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.green.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.edit, color: Colors.green, size: 14),
+          const SizedBox(width: 6),
+          Text(
+            "Editable - Click +/- to modify quantity",
+            style: GoogleFonts.poppins(
+              color: Colors.green,
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -106,12 +143,17 @@ class CartItemWidget extends StatelessWidget {
         ClipRRect(
           borderRadius: BorderRadius.circular(8),
           child: item['imageUrl'] != null
-              ? Image.network(
-                  item['imageUrl'],
-                  width: 80,
-                  height: 80,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildImagePlaceholder(),
+              ? ColorFiltered(
+                  colorFilter: isReserved
+                    ? ColorFilter.mode(Colors.blue.withOpacity(0.2), BlendMode.srcOver)
+                    : const ColorFilter.mode(Colors.transparent, BlendMode.multiply),
+                  child: Image.network(
+                    item['imageUrl'],
+                    width: 80,
+                    height: 80,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _buildImagePlaceholder(),
+                  ),
                 )
               : _buildImagePlaceholder(),
         ),
@@ -135,6 +177,24 @@ class CartItemWidget extends StatelessWidget {
             ),
           ),
         ),
+        // Reservation overlay
+        if (isReserved)
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.withOpacity(0.3)),
+              ),
+              child: const Center(
+                child: Icon(
+                  Icons.lock,
+                  color: Colors.blue,
+                  size: 20,
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -143,16 +203,16 @@ class CartItemWidget extends StatelessWidget {
     return Container(
       width: 80,
       height: 80,
-      color: Colors.grey[200],
+      color: isReserved ? Colors.blue.shade50 : Colors.grey[200],
       child: Icon(
         Icons.restaurant,
         size: 40,
-        color: Colors.grey[400],
+        color: isReserved ? Colors.blue : Colors.grey[400],
       ),
     );
   }
 
-  Widget _buildItemDetails(double price) {
+  Widget _buildItemDetails(double price, BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -161,7 +221,7 @@ class CartItemWidget extends StatelessWidget {
           style: GoogleFonts.poppins(
             fontSize: 16,
             fontWeight: FontWeight.bold,
-            color: const Color(0xFF023047),
+            color: isReserved ? Colors.blue.shade700 : const Color(0xFF023047),
           ),
         ),
         const SizedBox(height: 4),
@@ -170,7 +230,7 @@ class CartItemWidget extends StatelessWidget {
             item['description'],
             style: GoogleFonts.poppins(
               fontSize: 12,
-              color: Colors.grey[600],
+              color: isReserved ? Colors.blue.shade600 : Colors.grey[600],
             ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -183,7 +243,7 @@ class CartItemWidget extends StatelessWidget {
               "₹${price.toStringAsFixed(2)} × $quantity",
               style: GoogleFonts.poppins(
                 fontSize: 14,
-                color: Colors.grey[700],
+                color: isReserved ? Colors.blue.shade600 : Colors.grey[700],
               ),
             ),
             Text(
@@ -191,7 +251,7 @@ class CartItemWidget extends StatelessWidget {
               style: GoogleFonts.poppins(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
-                color: const Color(0xFFFFB703),
+                color: isReserved ? Colors.blue.shade700 : const Color(0xFFFFB703),
               ),
             ),
           ],
@@ -202,34 +262,36 @@ class CartItemWidget extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _buildQuantityControls(),
-            _buildDeleteButton(),
+            _buildQuantityControls(context),
+            _buildDeleteButton(context),
           ],
         ),
       ],
     );
   }
 
-  Widget _buildQuantityControls() {
+  Widget _buildQuantityControls(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: isReserved ? Colors.grey[200] : Colors.grey[100],
+        color: isReserved 
+          ? Colors.blue.withOpacity(0.1)
+          : Colors.grey[100],
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isReserved 
+            ? Colors.blue.withOpacity(0.3)
+            : Colors.grey.shade300,
+        ),
       ),
       child: Row(
         children: [
-          IconButton(
-            icon: Icon(
-              Icons.remove_circle_outline,
-              color: isReserved ? Colors.grey : const Color(0xFF023047),
-              size: 20,
-            ),
-            onPressed: isReserved ? null : () => cartProvider.removeItem(itemId),
-            constraints: const BoxConstraints(
-              minWidth: 32,
-              minHeight: 32,
-            ),
-            padding: EdgeInsets.zero,
+          _buildCartButton(
+            icon: Icons.remove_circle_outline,
+            onTap: isReserved ? null : () {
+              cartProvider.removeItem(itemId);
+              _showFeedback(context, "Item quantity decreased");
+            },
+            color: isReserved ? Colors.grey : const Color(0xFF023047),
           ),
           Container(
             padding: const EdgeInsets.symmetric(
@@ -237,7 +299,7 @@ class CartItemWidget extends StatelessWidget {
               vertical: 2,
             ),
             decoration: BoxDecoration(
-              color: isReserved ? Colors.grey : const Color(0xFFFFB703),
+              color: isReserved ? Colors.blue : const Color(0xFFFFB703),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
@@ -248,37 +310,89 @@ class CartItemWidget extends StatelessWidget {
               ),
             ),
           ),
-          IconButton(
-            icon: Icon(
-              Icons.add_circle_outline,
-              color: isReserved ? Colors.grey : const Color(0xFF023047),
-              size: 20,
-            ),
-            onPressed: isReserved ? null : () => cartProvider.addItem(itemId),
-            constraints: const BoxConstraints(
-              minWidth: 32,
-              minHeight: 32,
-            ),
-            padding: EdgeInsets.zero,
+          _buildCartButton(
+            icon: Icons.add_circle_outline,
+            onTap: isReserved ? null : () async {
+              final success = await cartProvider.addItem(itemId);
+              if (success) {
+                _showFeedback(context, "Item added to cart");
+              } else {
+                _showFeedback(context, "Cannot add more - insufficient stock", isError: true);
+              }
+            },
+            color: isReserved ? Colors.grey : const Color(0xFF023047),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildDeleteButton() {
+  Widget _buildDeleteButton(BuildContext context) {
     return IconButton(
       icon: Icon(
-        Icons.delete_outline,
+        isReserved ? Icons.lock : Icons.delete_outline,
         color: isReserved ? Colors.grey : Colors.red,
         size: 20,
       ),
-      onPressed: isReserved ? null : () => cartProvider.removeItemCompletely(itemId),
+      onPressed: isReserved ? () {
+        _showFeedback(context, "Cannot remove reserved item", isError: true);
+      } : () {
+        cartProvider.removeItemCompletely(itemId);
+        _showFeedback(context, "Item removed from cart");
+      },
       constraints: const BoxConstraints(
         minWidth: 32,
         minHeight: 32,
       ),
       padding: EdgeInsets.zero,
+      tooltip: isReserved ? "Cannot remove reserved item" : "Remove item",
+    );
+  }
+
+  Widget _buildCartButton({
+    required IconData icon, 
+    required VoidCallback? onTap, 
+    required Color color
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        child: Icon(
+          icon,
+          color: color,
+          size: 20,
+        ),
+      ),
+    );
+  }
+
+  // Show feedback to user
+  void _showFeedback(BuildContext context, String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              isError ? Icons.warning : Icons.check,
+              color: Colors.white,
+              size: 20,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: isError ? Colors.red : Colors.green,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 2),
+      ),
     );
   }
 }
