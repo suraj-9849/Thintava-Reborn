@@ -1,4 +1,4 @@
-// lib/main.dart - COMPLETE VERSION WITH DEVICE MANAGEMENT - NO USERNAME SETUP
+// lib/main.dart - UPDATED WITH APP LIFECYCLE HANDLER FOR RESERVATION MANAGEMENT
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -19,6 +19,7 @@ import 'package:canteen_app/services/notification_service.dart';
 import 'package:canteen_app/utils/firebase_utils.dart';
 import 'package:canteen_app/services/auth_service.dart';
 import 'package:canteen_app/providers/cart_provider.dart';
+import 'package:canteen_app/services/app_lifecycle_handler.dart'; // NEW IMPORT
 
 // NEW: Import reservation models and services
 import 'package:canteen_app/models/reservation_model.dart';
@@ -183,7 +184,12 @@ class _ThintavaAppState extends State<ThintavaApp> {
       _handleForcedLogout();
     });
     
-    print('🚀 Thintava App initialized with Device Management and Stock Reservation System');
+    // NEW: Initialize app lifecycle handler for reservation management
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppLifecycleHandler.instance.initialize(context);
+    });
+    
+    print('🚀 Thintava App initialized with Device Management, Stock Reservation System, and App Lifecycle Handler');
     
     // NEW: Initialize stock management field for existing items (one-time migration)
     _initializeStockReservationSystem();
@@ -318,6 +324,10 @@ class _ThintavaAppState extends State<ThintavaApp> {
   void dispose() {
     // DEVICE MANAGEMENT - CLEANUP SESSION LISTENER
     authService.stopSessionListener();
+    
+    // NEW: Dispose app lifecycle handler
+    AppLifecycleHandler.instance.dispose();
+    
     super.dispose();
   }
   
@@ -342,7 +352,7 @@ class _ThintavaAppState extends State<ThintavaApp> {
         return ChangeNotifierProvider(
           create: (context) => CartProvider()..loadFromStorage(), // Load cart on app start
           child: MaterialApp(
-            title: 'Thintava - Smart Food Ordering with Device Security',
+            title: 'Thintava - Smart Food Ordering with Enhanced Reservation Management',
             debugShowCheckedModeBanner: false,
             theme: _buildAppTheme(),
             navigatorKey: navigatorKey,

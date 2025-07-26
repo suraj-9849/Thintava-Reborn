@@ -1,4 +1,4 @@
-// lib/screens/user/cart_screen.dart - UPDATED WITH ACTIVE ORDER CHECK
+// lib/screens/user/cart_screen.dart - UPDATED WITH DEBUG FEATURES
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +9,8 @@ import 'package:canteen_app/presentation/widgets/cart/cart_summary_widget.dart';
 import 'package:canteen_app/presentation/widgets/cart/cart_payment_handler.dart';
 import 'package:canteen_app/presentation/widgets/cart/active_order_banner.dart';
 import 'package:canteen_app/services/active_order_service.dart';
+import 'package:canteen_app/services/enhanced_app_lifecycle_handler.dart'; // NEW IMPORT
+import 'package:canteen_app/widgets/debug_lifecycle_widget.dart'; // NEW IMPORT
 
 class CartScreen extends StatefulWidget {
   const CartScreen({Key? key}) : super(key: key);
@@ -27,12 +29,20 @@ class _CartScreenState extends State<CartScreen> {
   // Active order state
   ActiveOrderResult? _activeOrder;
   bool _showActiveOrderBanner = true;
+  
+  // Debug mode flag - set to true for testing
+  static const bool _debugMode = true; // Set to false in production
 
   @override
   void initState() {
     super.initState();
     fetchItems();
     _checkActiveOrder();
+    
+    // Initialize the enhanced lifecycle handler with context
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      EnhancedAppLifecycleHandler.instance.initialize(context);
+    });
   }
 
   @override
@@ -95,6 +105,9 @@ class _CartScreenState extends State<CartScreen> {
     });
 
     try {
+      // Mark payment process as started in lifecycle handler
+      EnhancedAppLifecycleHandler.instance.markPaymentProcessStarted();
+      
       await _paymentHandler?.reserveAndProceedToPayment();
     } finally {
       if (mounted) {
@@ -106,6 +119,9 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   void _startPayment() async {
+    // Mark payment process as started in lifecycle handler
+    EnhancedAppLifecycleHandler.instance.markPaymentProcessStarted();
+    
     await _paymentHandler?.startPayment();
   }
 
@@ -187,6 +203,15 @@ class _CartScreenState extends State<CartScreen> {
               style: GoogleFonts.poppins(color: Colors.white),
             ),
           ),
+        // Debug button in app bar (only in debug mode)
+        if (_debugMode)
+          IconButton(
+            onPressed: () {
+              EnhancedAppLifecycleHandler.instance.debugCurrentState();
+            },
+            icon: const Icon(Icons.bug_report, color: Colors.white),
+            tooltip: "Debug Lifecycle",
+          ),
       ],
     );
   }
@@ -214,6 +239,10 @@ class _CartScreenState extends State<CartScreen> {
               });
             },
           ),
+        
+        // Debug Widget (only in debug mode)
+        if (_debugMode)
+          const DebugLifecycleWidget(),
         
         _buildCartContent(cartProvider),
         
