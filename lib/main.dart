@@ -19,7 +19,7 @@ import 'package:canteen_app/services/notification_service.dart';
 import 'package:canteen_app/utils/firebase_utils.dart';
 import 'package:canteen_app/services/auth_service.dart';
 import 'package:canteen_app/providers/cart_provider.dart';
-import 'package:canteen_app/services/app_lifecycle_handler.dart'; // NEW IMPORT
+import 'package:canteen_app/services/enhanced_app_lifecycle_handler.dart'; // FIXED IMPORT
 
 // NEW: Import reservation models and services
 import 'package:canteen_app/models/reservation_model.dart';
@@ -186,7 +186,7 @@ class _ThintavaAppState extends State<ThintavaApp> {
     
     // NEW: Initialize app lifecycle handler for reservation management
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      AppLifecycleHandler.instance.initialize(context);
+      EnhancedAppLifecycleHandler.instance.initialize(context);
     });
     
     print('🚀 Thintava App initialized with Device Management, Stock Reservation System, and App Lifecycle Handler');
@@ -326,7 +326,7 @@ class _ThintavaAppState extends State<ThintavaApp> {
     authService.stopSessionListener();
     
     // NEW: Dispose app lifecycle handler
-    AppLifecycleHandler.instance.dispose();
+    EnhancedAppLifecycleHandler.instance.dispose();
     
     super.dispose();
   }

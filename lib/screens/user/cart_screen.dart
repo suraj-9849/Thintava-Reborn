@@ -9,7 +9,7 @@ import 'package:canteen_app/presentation/widgets/cart/cart_summary_widget.dart';
 import 'package:canteen_app/presentation/widgets/cart/cart_payment_handler.dart';
 import 'package:canteen_app/presentation/widgets/cart/active_order_banner.dart';
 import 'package:canteen_app/services/active_order_service.dart';
-import 'package:canteen_app/services/enhanced_app_lifecycle_handler.dart'; // NEW IMPORT
+import 'package:canteen_app/services/enhanced_app_lifecycle_handler.dart'; // FIXED IMPORT
 import 'package:canteen_app/widgets/debug_lifecycle_widget.dart'; // NEW IMPORT
 
 class CartScreen extends StatefulWidget {

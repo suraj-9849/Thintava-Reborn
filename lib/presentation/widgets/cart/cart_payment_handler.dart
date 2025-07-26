@@ -10,7 +10,7 @@ import 'package:canteen_app/providers/cart_provider.dart';
 import 'package:canteen_app/models/reservation_model.dart';
 import 'package:canteen_app/services/reservation_service.dart';
 import 'package:canteen_app/services/active_order_service.dart';
-import 'package:canteen_app/services/app_lifecycle_handler.dart'; // NEW IMPORT
+import 'package:canteen_app/services/enhanced_app_lifecycle_handler.dart'; // FIXED IMPORT
 import 'package:canteen_app/presentation/widgets/cart/cart_dialogs.dart';
 
 class CartPaymentHandler {
@@ -36,7 +36,7 @@ class CartPaymentHandler {
   void dispose() {
     _razorpay.clear();
     // Ensure payment process is marked as completed when handler is disposed
-    AppLifecycleHandler.instance.markPaymentProcessCompleted();
+    EnhancedAppLifecycleHandler.instance.markPaymentProcessCompleted();
   }
 
   /// Create Razorpay Order using Firebase Cloud Function
@@ -136,7 +136,7 @@ class CartPaymentHandler {
       }
 
       // STEP 8: MARK PAYMENT PROCESS AS STARTED (NEW)
-      AppLifecycleHandler.instance.markPaymentProcessStarted();
+      EnhancedAppLifecycleHandler.instance.markPaymentProcessStarted();
       print('💳 Payment process marked as started - app lifecycle monitoring enabled');
 
       // STEP 9: Proceed to payment gateway
@@ -150,7 +150,7 @@ class CartPaymentHandler {
         await cartProvider.releaseReservations(status: ReservationStatus.failed);
         currentReservationIds = null;
       }
-      AppLifecycleHandler.instance.markPaymentProcessCompleted();
+      EnhancedAppLifecycleHandler.instance.markPaymentProcessCompleted();
     }
   }
 
@@ -174,7 +174,7 @@ class CartPaymentHandler {
         currentRazorpayOrderId = orderId;
         
         // MARK PAYMENT PROCESS AS STARTED (NEW)
-        AppLifecycleHandler.instance.markPaymentProcessStarted();
+        EnhancedAppLifecycleHandler.instance.markPaymentProcessStarted();
         print('💳 Payment process marked as started - app lifecycle monitoring enabled');
         
         _startPaymentWithOrder();
@@ -183,7 +183,7 @@ class CartPaymentHandler {
       }
     } catch (error) {
       _showSnackBar("Payment setup failed: $error", Colors.red, Icons.error_outline);
-      AppLifecycleHandler.instance.markPaymentProcessCompleted();
+      EnhancedAppLifecycleHandler.instance.markPaymentProcessCompleted();
     }
   }
 
@@ -191,7 +191,7 @@ class CartPaymentHandler {
   void _startPaymentWithOrder() {
     if (currentRazorpayOrderId == null) {
       _showSnackBar("Payment setup failed", Colors.red, Icons.error_outline);
-      AppLifecycleHandler.instance.markPaymentProcessCompleted();
+      EnhancedAppLifecycleHandler.instance.markPaymentProcessCompleted();
       return;
     }
 
@@ -222,13 +222,13 @@ class CartPaymentHandler {
     } catch (e) {
       debugPrint("Error: $e");
       _showSnackBar("Payment error: ${e.toString()}", Colors.red, Icons.error_outline);
-      AppLifecycleHandler.instance.markPaymentProcessCompleted();
+      EnhancedAppLifecycleHandler.instance.markPaymentProcessCompleted();
     }
   }
 
   void _handlePaymentSuccess(PaymentSuccessResponse response) async {
     // MARK PAYMENT PROCESS AS COMPLETED IMMEDIATELY (NEW)
-    AppLifecycleHandler.instance.markPaymentProcessCompleted();
+    EnhancedAppLifecycleHandler.instance.markPaymentProcessCompleted();
     print('✅ Payment successful - lifecycle monitoring disabled');
     
     showDialog(
@@ -372,7 +372,7 @@ class CartPaymentHandler {
 
   void _handlePaymentError(PaymentFailureResponse response) async {
     // MARK PAYMENT PROCESS AS COMPLETED (NEW)
-    AppLifecycleHandler.instance.markPaymentProcessCompleted();
+    EnhancedAppLifecycleHandler.instance.markPaymentProcessCompleted();
     print('❌ Payment failed - lifecycle monitoring disabled');
     
     if (currentReservationIds != null) {
@@ -390,7 +390,7 @@ class CartPaymentHandler {
 
   void _handleExternalWallet(ExternalWalletResponse response) {
     // MARK PAYMENT PROCESS AS COMPLETED (NEW)
-    AppLifecycleHandler.instance.markPaymentProcessCompleted();
+    EnhancedAppLifecycleHandler.instance.markPaymentProcessCompleted();
     print('💳 External wallet selected - lifecycle monitoring disabled');
     
     _showSnackBar("External Wallet selected: ${response.walletName}", Color(0xFFFFB703), Icons.account_balance_wallet);
