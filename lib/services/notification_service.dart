@@ -1,10 +1,16 @@
-// lib/services/notification_service.dart - FIXED VERSION FOR MISSING PRICE DATA
+// ============================================================================
+// FILE 1: lib/services/notification_service.dart (FIXED VERSION)
+// ============================================================================
+
 import 'dart:async';
 import 'dart:typed_data'; // Add this import for Int64List
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/material.dart';
+// FIXED: Add missing imports
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 // Background message handler
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -140,6 +146,39 @@ class NotificationService {
         _showEnhancedLocalNotification(message, notification);
       }
     });
+  }
+
+  // FIXED: Add this method to NotificationService class
+  static Future<void> ensureKitchenTokenIsUpdated() async {
+    try {
+      User? currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) return;
+
+      // Get current FCM token
+      String? token = await FirebaseMessaging.instance.getToken();
+      if (token == null) return;
+
+      // Check if current user is kitchen
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .get();
+
+      if (!userDoc.exists) return;
+
+      Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+      if (userData['role'] != 'kitchen') return;
+
+      // Update FCM token
+      await userDoc.reference.update({
+        'fcmToken': token,
+        'lastTokenUpdate': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ Kitchen FCM token updated in NotificationService');
+    } catch (e) {
+      print('❌ Error updating kitchen FCM token: $e');
+    }
   }
 
   static Future<void> _setupNotificationOpenedHandler() async {

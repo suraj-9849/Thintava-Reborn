@@ -66,33 +66,30 @@ exports.terminateStalePickups = functions.pubsub
     return null;
   });
 
-// 🚀 Enhanced function: notify kitchen when a new order is created - FIXED PRICING
 exports.notifyKitchenOnNewOrder = functions.firestore
   .document('orders/{orderId}')
   .onCreate(async (snap, context) => {
     try {
       const newOrder = snap.data();
-      console.log('New order created:', context.params.orderId);
+      const orderId = context.params.orderId;
 
-      // 🔥 Fetch kitchen user with role 'kitchen' from users collection
-      const kitchenUsers = await admin.firestore().collection('users')
+      console.log('🚀 FIXED: New order created:', orderId);
+      console.log('📦 Order details:', JSON.stringify(newOrder, null, 2));
+
+      // Step 1: Find ALL kitchen users (not just the first one)
+      console.log('🔍 Looking for ALL kitchen users...');
+      const kitchenUsersQuery = await admin.firestore().collection('users')
         .where('role', '==', 'kitchen')
         .get();
 
-      if (kitchenUsers.empty) {
-        console.log('No kitchen user found!');
+      if (kitchenUsersQuery.empty) {
+        console.error('❌ CRITICAL: No kitchen users found!');
         return null;
       }
 
-      const kitchenUser = kitchenUsers.docs[0].data();
-      const kitchenFcmToken = kitchenUser.fcmToken;
+      console.log(`✅ Found ${kitchenUsersQuery.docs.length} kitchen user(s)`);
 
-      if (!kitchenFcmToken) {
-        console.log('No FCM token for kitchen user!');
-        return null;
-      }
-
-      // Calculate item count from order data
+      // Step 2: Calculate order details
       let itemCount = 0;
       if (newOrder.items && Array.isArray(newOrder.items)) {
         itemCount = newOrder.items.reduce((total, item) => {
@@ -100,33 +97,194 @@ exports.notifyKitchenOnNewOrder = functions.firestore
         }, 0);
       }
 
-      const payload = {
-        notification: {
-          title: 'New Order Received',
-          body: `A new order #${context.params.orderId.substring(0, 6)} has been placed. ${itemCount} items total.`,
-        },
-        data: {
-          type: 'NEW_ORDER',
-          orderId: context.params.orderId,
-          itemCount: itemCount.toString(),
-          customerEmail: newOrder.userEmail || 'Unknown',
-          // REMOVED: orderTotal to hide pricing
+      console.log(`📦 Order contains ${itemCount} items`);
+
+      // Step 3: Send notifications to ALL kitchen users
+      let successCount = 0;
+      let failureCount = 0;
+      const notificationPromises = [];
+
+      for (const kitchenUserDoc of kitchenUsersQuery.docs) {
+        const kitchenUserData = kitchenUserDoc.data();
+        const kitchenUserId = kitchenUserDoc.id;
+        const kitchenFcmToken = kitchenUserData.fcmToken;
+        const kitchenEmail = kitchenUserData.email || 'Unknown';
+
+        console.log(`👨‍🍳 Processing kitchen user: ${kitchenEmail}`);
+
+        if (!kitchenFcmToken || kitchenFcmToken.trim() === '') {
+          console.warn(`⚠️ Kitchen user ${kitchenEmail} has no FCM token`);
+          failureCount++;
+          continue;
         }
-      };
 
-      const result = await admin.messaging().send({
-        token: kitchenFcmToken,
-        notification: payload.notification,
-        data: payload.data
-      });
+        console.log(`✅ Sending notification to ${kitchenEmail}`);
 
-      console.log('Kitchen notification sent successfully:', result);
-      return result;
+        // Create notification payload with better formatting
+        const payload = {
+          notification: {
+            title: '🔔 New Order Alert!',
+            body: `Order #${orderId.substring(0, 6)} • ${itemCount} items • Customer: ${newOrder.userEmail || 'Unknown'}`,
+          },
+          data: {
+            type: 'NEW_ORDER',
+            orderId: orderId,
+            itemCount: itemCount.toString(),
+            customerEmail: newOrder.userEmail || 'Unknown',
+            action: 'view_kitchen_dashboard',
+            timestamp: new Date().toISOString(),
+          },
+          // Enhanced Android settings for better delivery
+          android: {
+            priority: 'high',
+            notification: {
+              channelId: 'thintava_orders',
+              priority: 'high',
+              defaultSound: true,
+              defaultVibrateTimings: true,
+              icon: '@mipmap/ic_launcher',
+              color: '#FFB703',
+              tag: `order_${orderId}`, // Prevent duplicate notifications
+            }
+          },
+          // Enhanced iOS settings
+          apns: {
+            payload: {
+              aps: {
+                alert: {
+                  title: '🔔 New Order Alert!',
+                  body: `Order #${orderId.substring(0, 6)} • ${itemCount} items`,
+                },
+                sound: 'default',
+                badge: 1,
+                'content-available': 1, // Enable background processing
+              }
+            }
+          }
+        };
+
+        // Create individual notification promise
+        const notificationPromise = admin.messaging().send({
+          token: kitchenFcmToken,
+          ...payload
+        }).then(result => {
+          console.log(`✅ SUCCESS: Notification sent to ${kitchenEmail} - Result: ${result}`);
+          successCount++;
+
+          // Update kitchen user stats
+          return kitchenUserDoc.ref.update({
+            lastNotificationSent: admin.firestore.FieldValue.serverTimestamp(),
+            lastOrderNotified: orderId,
+            notificationCount: admin.firestore.FieldValue.increment(1),
+          });
+
+        }).catch(error => {
+          console.error(`❌ FAILED: Could not send notification to ${kitchenEmail}:`, error);
+          failureCount++;
+
+          // Handle invalid tokens
+          if (error.code === 'messaging/registration-token-not-registered' ||
+            error.code === 'messaging/invalid-registration-token') {
+            console.log(`🔧 Clearing invalid FCM token for ${kitchenEmail}`);
+            return kitchenUserDoc.ref.update({
+              fcmToken: admin.firestore.FieldValue.delete(),
+              tokenClearedAt: admin.firestore.FieldValue.serverTimestamp(),
+              tokenClearReason: error.code,
+            });
+          }
+
+          return null;
+        });
+
+        notificationPromises.push(notificationPromise);
+      }
+
+      // Wait for all notifications to complete
+      console.log(`📤 Sending notifications to ${notificationPromises.length} kitchen users...`);
+      await Promise.allSettled(notificationPromises);
+
+      console.log(`📊 FINAL RESULT: ${successCount} notifications sent successfully, ${failureCount} failed`);
+
+      if (successCount > 0) {
+        console.log(`🎉 SUCCESS: Notifications sent to ${successCount} kitchen users for order ${orderId}`);
+        return {
+          success: true,
+          orderId: orderId,
+          sent: successCount,
+          failed: failureCount,
+          kitchenUsersTotal: kitchenUsersQuery.docs.length
+        };
+      } else {
+        console.error(`💥 COMPLETE FAILURE: No notifications were sent for order ${orderId}`);
+        return {
+          success: false,
+          orderId: orderId,
+          sent: 0,
+          failed: failureCount,
+          error: 'No valid FCM tokens found'
+        };
+      }
+
     } catch (error) {
-      console.error('Error sending kitchen notification:', error);
-      return null;
+      console.error(`💥 CRITICAL ERROR in kitchen notification function for order ${context.params.orderId}:`, error);
+      console.error('Full error details:', error.stack);
+      return {
+        success: false,
+        orderId: context.params.orderId,
+        error: error.message
+      };
     }
   });
+
+// ============================================================================
+// STEP 2: ADD THIS TEST FUNCTION TO YOUR functions/index.js
+// ============================================================================
+
+// 🧪 Test function to manually trigger kitchen notifications
+exports.testKitchenNotifications = functions.https.onRequest(async (req, res) => {
+  try {
+    console.log('🧪 Manual kitchen notification test started');
+
+    // Create a test order document
+    const testOrderId = `manual_test_${Date.now()}`;
+    const testOrderData = {
+      userId: 'test_user_manual',
+      userEmail: 'test@manualtest.com',
+      status: 'Placed',
+      items: [
+        { name: 'Test Pizza 🍕', quantity: 2, price: 200 },
+        { name: 'Test Drink 🥤', quantity: 1, price: 50 }
+      ],
+      totalAmount: 450,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      paymentStatus: 'completed',
+      testOrder: true,
+      manualTest: true,
+    };
+
+    // Create the test order (this will trigger the notification function)
+    await admin.firestore().collection('orders').doc(testOrderId).set(testOrderData);
+
+    console.log(`✅ Test order created: ${testOrderId}`);
+
+    // Wait a moment for the trigger to process
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    res.status(200).json({
+      success: true,
+      message: 'Test order created successfully',
+      testOrderId: testOrderId,
+      instruction: 'Check Firebase Console logs and kitchen devices for notifications'
+    });
+
+  } catch (error) {
+    console.error('❌ Error in manual test:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
 
 // 🚀 Enhanced function: notify user when order status changes - FIXED PRICING
 exports.notifyUserOnOrderStatusChange = functions.firestore
@@ -202,7 +360,7 @@ exports.notifyUserOnOrderStatusChange = functions.firestore
           // REMOVED: orderTotal to hide pricing
         }
       };
-      
+
       const result = await admin.messaging().send({
         token: fcmToken,
         notification: payload.notification,
@@ -224,24 +382,24 @@ exports.notifyUserOnSessionTermination = functions.firestore
     try {
       const sessionData = snap.data();
       const userId = context.params.userId;
-      
+
       console.log(`📱 Session termination detected for user: ${userId}`);
       console.log(`📱 Session data:`, sessionData);
-      
+
       // Only send notification if the logout reason is due to another device login
       if (sessionData.logoutReason === 'Logged in on another device' && sessionData.fcmToken) {
         const fcmToken = sessionData.fcmToken;
-        
+
         // Get user data to personalize the message
         const userDoc = await admin.firestore().collection('users').doc(userId).get();
         let userEmail = 'your account';
         let deviceInfo = '';
-        
+
         if (userDoc.exists) {
           const userData = userDoc.data();
           userEmail = userData.email || 'your account';
         }
-        
+
         // Get device info for more detailed message
         if (sessionData.deviceInfo) {
           const device = sessionData.deviceInfo;
@@ -250,7 +408,7 @@ exports.notifyUserOnSessionTermination = functions.firestore
             deviceInfo += ` (${device.model})`;
           }
         }
-        
+
         const payload = {
           notification: {
             title: '🔐 Security Alert - Device Login',
@@ -263,13 +421,13 @@ exports.notifyUserOnSessionTermination = functions.firestore
             device: deviceInfo,
           }
         };
-        
+
         const result = await admin.messaging().send({
           token: fcmToken,
           notification: payload.notification,
           data: payload.data
         });
-        
+
         console.log('Session termination notification sent successfully:', result);
         return result;
       } else {
@@ -289,19 +447,19 @@ exports.sendWelcomeNotification = functions.firestore
     try {
       const newUserData = snap.data();
       const userId = context.params.userId;
-      
+
       console.log(`🎉 New user registered: ${userId}`);
-      
+
       // Wait 5 seconds to ensure FCM token is saved
       await new Promise(resolve => setTimeout(resolve, 5000));
-      
+
       // Get updated user data with FCM token
       const updatedUserDoc = await admin.firestore().collection('users').doc(userId).get();
       const updatedUserData = updatedUserDoc.data();
-      
+
       if (updatedUserData && updatedUserData.fcmToken) {
         console.log(`📱 Sending welcome notification to: ${updatedUserData.email}`);
-        
+
         const payload = {
           notification: {
             title: '🎉 Welcome to Thintava! 🍽️',
@@ -312,13 +470,13 @@ exports.sendWelcomeNotification = functions.firestore
             userId: userId,
           }
         };
-        
+
         const result = await admin.messaging().send({
           token: updatedUserData.fcmToken,
           notification: payload.notification,
           data: payload.data
         });
-        
+
         console.log('Welcome notification sent successfully:', result);
         return result;
       } else {
@@ -366,7 +524,7 @@ exports.createRazorpayOrder = functions.https.onCall(async (data, context) => {
     };
 
     const razorpayOrder = await razorpay.orders.create(orderOptions);
-    
+
     console.log(`✅ Razorpay order created: ${razorpayOrder.id}`);
 
     // Store order info in Firestore for tracking
@@ -432,7 +590,7 @@ exports.verifyRazorpayPayment = functions.https.onCall(async (data, context) => 
 
     // Get payment details from Razorpay
     const payment = await razorpay.payments.fetch(razorpay_payment_id);
-    
+
     // Store payment info in Firestore
     await admin.firestore().collection('razorpay_payments').doc(razorpay_payment_id).set({
       paymentId: razorpay_payment_id,
@@ -481,17 +639,17 @@ exports.verifyRazorpayPayment = functions.https.onCall(async (data, context) => 
 exports.handleRazorpayWebhook = functions.https.onRequest(async (req, res) => {
   try {
     console.log('📨 Razorpay webhook received');
-    
+
     // Verify webhook signature
     const webhookSignature = req.headers['x-razorpay-signature'];
     const webhookSecret = functions.config().razorpay.webhook_secret;
-    
+
     if (webhookSecret && webhookSignature) {
       const expectedSignature = crypto
         .createHmac('sha256', webhookSecret)
         .update(JSON.stringify(req.body))
         .digest('hex');
-      
+
       if (expectedSignature !== webhookSignature) {
         console.log('❌ Invalid webhook signature');
         return res.status(400).send('Invalid signature');
@@ -506,15 +664,15 @@ exports.handleRazorpayWebhook = functions.https.onRequest(async (req, res) => {
       case 'payment.captured':
         await handlePaymentCaptured(event.payload.payment.entity);
         break;
-      
+
       case 'payment.failed':
         await handlePaymentFailed(event.payload.payment.entity);
         break;
-        
+
       case 'order.paid':
         await handleOrderPaid(event.payload.order.entity);
         break;
-      
+
       default:
         console.log(`🔄 Unhandled webhook event: ${event.event}`);
     }
@@ -530,7 +688,7 @@ exports.handleRazorpayWebhook = functions.https.onRequest(async (req, res) => {
 async function handlePaymentCaptured(payment) {
   try {
     console.log(`✅ Payment auto-captured: ${payment.id} for amount ${payment.amount}`);
-    
+
     // Update payment status in Firestore
     await admin.firestore().collection('razorpay_payments').doc(payment.id).set({
       paymentId: payment.id,
@@ -559,7 +717,7 @@ async function handlePaymentCaptured(payment) {
         paymentMethod: payment.method,
         autoCaptured: true,
       });
-      
+
       console.log(`✅ Order ${orderDoc.id} updated with auto-capture status`);
 
       // Send notification to kitchen about confirmed payment - NO PRICING
@@ -597,7 +755,7 @@ async function handlePaymentCaptured(payment) {
 async function handlePaymentFailed(payment) {
   try {
     console.log(`❌ Payment failed: ${payment.id} - ${payment.error_description}`);
-    
+
     // Update payment status
     await admin.firestore().collection('razorpay_payments').doc(payment.id).set({
       paymentId: payment.id,
@@ -625,7 +783,7 @@ async function handlePaymentFailed(payment) {
         paymentError: payment.error_description,
         status: 'Payment Failed',
       });
-      
+
       console.log(`❌ Order ${orderDoc.id} marked as payment failed`);
     }
 
@@ -638,7 +796,7 @@ async function handlePaymentFailed(payment) {
 async function handleOrderPaid(order) {
   try {
     console.log(`💰 Order paid: ${order.id} for amount ${order.amount_paid}`);
-    
+
     // Update order status
     await admin.firestore().collection('razorpay_orders').doc(order.id).update({
       status: 'paid',
@@ -665,10 +823,10 @@ exports.getPaymentAnalytics = functions.https.onCall(async (data, context) => {
     }
 
     const { startDate, endDate } = data;
-    const start = startDate ? admin.firestore.Timestamp.fromDate(new Date(startDate)) : 
-                  admin.firestore.Timestamp.fromDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
-    const end = endDate ? admin.firestore.Timestamp.fromDate(new Date(endDate)) : 
-                admin.firestore.Timestamp.now();
+    const start = startDate ? admin.firestore.Timestamp.fromDate(new Date(startDate)) :
+      admin.firestore.Timestamp.fromDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+    const end = endDate ? admin.firestore.Timestamp.fromDate(new Date(endDate)) :
+      admin.firestore.Timestamp.now();
 
     // Get payment data
     const paymentsSnapshot = await admin.firestore()
@@ -685,7 +843,7 @@ exports.getPaymentAnalytics = functions.https.onCall(async (data, context) => {
 
     paymentsSnapshot.forEach(doc => {
       const payment = doc.data();
-      
+
       if (payment.status === 'captured') {
         totalAmount += payment.amount || 0;
         successfulPayments++;
@@ -802,7 +960,7 @@ exports.getOrderWithPaymentStatus = functions.https.onCall(async (data, context)
 
     // Get order from either active orders or user's order history
     let orderDoc = await admin.firestore().collection('orders').doc(orderId).get();
-    
+
     if (!orderDoc.exists) {
       // Try user's order history
       orderDoc = await admin.firestore()
@@ -831,7 +989,7 @@ exports.getOrderWithPaymentStatus = functions.https.onCall(async (data, context)
         .collection('razorpay_payments')
         .doc(orderData.paymentId)
         .get();
-      
+
       if (paymentDoc.exists) {
         const paymentData = paymentDoc.data();
         paymentInfo = {
@@ -871,32 +1029,32 @@ exports.cleanupExpiredSessions = functions.pubsub
     try {
       const db = admin.firestore();
       const now = admin.firestore.Timestamp.now();
-      
+
       // Clean up session history older than 30 days
       const thirtyDaysAgo = admin.firestore.Timestamp.fromMillis(now.toMillis() - 30 * 24 * 60 * 60 * 1000);
-      
+
       // Get all session history documents older than 30 days
       const expiredSessions = await db.collectionGroup('history')
         .where('logoutTime', '<', thirtyDaysAgo)
         .limit(500) // Process in batches
         .get();
-      
+
       if (expiredSessions.empty) {
         console.log('No expired session records to clean up');
         return null;
       }
-      
+
       const batch = db.batch();
       let deleteCount = 0;
-      
+
       expiredSessions.forEach(doc => {
         batch.delete(doc.ref);
         deleteCount++;
       });
-      
+
       await batch.commit();
       console.log(`✅ Cleaned up ${deleteCount} expired session records`);
-      
+
       return null;
     } catch (error) {
       console.error('❌ Error cleaning up expired sessions:', error);
@@ -912,29 +1070,29 @@ exports.monitorSuspiciousActivity = functions.firestore
       const before = change.before.data();
       const after = change.after.data();
       const userId = context.params.userId;
-      
+
       // Check if device changed
       if (before.activeDeviceId !== after.activeDeviceId) {
         console.log(`🔄 Device change detected for user ${userId}`);
         console.log(`Previous device: ${before.activeDeviceId}`);
         console.log(`New device: ${after.activeDeviceId}`);
-        
+
         // Get time difference between sessions
         const previousLogin = before.lastLoginTime;
         const newLogin = after.lastLoginTime;
-        
+
         if (previousLogin && newLogin) {
           const timeDiff = newLogin.toMillis() - previousLogin.toMillis();
           const hoursDiff = timeDiff / (1000 * 60 * 60);
-          
+
           // If login happened within 1 hour of previous login, it might be suspicious
           if (hoursDiff < 1) {
             console.log(`⚠️ Suspicious activity: User ${userId} switched devices within ${hoursDiff.toFixed(2)} hours`);
-            
+
             // Get device info for better logging
             const previousDeviceInfo = before.deviceInfo || {};
             const newDeviceInfo = after.deviceInfo || {};
-            
+
             // Log the suspicious activity with device details
             await admin.firestore().collection('security_logs').add({
               userId: userId,
@@ -951,12 +1109,12 @@ exports.monitorSuspiciousActivity = functions.firestore
               timestamp: admin.firestore.FieldValue.serverTimestamp(),
               severity: hoursDiff < 0.5 ? 'HIGH' : 'MEDIUM',
             });
-            
+
             console.log(`📝 Suspicious activity logged for user ${userId}`);
           }
         }
       }
-      
+
       return null;
     } catch (error) {
       console.error('❌ Error monitoring suspicious activity:', error);
@@ -969,36 +1127,36 @@ exports.getDeviceManagementStats = functions.https.onRequest(async (req, res) =>
   try {
     const db = admin.firestore();
     const now = admin.firestore.Timestamp.now();
-    
+
     // Get active sessions count
     const activeSessions = await db.collection('user_sessions').get();
-    
+
     // Get session terminations in last 24 hours
     const twentyFourHoursAgo = admin.firestore.Timestamp.fromMillis(now.toMillis() - 24 * 60 * 60 * 1000);
     const recentTerminations = await db.collectionGroup('history')
       .where('logoutReason', '==', 'Logged in on another device')
       .where('logoutTime', '>', twentyFourHoursAgo)
       .get();
-    
+
     // Get suspicious activities in last 24 hours
     const suspiciousActivities = await db.collection('security_logs')
       .where('type', '==', 'SUSPICIOUS_DEVICE_SWITCH')
       .where('timestamp', '>', twentyFourHoursAgo)
       .get();
-    
+
     // Count by platform
     let platformStats = {
       android: 0,
       ios: 0,
       unknown: 0,
     };
-    
+
     activeSessions.forEach(doc => {
       const data = doc.data();
       const platform = data.deviceInfo?.platform || 'unknown';
       platformStats[platform] = (platformStats[platform] || 0) + 1;
     });
-    
+
     const stats = {
       activeSessions: {
         total: activeSessions.size,
@@ -1010,9 +1168,9 @@ exports.getDeviceManagementStats = functions.https.onRequest(async (req, res) =>
       },
       timestamp: new Date().toISOString(),
     };
-    
+
     res.status(200).json(stats);
-    
+
   } catch (error) {
     console.error('❌ Error getting device management stats:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1026,22 +1184,22 @@ exports.forceLogoutUser = functions.https.onRequest(async (req, res) => {
       res.status(405).send('Method Not Allowed');
       return;
     }
-    
+
     const { userId, reason } = req.body;
-    
+
     if (!userId) {
       res.status(400).json({ error: 'userId is required' });
       return;
     }
-    
+
     const db = admin.firestore();
-    
+
     // Get user's current session
     const sessionDoc = await db.collection('user_sessions').doc(userId).get();
-    
+
     if (sessionDoc.exists) {
       const sessionData = sessionDoc.data();
-      
+
       // Store logout history
       if (sessionData.fcmToken) {
         await db.collection('user_sessions')
@@ -1057,10 +1215,10 @@ exports.forceLogoutUser = functions.https.onRequest(async (req, res) => {
             adminForced: true,
           });
       }
-      
+
       // Delete the active session
       await sessionDoc.ref.delete();
-      
+
       // Revoke Firebase Auth tokens (optional)
       try {
         await admin.auth().revokeRefreshTokens(userId);
@@ -1068,16 +1226,16 @@ exports.forceLogoutUser = functions.https.onRequest(async (req, res) => {
       } catch (authError) {
         console.log(`⚠️ Could not revoke tokens for user ${userId}:`, authError);
       }
-      
+
       console.log(`✅ Forced logout completed for user ${userId}`);
-      res.status(200).json({ 
-        success: true, 
-        message: `User ${userId} has been logged out from all devices` 
+      res.status(200).json({
+        success: true,
+        message: `User ${userId} has been logged out from all devices`
       });
     } else {
       res.status(404).json({ error: 'No active session found for user' });
     }
-    
+
   } catch (error) {
     console.error('❌ Error forcing user logout:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1093,7 +1251,7 @@ exports.razorpayWebhook = functions.https.onRequest(async (req, res) => {
 
     const signature = req.headers['x-razorpay-signature'];
     const body = JSON.stringify(req.body);
-    
+
     // Verify webhook signature if webhook secret is configured
     const webhookSecret = functions.config().razorpay?.webhook_secret;
     if (webhookSecret && signature) {
@@ -1116,15 +1274,15 @@ exports.razorpayWebhook = functions.https.onRequest(async (req, res) => {
       case 'payment.captured':
         await handlePaymentCaptured(event.payload.payment.entity);
         break;
-      
+
       case 'payment.failed':
         await handlePaymentFailed(event.payload.payment.entity);
         break;
-        
+
       case 'order.paid':
         await handleOrderPaid(event.payload.order.entity);
         break;
-      
+
       default:
         console.log(`🔄 Unhandled webhook event: ${event.event}`);
     }
@@ -1169,7 +1327,7 @@ exports.createRazorpayOrder = functions.https.onCall(async (data, context) => {
     };
 
     const order = await razorpay.orders.create(orderOptions);
-    
+
     console.log(`✅ Razorpay order created with auto-capture: ${order.id}`);
 
     // Store order details in Firestore for tracking
@@ -1200,11 +1358,11 @@ exports.createRazorpayOrder = functions.https.onCall(async (data, context) => {
 
   } catch (error) {
     console.error('❌ Error creating Razorpay order:', error);
-    
+
     if (error instanceof functions.https.HttpsError) {
       throw error;
     }
-    
+
     throw new functions.https.HttpsError('internal', 'Failed to create payment order');
   }
 });
