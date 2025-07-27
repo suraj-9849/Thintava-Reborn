@@ -1,8 +1,10 @@
-// lib/screens/admin/admin_home.dart - UPDATED WITH ANALYTICS
+// lib/screens/admin/admin_home.dart - UPDATED WITH MENU OPERATIONS
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:canteen_app/services/auth_service.dart';
+import '../../services/menu_operations_service.dart';
+import '../../models/menu_type.dart';
 import 'dart:ui';
 
 class AdminHome extends StatelessWidget {
@@ -55,9 +57,6 @@ class AdminHome extends StatelessWidget {
       Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
     }
   }
-
-  // Remove the analytics data fetching function since we don't need it in admin home anymore
-  // Future<Map<String, dynamic>> _getAnalyticsData() async { ... } - REMOVED
 
   @override
   Widget build(BuildContext context) {
@@ -224,6 +223,12 @@ class AdminHome extends StatelessWidget {
                     ),
                   ),
                   
+                  // Canteen Status Card
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                    child: _buildCanteenStatusCard(),
+                  ),
+                  
                   // Quick Actions Header
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 30, 20, 20),
@@ -237,7 +242,7 @@ class AdminHome extends StatelessWidget {
                     ),
                   ),
                   
-                  // Action Cards Grid - UPDATED: Removed Live Orders, kept Kitchen View
+                  // Action Cards Grid - UPDATED: Added Menu Operations
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: GridView.count(
@@ -250,9 +255,17 @@ class AdminHome extends StatelessWidget {
                       children: [
                         _buildActionCard(
                           context,
+                          title: 'Menu Operations',
+                          subtitle: 'Control canteen operations',
+                          icon: Icons.restaurant_menu,
+                          color: Colors.blue,
+                          onTap: () => Navigator.pushNamed(context, '/admin/menu-operations'),
+                        ),
+                        _buildActionCard(
+                          context,
                           title: 'Manage Menu',
                           subtitle: 'Edit Menu Items',
-                          icon: Icons.restaurant_menu,
+                          icon: Icons.edit_note,
                           color: Colors.orange,
                           onTap: () => Navigator.pushNamed(context, '/admin/menu'),
                         ),
@@ -269,7 +282,7 @@ class AdminHome extends StatelessWidget {
                           title: 'Order History',
                           subtitle: 'View past orders',
                           icon: Icons.history,
-                          color: Colors.blue,
+                          color: Colors.indigo,
                           onTap: () => Navigator.pushNamed(context, '/admin/admin-history'),
                         ),
                         _buildActionCard(
@@ -309,74 +322,240 @@ class AdminHome extends StatelessWidget {
     );
   }
 
-  Widget _buildStatCard({
-    required String title,
-    required String value,
-    required String subtitle,
-    required Color iconBgColor,
-    required Color iconColor,
-    required IconData icon,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            spreadRadius: 0,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: iconBgColor,
-                  shape: BoxShape.circle,
+  Widget _buildCanteenStatusCard() {
+    return StreamBuilder<List<OperationalStatus>>(
+      stream: MenuOperationsService.getMenuOperationalStatuses(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 5),
                 ),
-                child: Icon(
-                  icon,
-                  size: 20,
-                  color: iconColor,
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                 ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Canteen Status',
+                        style: GoogleFonts.poppins(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      Text(
+                        'Loading status...',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.red.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.red.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.error_outline, color: Colors.red, size: 24),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    'Error loading canteen status',
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      color: Colors.red,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final statuses = snapshot.data ?? [];
+        final activeMenus = statuses.where((s) => s.canShowToUsers).toList();
+        final isOperational = activeMenus.isNotEmpty;
+
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 5),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Text(
-            title,
-            style: GoogleFonts.poppins(
-              fontSize: 13,
-              color: Colors.grey[600],
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                // Main status row
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: isOperational 
+                          ? Colors.green.withOpacity(0.1)
+                          : Colors.red.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: Icon(
+                        isOperational ? Icons.check_circle : Icons.cancel,
+                        color: isOperational ? Colors.green : Colors.red,
+                        size: 30,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Canteen Status',
+                            style: GoogleFonts.poppins(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          Text(
+                            isOperational 
+                              ? '${activeMenus.length} menus currently active'
+                              : 'Currently closed - no active menus',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              color: isOperational ? Colors.green : Colors.red,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isOperational 
+                          ? Colors.green.withOpacity(0.1)
+                          : Colors.red.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isOperational ? Colors.green : Colors.red,
+                          width: 1,
+                        ),
+                      ),
+                      child: Text(
+                        isOperational ? 'OPEN' : 'CLOSED',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: isOperational ? Colors.green : Colors.red,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                
+                if (activeMenus.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  const Divider(height: 1),
+                  const SizedBox(height: 16),
+                  
+                  // Active menus
+                  Row(
+                    children: [
+                      Text(
+                        'Active Menus:',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Wrap(
+                          spacing: 8,
+                          children: activeMenus.map((status) => Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: status.menuType.color.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: status.menuType.color.withOpacity(0.3),
+                                width: 1,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  status.menuType.icon,
+                                  size: 14,
+                                  color: status.menuType.color,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  status.menuType.displayName,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: status.menuType.color,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )).toList(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: GoogleFonts.poppins(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: GoogleFonts.poppins(
-              fontSize: 12,
-              color: Colors.grey[600],
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 

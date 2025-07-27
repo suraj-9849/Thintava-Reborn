@@ -1,11 +1,15 @@
-// lib/services/stock_management_service.dart - SIMPLIFIED (NO RESERVATION SYSTEM)
+// lib/services/stock_management_service.dart - UPDATED WITH MENU TYPE FILTERING
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import '../models/menu_type.dart';
+import 'menu_operations_service.dart';
+
 
 class StockManagementService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  /// Check if items are available in required quantities
+  /// Check if items are available in required quantities (with menu type filtering)
   static Future<StockCheckResult> checkStockAvailability(Map<String, int> cartItems) async {
     List<String> outOfStockItems = [];
     List<String> insufficientStockItems = [];
@@ -23,8 +27,12 @@ class StockManagementService {
           final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
           final available = data['available'] ?? false;
           final itemName = data['name'] ?? 'Unknown Item';
+          final menuType = data['menuType'] ?? 'breakfast';
           
-          if (!available) {
+          // Check if item's menu type is currently active
+          final isMenuActive = await _isMenuTypeActive(MenuType.fromString(menuType));
+          
+          if (!available || !isMenuActive) {
             outOfStockItems.add(itemName);
             isValid = false;
             continue;
@@ -95,6 +103,10 @@ class StockManagementService {
       
       await batch.commit();
       print('✅ All stock quantities updated successfully');
+      
+      // Update menu operation counts after stock changes
+      await _updateMenuOperationCounts();
+      
       return true;
     } catch (e) {
       print('❌ Error updating stock quantities: $e');
@@ -132,6 +144,10 @@ class StockManagementService {
       
       await batch.commit();
       print('✅ All stock quantities restored successfully');
+      
+      // Update menu operation counts after stock changes
+      await _updateMenuOperationCounts();
+      
       return true;
     } catch (e) {
       print('❌ Error restoring stock quantities: $e');
@@ -149,8 +165,12 @@ class StockManagementService {
         final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
         final totalQuantity = data['quantity'] ?? 0;
         final available = data['available'] ?? false;
+        final menuType = data['menuType'] ?? 'breakfast';
         
-        if (!available) {
+        // Check if menu type is currently active
+        final isMenuActive = await _isMenuTypeActive(MenuType.fromString(menuType));
+        
+        if (!available || !isMenuActive) {
           return ItemStockStatus.unavailable;
         } else if (hasUnlimitedStock) {
           return ItemStockStatus.unlimited;
@@ -170,27 +190,36 @@ class StockManagementService {
     }
   }
 
-  /// Get low stock items (for admin notifications)
-  static Future<List<Map<String, dynamic>>> getLowStockItems({int threshold = 5}) async {
+  /// Get low stock items by menu type (for admin notifications)
+  static Future<List<Map<String, dynamic>>> getLowStockItems({
+    int threshold = 5,
+    MenuType? menuType,
+  }) async {
     try {
-      final snapshot = await _firestore
+      Query query = _firestore
           .collection('menuItems')
           .where('hasUnlimitedStock', isEqualTo: false)
-          .where('available', isEqualTo: true)
-          .get();
+          .where('available', isEqualTo: true);
+
+      if (menuType != null) {
+        query = query.where('menuType', isEqualTo: menuType.value);
+      }
+
+      final snapshot = await query.get();
 
       return snapshot.docs.where((doc) {
-        final data = doc.data();
+        final data = doc.data() as Map<String, dynamic>;
         final totalQuantity = data['quantity'] ?? 0;
         return totalQuantity <= threshold;
       }).map((doc) {
-        final data = doc.data();
+        final data = doc.data() as Map<String, dynamic>;
         
         return {
           'id': doc.id,
           'name': data['name'] ?? 'Unknown Item',
           'quantity': data['quantity'] ?? 0,
           'price': data['price'] ?? 0.0,
+          'menuType': data['menuType'] ?? 'breakfast',
         };
       }).toList();
     } catch (e) {
@@ -199,23 +228,29 @@ class StockManagementService {
     }
   }
 
-  /// Get out of stock items
-  static Future<List<Map<String, dynamic>>> getOutOfStockItems() async {
+  /// Get out of stock items by menu type
+  static Future<List<Map<String, dynamic>>> getOutOfStockItems({MenuType? menuType}) async {
     try {
-      final snapshot = await _firestore
+      Query query = _firestore
           .collection('menuItems')
           .where('hasUnlimitedStock', isEqualTo: false)
           .where('available', isEqualTo: true)
-          .where('quantity', isLessThanOrEqualTo: 0)
-          .get();
+          .where('quantity', isLessThanOrEqualTo: 0);
+
+      if (menuType != null) {
+        query = query.where('menuType', isEqualTo: menuType.value);
+      }
+
+      final snapshot = await query.get();
 
       return snapshot.docs.map((doc) {
-        final data = doc.data();
+        final data = doc.data() as Map<String, dynamic>;
         return {
           'id': doc.id,
           'name': data['name'] ?? 'Unknown Item',
           'quantity': data['quantity'] ?? 0,
           'price': data['price'] ?? 0.0,
+          'menuType': data['menuType'] ?? 'breakfast',
         };
       }).toList();
     } catch (e) {
@@ -224,7 +259,7 @@ class StockManagementService {
     }
   }
 
-  /// Validate cart against current stock (real-time check)
+  /// Validate cart against current stock and active menus (real-time check)
   static Future<CartValidationResult> validateCart(Map<String, int> cartItems) async {
     List<String> itemsToRemove = [];
     Map<String, int> itemsToUpdate = {};
@@ -240,8 +275,12 @@ class StockManagementService {
           final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
           final totalStock = data['quantity'] ?? 0;
           final available = data['available'] ?? false;
+          final menuType = data['menuType'] ?? 'breakfast';
           
-          if (!available) {
+          // Check if menu type is currently active
+          final isMenuActive = await _isMenuTypeActive(MenuType.fromString(menuType));
+          
+          if (!available || !isMenuActive) {
             itemsToRemove.add(itemId);
           } else if (!hasUnlimitedStock) {
             if (totalStock <= 0) {
@@ -265,7 +304,7 @@ class StockManagementService {
     );
   }
 
-  /// Check if specific quantity can be added to cart
+  /// Check if specific quantity can be added to cart (considering menu type status)
   static Future<bool> canAddToCart(String itemId, int currentCartQuantity, int additionalQuantity) async {
     try {
       final doc = await _firestore.collection('menuItems').doc(itemId).get();
@@ -275,8 +314,12 @@ class StockManagementService {
         final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
         final totalStock = data['quantity'] ?? 0;
         final available = data['available'] ?? false;
+        final menuType = data['menuType'] ?? 'breakfast';
         
-        if (!available) return false;
+        // Check if menu type is currently active
+        final isMenuActive = await _isMenuTypeActive(MenuType.fromString(menuType));
+        
+        if (!available || !isMenuActive) return false;
         if (hasUnlimitedStock) return true;
         
         final totalRequested = currentCartQuantity + additionalQuantity;
@@ -289,7 +332,7 @@ class StockManagementService {
     }
   }
 
-  /// Get detailed stock information (for admin)
+  /// Get detailed stock information by menu type (for admin)
   static Future<Map<String, dynamic>> getDetailedStockInfo(String itemId) async {
     try {
       final doc = await _firestore.collection('menuItems').doc(itemId).get();
@@ -297,6 +340,7 @@ class StockManagementService {
       if (doc.exists) {
         final data = doc.data()!;
         final totalQuantity = data['quantity'] ?? 0;
+        final menuType = data['menuType'] ?? 'breakfast';
         
         return {
           'itemId': itemId,
@@ -304,8 +348,10 @@ class StockManagementService {
           'hasUnlimitedStock': data['hasUnlimitedStock'] ?? false,
           'quantity': totalQuantity,
           'available': data['available'] ?? false,
+          'menuType': menuType,
           'price': data['price'] ?? 0.0,
           'lastStockUpdate': data['lastStockUpdate'],
+          'isMenuActive': await _isMenuTypeActive(MenuType.fromString(menuType)),
         };
       }
       
@@ -313,6 +359,297 @@ class StockManagementService {
     } catch (e) {
       print('Error getting detailed stock info: $e');
       return {'error': 'Error retrieving stock info'};
+    }
+  }
+
+  /// Get stock summary by menu type
+  static Future<Map<String, dynamic>> getStockSummaryByMenuType(MenuType menuType) async {
+    try {
+      final snapshot = await _firestore
+          .collection('menuItems')
+          .where('menuType', isEqualTo: menuType.value)
+          .get();
+
+      int totalItems = 0;
+      int availableItems = 0;
+      int outOfStockItems = 0;
+      int lowStockItems = 0;
+      int unlimitedStockItems = 0;
+
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        final available = data['available'] ?? false;
+        final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
+        final quantity = data['quantity'] ?? 0;
+
+        totalItems++;
+
+        if (!available) continue;
+
+        if (hasUnlimitedStock) {
+          unlimitedStockItems++;
+          availableItems++;
+        } else if (quantity <= 0) {
+          outOfStockItems++;
+        } else if (quantity <= 5) {
+          lowStockItems++;
+          availableItems++;
+        } else {
+          availableItems++;
+        }
+      }
+
+      return {
+        'menuType': menuType.value,
+        'totalItems': totalItems,
+        'availableItems': availableItems,
+        'outOfStockItems': outOfStockItems,
+        'lowStockItems': lowStockItems,
+        'unlimitedStockItems': unlimitedStockItems,
+        'isMenuActive': await _isMenuTypeActive(menuType),
+      };
+    } catch (e) {
+      print('Error getting stock summary for ${menuType.displayName}: $e');
+      return {
+        'menuType': menuType.value,
+        'totalItems': 0,
+        'availableItems': 0,
+        'outOfStockItems': 0,
+        'lowStockItems': 0,
+        'unlimitedStockItems': 0,
+        'isMenuActive': false,
+        'error': e.toString(),
+      };
+    }
+  }
+
+  /// Get overall stock summary across all menu types
+  static Future<Map<String, dynamic>> getOverallStockSummary() async {
+    try {
+      Map<String, dynamic> summary = {
+        'totalItems': 0,
+        'availableItems': 0,
+        'outOfStockItems': 0,
+        'lowStockItems': 0,
+        'unlimitedStockItems': 0,
+        'byMenuType': <String, Map<String, dynamic>>{},
+      };
+
+      for (MenuType menuType in MenuType.values) {
+        final menuSummary = await getStockSummaryByMenuType(menuType);
+        summary['byMenuType'][menuType.value] = menuSummary;
+        
+        summary['totalItems'] += menuSummary['totalItems'] as int;
+        summary['availableItems'] += menuSummary['availableItems'] as int;
+        summary['outOfStockItems'] += menuSummary['outOfStockItems'] as int;
+        summary['lowStockItems'] += menuSummary['lowStockItems'] as int;
+        summary['unlimitedStockItems'] += menuSummary['unlimitedStockItems'] as int;
+      }
+
+      return summary;
+    } catch (e) {
+      print('Error getting overall stock summary: $e');
+      return {
+        'totalItems': 0,
+        'availableItems': 0,
+        'outOfStockItems': 0,
+        'lowStockItems': 0,
+        'unlimitedStockItems': 0,
+        'byMenuType': {},
+        'error': e.toString(),
+      };
+    }
+  }
+
+  /// Bulk update stock for multiple items (admin function)
+  static Future<bool> bulkUpdateStock(Map<String, int> itemQuantities) async {
+    try {
+      WriteBatch batch = _firestore.batch();
+      
+      for (String itemId in itemQuantities.keys) {
+        final newQuantity = itemQuantities[itemId] ?? 0;
+        final docRef = _firestore.collection('menuItems').doc(itemId);
+        
+        batch.update(docRef, {
+          'quantity': newQuantity >= 0 ? newQuantity : 0,
+          'updatedAt': FieldValue.serverTimestamp(),
+          'lastStockUpdate': FieldValue.serverTimestamp(),
+        });
+      }
+      
+      await batch.commit();
+      
+      // Update menu operation counts after bulk stock changes
+      await _updateMenuOperationCounts();
+      
+      print('✅ Bulk stock update completed for ${itemQuantities.length} items');
+      return true;
+    } catch (e) {
+      print('❌ Error in bulk stock update: $e');
+      return false;
+    }
+  }
+
+  /// Set all items in a menu type to a specific availability status
+  static Future<bool> setMenuTypeAvailability(MenuType menuType, bool available) async {
+    try {
+      final snapshot = await _firestore
+          .collection('menuItems')
+          .where('menuType', isEqualTo: menuType.value)
+          .get();
+
+      WriteBatch batch = _firestore.batch();
+      
+      for (var doc in snapshot.docs) {
+        batch.update(doc.reference, {
+          'available': available,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+      
+      await batch.commit();
+      
+      // Update menu operation counts
+      await _updateMenuOperationCounts();
+      
+      print('✅ Set ${menuType.displayName} menu availability to $available');
+      return true;
+    } catch (e) {
+      print('❌ Error setting menu type availability: $e');
+      return false;
+    }
+  }
+
+  /// Private helper to check if menu type is currently active
+  static Future<bool> _isMenuTypeActive(MenuType menuType) async {
+    try {
+      final doc = await _firestore.collection('menuOperations').doc(menuType.value).get();
+      
+      if (doc.exists) {
+        final data = doc.data()!;
+        final isEnabled = data['isEnabled'] ?? false;
+        
+        if (!isEnabled) return false;
+        
+        // Check if current time is within operational hours
+        final scheduleData = data['schedule'] as Map<String, dynamic>?;
+        if (scheduleData != null) {
+          final startTimeParts = scheduleData['startTime'].split(':');
+          final endTimeParts = scheduleData['endTime'].split(':');
+          
+          final startTime = TimeOfDay(
+            hour: int.parse(startTimeParts[0]),
+            minute: int.parse(startTimeParts[1]),
+          );
+          final endTime = TimeOfDay(
+            hour: int.parse(endTimeParts[0]),
+            minute: int.parse(endTimeParts[1]),
+          );
+          
+          final now = TimeOfDay.now();
+          final currentMinutes = now.hour * 60 + now.minute;
+          final startMinutes = startTime.hour * 60 + startTime.minute;
+          final endMinutes = endTime.hour * 60 + endTime.minute;
+          
+          return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+        }
+      }
+      
+      return false;
+    } catch (e) {
+      print('Error checking if menu type is active: $e');
+      return false;
+    }
+  }
+
+  /// Private helper to update menu operation counts
+  static Future<void> _updateMenuOperationCounts() async {
+    try {
+      await MenuOperationsService.updateMenuItemCounts();
+    } catch (e) {
+      print('Error updating menu operation counts: $e');
+    }
+  }
+
+  /// Get items that need restocking by menu type
+  static Future<List<Map<String, dynamic>>> getItemsNeedingRestock({
+    MenuType? menuType,
+    int threshold = 10,
+  }) async {
+    try {
+      Query query = _firestore
+          .collection('menuItems')
+          .where('hasUnlimitedStock', isEqualTo: false);
+
+      if (menuType != null) {
+        query = query.where('menuType', isEqualTo: menuType.value);
+      }
+
+      final snapshot = await query.get();
+
+      return snapshot.docs.where((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        final quantity = data['quantity'] ?? 0;
+        return quantity <= threshold;
+      }).map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        return {
+          'id': doc.id,
+          'name': data['name'] ?? 'Unknown Item',
+          'quantity': data['quantity'] ?? 0,
+          'menuType': data['menuType'] ?? 'breakfast',
+          'price': data['price'] ?? 0.0,
+          'available': data['available'] ?? false,
+          'suggestedRestockAmount': threshold - (data['quantity'] ?? 0) + 20,
+        };
+      }).toList();
+    } catch (e) {
+      print('Error getting items needing restock: $e');
+      return [];
+    }
+  }
+
+  /// Generate stock alert notifications for admin
+  static Future<List<Map<String, dynamic>>> generateStockAlerts() async {
+    try {
+      List<Map<String, dynamic>> alerts = [];
+      
+      for (MenuType menuType in MenuType.values) {
+        final isActive = await _isMenuTypeActive(menuType);
+        
+        if (isActive) {
+          // Get critical stock items for active menus
+          final lowStock = await getLowStockItems(threshold: 2, menuType: menuType);
+          final outOfStock = await getOutOfStockItems(menuType: menuType);
+          
+          for (var item in outOfStock) {
+            alerts.add({
+              'type': 'OUT_OF_STOCK',
+              'severity': 'HIGH',
+              'menuType': menuType.displayName,
+              'itemName': item['name'],
+              'quantity': item['quantity'],
+              'message': '${item['name']} is out of stock in ${menuType.displayName} menu',
+            });
+          }
+          
+          for (var item in lowStock) {
+            alerts.add({
+              'type': 'LOW_STOCK',
+              'severity': 'MEDIUM',
+              'menuType': menuType.displayName,
+              'itemName': item['name'],
+              'quantity': item['quantity'],
+              'message': '${item['name']} is running low (${item['quantity']} left) in ${menuType.displayName} menu',
+            });
+          }
+        }
+      }
+      
+      return alerts;
+    } catch (e) {
+      print('Error generating stock alerts: $e');
+      return [];
     }
   }
 }
