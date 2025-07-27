@@ -1,6 +1,5 @@
-// lib/services/menu_operations_service.dart
+// lib/services/menu_operations_service.dart - CLEAN VERSION WITHOUT DUPLICATES
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/material.dart';
 import '../models/menu_type.dart';
 
 class MenuOperationsService {
@@ -19,8 +18,6 @@ class MenuOperationsService {
           final defaultStatus = OperationalStatus(
             menuType: menuType,
             isEnabled: false,
-            isCurrentlyActive: false,
-            schedule: MenuSchedule.defaultSchedule(menuType),
             lastUpdated: DateTime.now(),
           );
           
@@ -51,22 +48,6 @@ class MenuOperationsService {
     }
   }
 
-  /// Update menu schedule
-  static Future<bool> updateMenuSchedule(MenuType menuType, MenuSchedule schedule) async {
-    try {
-      await _firestore.collection('menuOperations').doc(menuType.value).update({
-        'schedule': schedule.toMap(),
-        'lastUpdated': DateTime.now().toIso8601String(),
-      });
-      
-      print('✅ Menu ${menuType.displayName} schedule updated');
-      return true;
-    } catch (e) {
-      print('❌ Error updating menu schedule: $e');
-      return false;
-    }
-  }
-
   /// Get all menu operational statuses
   static Stream<List<OperationalStatus>> getMenuOperationalStatuses() {
     return _firestore.collection('menuOperations').snapshots().map((snapshot) {
@@ -75,9 +56,7 @@ class MenuOperationsService {
       for (var doc in snapshot.docs) {
         if (doc.exists) {
           final status = OperationalStatus.fromMap(doc.data());
-          final isCurrentlyActive = status.schedule.isCurrentlyActive();
-          
-          statuses.add(status.copyWith(isCurrentlyActive: isCurrentlyActive));
+          statuses.add(status);
         }
       }
       
@@ -87,8 +66,6 @@ class MenuOperationsService {
           statuses.add(OperationalStatus(
             menuType: menuType,
             isEnabled: false,
-            isCurrentlyActive: false,
-            schedule: MenuSchedule.defaultSchedule(menuType),
             lastUpdated: DateTime.now(),
           ));
         }
@@ -101,87 +78,33 @@ class MenuOperationsService {
     });
   }
 
-  /// Get currently active menu types (enabled and in operating hours)
-  static Future<List<MenuType>> getActiveMenuTypes() async {
+  /// Get currently enabled menu types
+  static Future<List<MenuType>> getEnabledMenuTypes() async {
     try {
       final snapshot = await _firestore.collection('menuOperations').get();
-      List<MenuType> activeMenus = [];
+      List<MenuType> enabledMenus = [];
       
       for (var doc in snapshot.docs) {
         if (doc.exists) {
           final status = OperationalStatus.fromMap(doc.data());
-          final isCurrentlyActive = status.schedule.isCurrentlyActive();
           
-          if (status.isEnabled && isCurrentlyActive) {
-            activeMenus.add(status.menuType);
+          if (status.isEnabled) {
+            enabledMenus.add(status.menuType);
           }
         }
       }
       
-      return activeMenus;
+      return enabledMenus;
     } catch (e) {
-      print('❌ Error getting active menu types: $e');
+      print('❌ Error getting enabled menu types: $e');
       return [];
     }
   }
 
-  /// Check if canteen is operational (any menu is active)
+  /// Check if canteen is operational (any menu is enabled)
   static Future<bool> isCanteenOperational() async {
-    final activeMenus = await getActiveMenuTypes();
-    return activeMenus.isNotEmpty;
-  }
-
-  /// Get next operational time
-  static Future<MenuSchedule?> getNextOperationalTime() async {
-    try {
-      final snapshot = await _firestore.collection('menuOperations').get();
-      MenuSchedule? nextSchedule;
-      TimeOfDay? earliestTime;
-      
-      final now = TimeOfDay.now();
-      final currentMinutes = now.hour * 60 + now.minute;
-      
-      for (var doc in snapshot.docs) {
-        if (doc.exists) {
-          final status = OperationalStatus.fromMap(doc.data());
-          if (status.isEnabled) {
-            final schedule = status.schedule;
-            final startMinutes = schedule.startTime.hour * 60 + schedule.startTime.minute;
-            
-            // If this menu starts later today
-            if (startMinutes > currentMinutes) {
-              if (earliestTime == null || startMinutes < (earliestTime.hour * 60 + earliestTime.minute)) {
-                earliestTime = schedule.startTime;
-                nextSchedule = schedule;
-              }
-            }
-          }
-        }
-      }
-      
-      // If no menu today, check tomorrow's earliest menu
-      if (nextSchedule == null) {
-        for (var doc in snapshot.docs) {
-          if (doc.exists) {
-            final status = OperationalStatus.fromMap(doc.data());
-            if (status.isEnabled) {
-              final schedule = status.schedule;
-              final startMinutes = schedule.startTime.hour * 60 + schedule.startTime.minute;
-              
-              if (earliestTime == null || startMinutes < (earliestTime.hour * 60 + earliestTime.minute)) {
-                earliestTime = schedule.startTime;
-                nextSchedule = schedule;
-              }
-            }
-          }
-        }
-      }
-      
-      return nextSchedule;
-    } catch (e) {
-      print('❌ Error getting next operational time: $e');
-      return null;
-    }
+    final enabledMenus = await getEnabledMenuTypes();
+    return enabledMenus.isNotEmpty;
   }
 
   /// Update menu item counts for operational status
@@ -229,22 +152,36 @@ class MenuOperationsService {
         .snapshots();
   }
 
-  /// Get all menu items filtered by active menu types
-  static Stream<QuerySnapshot> getActiveMenuItems() async* {
-    final activeMenuTypes = await getActiveMenuTypes();
+  /// Get enabled menu items filtered by enabled menu types
+  static Stream<QuerySnapshot> getEnabledMenuItems() async* {
+    final enabledMenuTypes = await getEnabledMenuTypes();
     
-    if (activeMenuTypes.isEmpty) {
-      // Yield empty snapshot if no menus are active
+    if (enabledMenuTypes.isEmpty) {
       yield* Stream.empty();
       return;
     }
 
-    final activeMenuValues = activeMenuTypes.map((type) => type.value).toList();
-    
-    yield* _firestore
-        .collection('menuItems')
-        .where('menuType', whereIn: activeMenuValues)
-        .snapshots();
+    try {
+      final enabledMenuValues = enabledMenuTypes.map((type) => type.value).toList();
+      
+      // Use client-side filtering to avoid compound query issues
+      yield* _firestore
+          .collection('menuItems')
+          .orderBy('name')
+          .snapshots()
+          .map((snapshot) {
+            final filteredDocs = snapshot.docs.where((doc) {
+              final data = doc.data();
+              final menuType = data['menuType'] ?? 'breakfast';
+              return enabledMenuValues.contains(menuType);
+            }).toList();
+            
+            return _FilteredQuerySnapshot(filteredDocs);
+          });
+    } catch (e) {
+      print('❌ Error getting enabled menu items: $e');
+      yield* Stream.empty();
+    }
   }
 
   /// Force enable menu (admin override)
@@ -296,8 +233,7 @@ class MenuOperationsService {
       
       if (doc.exists) {
         final status = OperationalStatus.fromMap(doc.data()!);
-        final isCurrentlyActive = status.schedule.isCurrentlyActive();
-        return status.copyWith(isCurrentlyActive: isCurrentlyActive);
+        return status;
       }
       
       return null;
@@ -317,39 +253,52 @@ class MenuOperationsService {
   static Future<Map<String, dynamic>> getCanteenStatusSummary() async {
     try {
       final statuses = await getMenuOperationalStatuses().first;
-      final activeMenus = statuses.where((s) => s.canShowToUsers).toList();
-      final nextOperational = await getNextOperationalTime();
+      final enabledMenus = statuses.where((s) => s.canShowToUsers).toList();
       
       return {
-        'isOperational': activeMenus.isNotEmpty,
-        'activeMenuCount': activeMenus.length,
+        'isOperational': enabledMenus.isNotEmpty,
+        'enabledMenuCount': enabledMenus.length,
         'totalMenus': statuses.length,
-        'activeMenus': activeMenus.map((s) => s.menuType.displayName).toList(),
-        'nextOperationalTime': nextOperational?.getFormattedTimeRange(),
-        'nextOperationalMenu': nextOperational?.menuType.displayName,
+        'enabledMenus': enabledMenus.map((s) => s.menuType.displayName).toList(),
       };
     } catch (e) {
       print('❌ Error getting canteen status summary: $e');
       return {
         'isOperational': false,
-        'activeMenuCount': 0,
+        'enabledMenuCount': 0,
         'totalMenus': 3,
-        'activeMenus': [],
-        'nextOperationalTime': null,
-        'nextOperationalMenu': null,
+        'enabledMenus': [],
       };
     }
   }
 }
 
-// Wrapper class to simulate QuerySnapshot for filtered results
-class QuerySnapshotWrapper {
-  final List<DocumentSnapshot> docs;
+// Helper class for filtered query snapshots
+class _FilteredQuerySnapshot implements QuerySnapshot {
+  final List<QueryDocumentSnapshot> _docs;
+
+  _FilteredQuerySnapshot(this._docs);
+
+  @override
+  List<QueryDocumentSnapshot> get docs => _docs;
   
-  QuerySnapshotWrapper(this.docs);
+  @override
+  List<DocumentChange> get docChanges => [];
   
-  bool get hasData => true;
-  dynamic get data => null;
-  dynamic get error => null;
-  ConnectionState get connectionState => ConnectionState.active;
+  @override
+  SnapshotMetadata get metadata => _FilteredSnapshotMetadata();
+  
+  @override
+  int get size => _docs.length;
+  
+  @override
+  bool get isEmpty => _docs.isEmpty;
+}
+
+class _FilteredSnapshotMetadata implements SnapshotMetadata {
+  @override
+  bool get hasPendingWrites => false;
+  
+  @override
+  bool get isFromCache => false;
 }

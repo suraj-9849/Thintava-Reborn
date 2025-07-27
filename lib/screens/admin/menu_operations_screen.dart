@@ -1,11 +1,10 @@
-// lib/screens/admin/menu_operations_screen.dart - FIXED IMPORTS
+// lib/screens/admin/menu_operations_screen.dart - UPDATED WITHOUT OPERATIONAL HOURS
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:ui';
 import '../../models/menu_type.dart';
 import '../../services/menu_operations_service.dart';
 import '../../presentation/widgets/admin/menu_type_card.dart';
-import '../../presentation/widgets/admin/operational_hours_widget.dart';
 
 class MenuOperationsScreen extends StatefulWidget {
   const MenuOperationsScreen({Key? key}) : super(key: key);
@@ -146,6 +145,69 @@ class _MenuOperationsScreenState extends State<MenuOperationsScreen> with Ticker
     _showSnackBar('Menu item counts updated', Colors.green);
   }
 
+  Future<void> _enableAllMenus() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(Icons.power_settings_new, color: Colors.green, size: 28),
+            const SizedBox(width: 12),
+            Text(
+              'Enable All Menus',
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.bold,
+                color: Colors.green,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'This will enable all menu types (Breakfast, Lunch, Snacks). Continue?',
+          style: GoogleFonts.poppins(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.poppins(color: Colors.grey[700]),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: Text(
+              'Enable All',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed ?? false) {
+      bool allSuccess = true;
+      for (MenuType menuType in MenuType.values) {
+        final success = await MenuOperationsService.toggleMenuEnabled(menuType, true);
+        if (!success) allSuccess = false;
+      }
+      
+      if (allSuccess) {
+        _showSnackBar('All menus enabled successfully', Colors.green);
+      } else {
+        _showSnackBar('Some menus failed to enable', Colors.orange);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -170,6 +232,9 @@ class _MenuOperationsScreenState extends State<MenuOperationsScreen> with Ticker
             icon: const Icon(Icons.more_vert, color: Colors.white),
             onSelected: (value) {
               switch (value) {
+                case 'enable_all':
+                  _enableAllMenus();
+                  break;
                 case 'emergency':
                   _handleEmergencyShutdown();
                   break;
@@ -179,6 +244,16 @@ class _MenuOperationsScreenState extends State<MenuOperationsScreen> with Ticker
               }
             },
             itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'enable_all',
+                child: Row(
+                  children: [
+                    Icon(Icons.power_settings_new, color: Colors.green, size: 20),
+                    const SizedBox(width: 12),
+                    Text('Enable All Menus', style: GoogleFonts.poppins()),
+                  ],
+                ),
+              ),
               PopupMenuItem(
                 value: 'refresh',
                 child: Row(
@@ -247,7 +322,6 @@ class _MenuOperationsScreenState extends State<MenuOperationsScreen> with Ticker
             child: Column(
               children: [
                 _buildHeader(),
-                _buildOperationalHours(),
                 Expanded(child: _buildMenuOperationsList()),
                 _buildQuickActions(),
               ],
@@ -289,7 +363,7 @@ class _MenuOperationsScreenState extends State<MenuOperationsScreen> with Ticker
                   ),
                 ),
                 Text(
-                  "Control canteen operations",
+                  "Enable/disable menu types instantly",
                   style: GoogleFonts.poppins(
                     fontSize: 14,
                     color: Colors.grey[600],
@@ -325,7 +399,7 @@ class _MenuOperationsScreenState extends State<MenuOperationsScreen> with Ticker
 
         final data = snapshot.data!;
         final isOperational = data['isOperational'] ?? false;
-        final activeCount = data['activeMenuCount'] ?? 0;
+        final enabledCount = data['enabledMenuCount'] ?? 0;
 
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -352,7 +426,7 @@ class _MenuOperationsScreenState extends State<MenuOperationsScreen> with Ticker
               ),
               const SizedBox(width: 8),
               Text(
-                isOperational ? 'Open ($activeCount)' : 'Closed',
+                isOperational ? 'Open ($enabledCount)' : 'Closed',
                 style: GoogleFonts.poppins(
                   color: isOperational ? Colors.green : Colors.red,
                   fontSize: 14,
@@ -363,13 +437,6 @@ class _MenuOperationsScreenState extends State<MenuOperationsScreen> with Ticker
           ),
         );
       },
-    );
-  }
-
-  Widget _buildOperationalHours() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
-      child: const OperationalHoursWidget(),
     );
   }
 
@@ -440,12 +507,12 @@ class _MenuOperationsScreenState extends State<MenuOperationsScreen> with Ticker
                 final success = await MenuOperationsService.forceEnableMenu(status.menuType);
                 if (success) {
                   _showSnackBar(
-                    '${status.menuType.displayName} force enabled',
-                    Colors.blue,
+                    '${status.menuType.displayName} enabled',
+                    Colors.green,
                   );
                 } else {
                   _showSnackBar(
-                    'Failed to force enable ${status.menuType.displayName}',
+                    'Failed to enable ${status.menuType.displayName}',
                     Colors.red,
                   );
                 }

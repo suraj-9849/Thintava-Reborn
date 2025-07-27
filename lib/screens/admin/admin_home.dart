@@ -1,4 +1,4 @@
-// lib/screens/admin/admin_home.dart - UPDATED WITH MENU OPERATIONS
+// lib/screens/admin/admin_home.dart - UPDATED WITH FIXED CANTEEN STATUS
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -242,7 +242,7 @@ class AdminHome extends StatelessWidget {
                     ),
                   ),
                   
-                  // Action Cards Grid - UPDATED: Added Menu Operations
+                  // Action Cards Grid
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: GridView.count(
@@ -256,7 +256,7 @@ class AdminHome extends StatelessWidget {
                         _buildActionCard(
                           context,
                           title: 'Menu Operations',
-                          subtitle: 'Control canteen operations',
+                          subtitle: 'Enable/disable menus',
                           icon: Icons.restaurant_menu,
                           color: Colors.blue,
                           onTap: () => Navigator.pushNamed(context, '/admin/menu-operations'),
@@ -410,8 +410,8 @@ class AdminHome extends StatelessWidget {
         }
 
         final statuses = snapshot.data ?? [];
-        final activeMenus = statuses.where((s) => s.canShowToUsers).toList();
-        final isOperational = activeMenus.isNotEmpty;
+        final enabledMenus = statuses.where((s) => s.canShowToUsers).toList();
+        final isOperational = enabledMenus.isNotEmpty;
 
         return Container(
           decoration: BoxDecoration(
@@ -461,8 +461,8 @@ class AdminHome extends StatelessWidget {
                           ),
                           Text(
                             isOperational 
-                              ? '${activeMenus.length} menus currently active'
-                              : 'Currently closed - no active menus',
+                              ? '${enabledMenus.length} menus currently enabled'
+                              : 'Currently closed - no enabled menus',
                             style: GoogleFonts.poppins(
                               fontSize: 14,
                               color: isOperational ? Colors.green : Colors.red,
@@ -496,16 +496,16 @@ class AdminHome extends StatelessWidget {
                   ],
                 ),
                 
-                if (activeMenus.isNotEmpty) ...[
+                if (enabledMenus.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   const Divider(height: 1),
                   const SizedBox(height: 16),
                   
-                  // Active menus
+                  // Enabled menus
                   Row(
                     children: [
                       Text(
-                        'Active Menus:',
+                        'Enabled Menus:',
                         style: GoogleFonts.poppins(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -516,7 +516,7 @@ class AdminHome extends StatelessWidget {
                       Expanded(
                         child: Wrap(
                           spacing: 8,
-                          children: activeMenus.map((status) => Container(
+                          children: enabledMenus.map((status) => Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
                               color: status.menuType.color.withOpacity(0.1),

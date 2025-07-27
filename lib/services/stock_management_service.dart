@@ -1,10 +1,9 @@
-// lib/services/stock_management_service.dart - UPDATED WITH MENU TYPE FILTERING
+// lib/services/stock_management_service.dart - UPDATED WITHOUT OPERATIONAL HOURS
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../models/menu_type.dart';
 import 'menu_operations_service.dart';
-
 
 class StockManagementService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -29,10 +28,10 @@ class StockManagementService {
           final itemName = data['name'] ?? 'Unknown Item';
           final menuType = data['menuType'] ?? 'breakfast';
           
-          // Check if item's menu type is currently active
-          final isMenuActive = await _isMenuTypeActive(MenuType.fromString(menuType));
+          // Check if item's menu type is currently enabled
+          final isMenuEnabled = await _isMenuTypeEnabled(MenuType.fromString(menuType));
           
-          if (!available || !isMenuActive) {
+          if (!available || !isMenuEnabled) {
             outOfStockItems.add(itemName);
             isValid = false;
             continue;
@@ -167,10 +166,10 @@ class StockManagementService {
         final available = data['available'] ?? false;
         final menuType = data['menuType'] ?? 'breakfast';
         
-        // Check if menu type is currently active
-        final isMenuActive = await _isMenuTypeActive(MenuType.fromString(menuType));
+        // Check if menu type is currently enabled
+        final isMenuEnabled = await _isMenuTypeEnabled(MenuType.fromString(menuType));
         
-        if (!available || !isMenuActive) {
+        if (!available || !isMenuEnabled) {
           return ItemStockStatus.unavailable;
         } else if (hasUnlimitedStock) {
           return ItemStockStatus.unlimited;
@@ -259,7 +258,7 @@ class StockManagementService {
     }
   }
 
-  /// Validate cart against current stock and active menus (real-time check)
+  /// Validate cart against current stock and enabled menus (real-time check)
   static Future<CartValidationResult> validateCart(Map<String, int> cartItems) async {
     List<String> itemsToRemove = [];
     Map<String, int> itemsToUpdate = {};
@@ -277,10 +276,10 @@ class StockManagementService {
           final available = data['available'] ?? false;
           final menuType = data['menuType'] ?? 'breakfast';
           
-          // Check if menu type is currently active
-          final isMenuActive = await _isMenuTypeActive(MenuType.fromString(menuType));
+          // Check if menu type is currently enabled
+          final isMenuEnabled = await _isMenuTypeEnabled(MenuType.fromString(menuType));
           
-          if (!available || !isMenuActive) {
+          if (!available || !isMenuEnabled) {
             itemsToRemove.add(itemId);
           } else if (!hasUnlimitedStock) {
             if (totalStock <= 0) {
@@ -316,10 +315,10 @@ class StockManagementService {
         final available = data['available'] ?? false;
         final menuType = data['menuType'] ?? 'breakfast';
         
-        // Check if menu type is currently active
-        final isMenuActive = await _isMenuTypeActive(MenuType.fromString(menuType));
+        // Check if menu type is currently enabled
+        final isMenuEnabled = await _isMenuTypeEnabled(MenuType.fromString(menuType));
         
-        if (!available || !isMenuActive) return false;
+        if (!available || !isMenuEnabled) return false;
         if (hasUnlimitedStock) return true;
         
         final totalRequested = currentCartQuantity + additionalQuantity;
@@ -351,7 +350,7 @@ class StockManagementService {
           'menuType': menuType,
           'price': data['price'] ?? 0.0,
           'lastStockUpdate': data['lastStockUpdate'],
-          'isMenuActive': await _isMenuTypeActive(MenuType.fromString(menuType)),
+          'isMenuEnabled': await _isMenuTypeEnabled(MenuType.fromString(menuType)),
         };
       }
       
@@ -406,7 +405,7 @@ class StockManagementService {
         'outOfStockItems': outOfStockItems,
         'lowStockItems': lowStockItems,
         'unlimitedStockItems': unlimitedStockItems,
-        'isMenuActive': await _isMenuTypeActive(menuType),
+        'isMenuEnabled': await _isMenuTypeEnabled(menuType),
       };
     } catch (e) {
       print('Error getting stock summary for ${menuType.displayName}: $e');
@@ -417,7 +416,7 @@ class StockManagementService {
         'outOfStockItems': 0,
         'lowStockItems': 0,
         'unlimitedStockItems': 0,
-        'isMenuActive': false,
+        'isMenuEnabled': false,
         'error': e.toString(),
       };
     }
@@ -520,44 +519,20 @@ class StockManagementService {
     }
   }
 
-  /// Private helper to check if menu type is currently active
-  static Future<bool> _isMenuTypeActive(MenuType menuType) async {
+  /// Private helper to check if menu type is currently enabled (not operational hours)
+  static Future<bool> _isMenuTypeEnabled(MenuType menuType) async {
     try {
       final doc = await _firestore.collection('menuOperations').doc(menuType.value).get();
       
       if (doc.exists) {
         final data = doc.data()!;
         final isEnabled = data['isEnabled'] ?? false;
-        
-        if (!isEnabled) return false;
-        
-        // Check if current time is within operational hours
-        final scheduleData = data['schedule'] as Map<String, dynamic>?;
-        if (scheduleData != null) {
-          final startTimeParts = scheduleData['startTime'].split(':');
-          final endTimeParts = scheduleData['endTime'].split(':');
-          
-          final startTime = TimeOfDay(
-            hour: int.parse(startTimeParts[0]),
-            minute: int.parse(startTimeParts[1]),
-          );
-          final endTime = TimeOfDay(
-            hour: int.parse(endTimeParts[0]),
-            minute: int.parse(endTimeParts[1]),
-          );
-          
-          final now = TimeOfDay.now();
-          final currentMinutes = now.hour * 60 + now.minute;
-          final startMinutes = startTime.hour * 60 + startTime.minute;
-          final endMinutes = endTime.hour * 60 + endTime.minute;
-          
-          return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
-        }
+        return isEnabled;
       }
       
       return false;
     } catch (e) {
-      print('Error checking if menu type is active: $e');
+      print('Error checking if menu type is enabled: $e');
       return false;
     }
   }
@@ -615,10 +590,10 @@ class StockManagementService {
       List<Map<String, dynamic>> alerts = [];
       
       for (MenuType menuType in MenuType.values) {
-        final isActive = await _isMenuTypeActive(menuType);
+        final isEnabled = await _isMenuTypeEnabled(menuType);
         
-        if (isActive) {
-          // Get critical stock items for active menus
+        if (isEnabled) {
+          // Get critical stock items for enabled menus
           final lowStock = await getLowStockItems(threshold: 2, menuType: menuType);
           final outOfStock = await getOutOfStockItems(menuType: menuType);
           

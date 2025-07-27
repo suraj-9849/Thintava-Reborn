@@ -1,4 +1,4 @@
-// lib/presentation/widgets/admin/menu_type_card.dart
+// lib/presentation/widgets/admin/menu_type_card.dart - UPDATED WITHOUT OPERATIONAL HOURS
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../models/menu_type.dart';
@@ -132,7 +132,7 @@ class _MenuTypeCardState extends State<MenuTypeCard> with SingleTickerProviderSt
                 ),
               ),
               Text(
-                widget.status.schedule.getFormattedTimeRange(),
+                'Menu Control',
                 style: GoogleFonts.poppins(
                   fontSize: 14,
                   color: Colors.grey[600],
@@ -203,52 +203,35 @@ class _MenuTypeCardState extends State<MenuTypeCard> with SingleTickerProviderSt
                     color: widget.status.statusColor,
                   ),
                 ),
-                if (!widget.status.isCurrentlyActive && widget.status.isEnabled)
-                  Text(
-                    _getNextActiveTime(),
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: Colors.grey[600],
-                    ),
+                Text(
+                  widget.status.isEnabled 
+                    ? 'Menu is visible to users'
+                    : 'Menu is hidden from users',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    color: Colors.grey[600],
                   ),
+                ),
               ],
             ),
           ),
           
-          // Time indicator
-          _buildTimeIndicator(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTimeIndicator() {
-    final now = TimeOfDay.now();
-    final isInTimeRange = widget.status.schedule.isCurrentlyActive();
-    
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: isInTimeRange 
-          ? Colors.green.withOpacity(0.2)
-          : Colors.orange.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            isInTimeRange ? Icons.access_time : Icons.schedule,
-            size: 16,
-            color: isInTimeRange ? Colors.green : Colors.orange,
-          ),
-          const SizedBox(width: 4),
-          Text(
-            '${now.format(context)}',
-            style: GoogleFonts.poppins(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: isInTimeRange ? Colors.green : Colors.orange,
+          // Status badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: widget.status.isEnabled 
+                ? Colors.green.withOpacity(0.2)
+                : Colors.grey.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              widget.status.isEnabled ? 'ACTIVE' : 'INACTIVE',
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: widget.status.isEnabled ? Colors.green : Colors.grey,
+              ),
             ),
           ),
         ],
@@ -359,14 +342,14 @@ class _MenuTypeCardState extends State<MenuTypeCard> with SingleTickerProviderSt
         
         const SizedBox(width: 12),
         
-        // Force enable button (only show if disabled or not in operating hours)
-        if (!widget.status.canShowToUsers)
+        // Quick enable button (if disabled)
+        if (!widget.status.isEnabled)
           Expanded(
             child: ElevatedButton.icon(
               onPressed: widget.onForceEnable,
               icon: const Icon(Icons.flash_on, size: 18),
               label: Text(
-                'Force Enable',
+                'Quick Enable',
                 style: GoogleFonts.poppins(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -385,20 +368,5 @@ class _MenuTypeCardState extends State<MenuTypeCard> with SingleTickerProviderSt
           ),
       ],
     );
-  }
-
-  String _getNextActiveTime() {
-    if (!widget.status.isEnabled) return '';
-    
-    final schedule = widget.status.schedule;
-    final now = TimeOfDay.now();
-    final currentMinutes = now.hour * 60 + now.minute;
-    final startMinutes = schedule.startTime.hour * 60 + schedule.startTime.minute;
-    
-    if (startMinutes > currentMinutes) {
-      return 'Opens at ${schedule.startTime.format(context)}';
-    } else {
-      return 'Opens tomorrow at ${schedule.startTime.format(context)}';
-    }
   }
 }

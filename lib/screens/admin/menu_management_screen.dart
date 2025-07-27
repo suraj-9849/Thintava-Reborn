@@ -1,4 +1,4 @@
-// lib/screens/admin/menu_management_screen.dart - UPDATED WITH MENU TYPES
+// lib/screens/admin/menu_management_screen.dart - FIXED FOR CLIENT-SIDE FILTERING
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -495,105 +495,49 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> with Ticker
         ),
       ),
       floatingActionButton: (!showAddForm && !showEditForm) 
-        ? (_fadeAnimation != null 
-            ? FadeTransition(
-                opacity: _fadeAnimation!,
-                child: FloatingActionButton.extended(
-                  onPressed: () {
-                    setState(() {
-                      _selectedMenuType = MenuType.values[_tabController.index];
-                      showAddForm = true;
-                    });
-                  },
-                  backgroundColor: Colors.white,
-                  foregroundColor: const Color(0xFFFFB703),
-                  icon: Icon(Icons.add),
-                  label: Text(
-                    "Add ${MenuType.values[_tabController.index].displayName} Item",
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                  ),
-                  elevation: 8,
-                ),
-              )
-            : FloatingActionButton.extended(
-                onPressed: () {
-                  setState(() {
-                    _selectedMenuType = MenuType.values[_tabController.index];
-                    showAddForm = true;
-                  });
-                },
-                backgroundColor: Colors.white,
-                foregroundColor: const Color(0xFFFFB703),
-                icon: Icon(Icons.add),
-                label: Text(
-                  "Add ${MenuType.values[_tabController.index].displayName} Item",
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                ),
-                elevation: 8,
-              ))
+        ? FloatingActionButton.extended(
+            onPressed: () {
+              setState(() {
+                _selectedMenuType = MenuType.values[_tabController.index];
+                showAddForm = true;
+              });
+            },
+            backgroundColor: Colors.white,
+            foregroundColor: const Color(0xFFFFB703),
+            icon: Icon(Icons.add),
+            label: Text(
+              "Add ${MenuType.values[_tabController.index].displayName} Item",
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+            ),
+            elevation: 8,
+          )
         : null,
     );
   }
 
   Widget _buildItemForm() {
-    if (_fadeAnimation == null || _slideAnimation == null) {
-      return SingleChildScrollView(
-        padding: const EdgeInsets.all(8),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.9),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withOpacity(0.3)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 30,
-                    offset: const Offset(0, 15),
-                  ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: _buildFormContent(),
-              ),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(8),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.9),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withOpacity(0.3)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 30,
+                  offset: const Offset(0, 15),
+                ),
+              ],
             ),
-          ),
-        ),
-      );
-    }
-    
-    return FadeTransition(
-      opacity: _fadeAnimation!,
-      child: SlideTransition(
-        position: _slideAnimation!,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(8),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.9),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.white.withOpacity(0.3)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 30,
-                      offset: const Offset(0, 15),
-                    ),
-                  ],
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: _buildFormContent(),
-                ),
-              ),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: _buildFormContent(),
             ),
           ),
         ),
@@ -801,7 +745,6 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> with Ticker
     );
   }
 
-  // Continue with the rest of the widget methods (same as before)
   Widget _buildSectionHeader(String title, IconData icon) {
     return Row(
       children: [
@@ -1153,56 +1096,26 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> with Ticker
   }
 
   Widget _buildMenuList() {
-    if (_fadeAnimation == null) {
-      return Container(
-        margin: const EdgeInsets.all(8),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.9),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withOpacity(0.3)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 30,
-                    offset: const Offset(0, 15),
-                  ),
-                ],
-              ),
-              child: _buildTabContent(),
+    return Container(
+      margin: const EdgeInsets.all(8),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.9),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withOpacity(0.3)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 30,
+                  offset: const Offset(0, 15),
+                ),
+              ],
             ),
-          ),
-        ),
-      );
-    }
-    
-    return FadeTransition(
-      opacity: _fadeAnimation!,
-      child: Container(
-        margin: const EdgeInsets.all(8),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.9),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withOpacity(0.3)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 30,
-                    offset: const Offset(0, 15),
-                  ),
-                ],
-              ),
-              child: _buildTabContent(),
-            ),
+            child: _buildTabContent(),
           ),
         ),
       ),
@@ -1264,10 +1177,13 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> with Ticker
           ),
         ),
         
-        // Menu items list
+        // Menu items list - USING CLIENT-SIDE FILTERING
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
-            stream: MenuOperationsService.getMenuItemsByType(menuType),
+            stream: FirebaseFirestore.instance
+                .collection('menuItems')
+                .orderBy('name')
+                .snapshots(),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
                 return Center(
@@ -1315,7 +1231,14 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> with Ticker
                 );
               }
               
-              final items = snapshot.data?.docs ?? [];
+              final allItems = snapshot.data?.docs ?? [];
+              
+              // CLIENT-SIDE FILTERING by menuType
+              final items = allItems.where((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                final itemMenuType = data['menuType'] ?? 'breakfast';
+                return itemMenuType == menuType.value;
+              }).toList();
               
               if (items.isEmpty) {
                 return Center(

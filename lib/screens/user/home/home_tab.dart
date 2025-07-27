@@ -1,18 +1,14 @@
-// lib/screens/user/home/home_tab.dart - FIXED WITH CORRECT IMPORTS
+// lib/screens/user/home/home_tab.dart - FIXED FOR UPDATED SYSTEM
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:canteen_app/providers/cart_provider.dart';
-import 'package:canteen_app/presentation/widgets/layout/enhanced_header.dart';
-import 'package:canteen_app/presentation/widgets/layout/menu_section_header.dart';
 import 'package:canteen_app/presentation/widgets/menu/search_filter_bar.dart';
 import 'package:canteen_app/presentation/widgets/menu/menu_item_card.dart';
-import 'package:canteen_app/presentation/widgets/order/active_order_banner.dart';
 import 'package:canteen_app/presentation/widgets/common/loading_states.dart';
 import 'package:canteen_app/presentation/widgets/common/empty_state.dart';
-import 'package:canteen_app/presentation/widgets/user/canteen_closed_widget.dart';
 import '../../../services/menu_operations_service.dart';
 import '../../../models/menu_type.dart';
 
@@ -248,11 +244,89 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin {
         final isOperational = snapshot.data ?? false;
 
         if (!isOperational) {
-          return const CanteenClosedWidget();
+          return _buildCanteenClosedWidget();
         }
 
         return _buildMenuContent();
       },
+    );
+  }
+
+  Widget _buildCanteenClosedWidget() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Animated icon
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Colors.orange.withOpacity(0.3),
+                  width: 2,
+                ),
+              ),
+              child: Icon(
+                Icons.restaurant_menu,
+                size: 64,
+                color: Colors.orange[600],
+              ),
+            ),
+            const SizedBox(height: 32),
+            
+            // Main message
+            Text(
+              "Canteen is Currently Closed",
+              style: GoogleFonts.poppins(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Please check back later when it's operational",
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                color: Colors.grey[600],
+                height: 1.4,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            
+            const SizedBox(height: 32),
+            
+            // Refresh button
+            ElevatedButton.icon(
+              onPressed: () {
+                setState(() {});
+              },
+              icon: const Icon(Icons.refresh),
+              label: Text(
+                'Check Again',
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFFB703),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                elevation: 4,
+                shadowColor: const Color(0xFFFFB703).withOpacity(0.5),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -289,7 +363,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin {
                         color: Colors.black87,
                       ),
                     ),
-                    _buildActiveMenusIndicator(),
+                    _buildEnabledMenusIndicator(),
                   ],
                 ),
               ),
@@ -308,19 +382,19 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin {
         ),
         
         Expanded(
-          child: _buildActiveMenuItems(),
+          child: _buildEnabledMenuItems(),
         ),
       ],
     );
   }
 
-  Widget _buildActiveMenusIndicator() {
+  Widget _buildEnabledMenusIndicator() {
     return FutureBuilder<List<MenuType>>(
-      future: MenuOperationsService.getActiveMenuTypes(),
+      future: MenuOperationsService.getEnabledMenuTypes(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Text(
-            "Loading active menus...",
+            "Loading menus...",
             style: GoogleFonts.poppins(
               fontSize: 12,
               color: Colors.grey[600],
@@ -338,9 +412,9 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin {
           );
         }
 
-        final activeMenus = snapshot.data!;
+        final enabledMenus = snapshot.data!;
         
-        if (activeMenus.isEmpty) {
+        if (enabledMenus.isEmpty) {
           return Text(
             "No active menus",
             style: GoogleFonts.poppins(
@@ -352,7 +426,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin {
 
         return Wrap(
           spacing: 6,
-          children: activeMenus.map((menuType) => Container(
+          children: enabledMenus.map((menuType) => Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
               color: menuType.color.withOpacity(0.1),
@@ -387,9 +461,9 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildActiveMenuItems() {
+  Widget _buildEnabledMenuItems() {
     return StreamBuilder<QuerySnapshot>(
-      stream: _buildActiveMenuItemsStream(),
+      stream: _buildEnabledMenuItemsStream(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const LoadingGrid();
@@ -412,7 +486,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin {
           return const EmptyState(
             icon: Icons.restaurant_menu,
             title: 'No Menu Items Available',
-            subtitle: 'Active menu items will appear here when available.',
+            subtitle: 'Menu items will appear here when available.',
             iconColor: Colors.grey,
           );
         }
@@ -465,43 +539,63 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin {
     );
   }
 
-  Stream<QuerySnapshot> _buildActiveMenuItemsStream() async* {
-    final activeMenuTypes = await MenuOperationsService.getActiveMenuTypes();
+  Stream<QuerySnapshot> _buildEnabledMenuItemsStream() async* {
+    final enabledMenuTypes = await MenuOperationsService.getEnabledMenuTypes();
     
-    if (activeMenuTypes.isEmpty) {
-      yield EmptyQuerySnapshot();
+    if (enabledMenuTypes.isEmpty) {
+      yield* Stream.empty();
       return;
     }
 
-    final activeMenuValues = activeMenuTypes.map((type) => type.value).toList();
-    
-    yield* FirebaseFirestore.instance
-        .collection('menuItems')
-        .where('menuType', whereIn: activeMenuValues)
-        .orderBy('name')
-        .snapshots();
+    try {
+      final enabledMenuValues = enabledMenuTypes.map((type) => type.value).toList();
+      
+      // Use 'arrayContainsAny' or client-side filtering to avoid compound queries
+      yield* FirebaseFirestore.instance
+          .collection('menuItems')
+          .orderBy('name')
+          .snapshots()
+          .map((snapshot) {
+            // Client-side filtering for enabled menu types
+            final filteredDocs = snapshot.docs.where((doc) {
+              final data = doc.data();
+              final menuType = data['menuType'] ?? 'breakfast';
+              return enabledMenuValues.contains(menuType);
+            }).toList();
+            
+            // Create a new QuerySnapshot with filtered docs
+            return FilteredQuerySnapshot(filteredDocs);
+          });
+    } catch (e) {
+      print('Error in menu items stream: $e');
+      yield* Stream.empty();
+    }
   }
 }
 
-// Helper class to create empty QuerySnapshot
-class EmptyQuerySnapshot implements QuerySnapshot {
+// Helper class to create filtered QuerySnapshot
+class FilteredQuerySnapshot implements QuerySnapshot {
+  final List<QueryDocumentSnapshot> _docs;
+
+  FilteredQuerySnapshot(this._docs);
+
   @override
-  List<QueryDocumentSnapshot> get docs => [];
+  List<QueryDocumentSnapshot> get docs => _docs;
   
   @override
   List<DocumentChange> get docChanges => [];
   
   @override
-  SnapshotMetadata get metadata => EmptySnapshotMetadata();
+  SnapshotMetadata get metadata => FilteredSnapshotMetadata();
   
   @override
-  int get size => 0;
+  int get size => _docs.length;
   
   @override
-  bool get isEmpty => true;
+  bool get isEmpty => _docs.isEmpty;
 }
 
-class EmptySnapshotMetadata implements SnapshotMetadata {
+class FilteredSnapshotMetadata implements SnapshotMetadata {
   @override
   bool get hasPendingWrites => false;
   
