@@ -1,4 +1,4 @@
-// functions/index.js - COMPLETE WITH RAZORPAY INTEGRATION - FIXED PRICING ISSUE
+// functions/index.js - SIMPLIFIED WITHOUT RESERVATION SYSTEM
 const functions = require('firebase-functions/v1');
 const admin = require('firebase-admin');
 
@@ -357,7 +357,6 @@ exports.notifyUserOnOrderStatusChange = functions.firestore
           newStatus: afterStatus,
           oldStatus: beforeStatus,
           itemCount: itemCount.toString(),
-          // REMOVED: orderTotal to hide pricing
         }
       };
 
@@ -490,7 +489,7 @@ exports.sendWelcomeNotification = functions.firestore
   });
 
 // ============================================================================
-// NEW RAZORPAY FUNCTIONS - AUTO-CAPTURE INTEGRATION
+// RAZORPAY FUNCTIONS - AUTO-CAPTURE INTEGRATION (NO RESERVATION CHANGES)
 // ============================================================================
 
 // 🔥 Create Razorpay order for auto-capture
@@ -740,7 +739,6 @@ async function handlePaymentCaptured(payment) {
               type: 'PAYMENT_CAPTURED',
               orderId: orderDoc.id,
               paymentId: payment.id,
-              // REMOVED: amount to hide pricing
             }
           });
         }
@@ -808,6 +806,8 @@ async function handleOrderPaid(order) {
     console.error('❌ Error handling order paid:', error);
   }
 }
+
+// SIMPLIFIED FUNCTIONS (NO RESERVATION FEATURES)
 
 // 🔥 Function to get payment analytics (for admin)
 exports.getPaymentAnalytics = functions.https.onCall(async (data, context) => {
@@ -1022,7 +1022,9 @@ exports.getOrderWithPaymentStatus = functions.https.onCall(async (data, context)
   }
 });
 
-// 🔥 NEW FUNCTION: Clean up expired session history
+// DEVICE MANAGEMENT AND SESSION CLEANUP FUNCTIONS (KEPT)
+
+// 🔥 Clean up expired session history
 exports.cleanupExpiredSessions = functions.pubsub
   .schedule('every 24 hours')
   .onRun(async (context) => {
@@ -1062,7 +1064,7 @@ exports.cleanupExpiredSessions = functions.pubsub
     }
   });
 
-// 🔥 NEW FUNCTION: Monitor and alert on suspicious session activity
+// 🔥 Monitor and alert on suspicious session activity
 exports.monitorSuspiciousActivity = functions.firestore
   .document('user_sessions/{userId}')
   .onUpdate(async (change, context) => {
@@ -1122,7 +1124,7 @@ exports.monitorSuspiciousActivity = functions.firestore
     }
   });
 
-// 🔥 NEW FUNCTION: Get device management statistics (for admin)
+// 🔥 Get device management statistics (for admin)
 exports.getDeviceManagementStats = functions.https.onRequest(async (req, res) => {
   try {
     const db = admin.firestore();
@@ -1177,7 +1179,7 @@ exports.getDeviceManagementStats = functions.https.onRequest(async (req, res) =>
   }
 });
 
-// 🔥 NEW FUNCTION: Force logout user from all devices (admin function)
+// 🔥 Force logout user from all devices (admin function)
 exports.forceLogoutUser = functions.https.onRequest(async (req, res) => {
   try {
     if (req.method !== 'POST') {
@@ -1242,129 +1244,4 @@ exports.forceLogoutUser = functions.https.onRequest(async (req, res) => {
   }
 });
 
-// 🔥 Razorpay webhook handler for auto-capture events (COMPLETE VERSION)
-exports.razorpayWebhook = functions.https.onRequest(async (req, res) => {
-  try {
-    if (req.method !== 'POST') {
-      return res.status(405).send('Method Not Allowed');
-    }
-
-    const signature = req.headers['x-razorpay-signature'];
-    const body = JSON.stringify(req.body);
-
-    // Verify webhook signature if webhook secret is configured
-    const webhookSecret = functions.config().razorpay?.webhook_secret;
-    if (webhookSecret && signature) {
-      const expectedSignature = crypto
-        .createHmac('sha256', webhookSecret)
-        .update(body)
-        .digest('hex');
-
-      if (signature !== expectedSignature) {
-        console.log('❌ Invalid webhook signature');
-        return res.status(400).send('Invalid signature');
-      }
-    }
-
-    const event = req.body;
-    console.log(`📨 Razorpay webhook received: ${event.event}`);
-
-    // Handle different webhook events
-    switch (event.event) {
-      case 'payment.captured':
-        await handlePaymentCaptured(event.payload.payment.entity);
-        break;
-
-      case 'payment.failed':
-        await handlePaymentFailed(event.payload.payment.entity);
-        break;
-
-      case 'order.paid':
-        await handleOrderPaid(event.payload.order.entity);
-        break;
-
-      default:
-        console.log(`🔄 Unhandled webhook event: ${event.event}`);
-    }
-
-    res.status(200).send('OK');
-  } catch (error) {
-    console.error('❌ Error handling Razorpay webhook:', error);
-    res.status(500).send('Internal server error');
-  }
-});
-
-// 🔥 Function to create Razorpay order with auto-capture (COMPLETE VERSION)
-exports.createRazorpayOrder = functions.https.onCall(async (data, context) => {
-  try {
-    // Check authentication
-    if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
-    }
-
-    const { amount, currency = 'INR', receipt, notes = {} } = data;
-
-    // Validate amount
-    if (!amount || amount <= 0) {
-      throw new functions.https.HttpsError('invalid-argument', 'Valid amount is required');
-    }
-
-    console.log(`🔄 Creating Razorpay order for user ${context.auth.uid}, amount: ${amount}`);
-
-    // Create order options with auto-capture enabled
-    const orderOptions = {
-      amount: amount, // Amount in paise
-      currency: currency,
-      receipt: receipt || `order_${Date.now()}`,
-      payment_capture: 1, // Enable auto-capture
-      notes: {
-        ...notes,
-        userId: context.auth.uid,
-        userEmail: context.auth.token.email || '',
-        createdAt: new Date().toISOString(),
-        autoCaptureEnabled: 'true',
-      }
-    };
-
-    const order = await razorpay.orders.create(orderOptions);
-
-    console.log(`✅ Razorpay order created with auto-capture: ${order.id}`);
-
-    // Store order details in Firestore for tracking
-    await admin.firestore().collection('razorpay_orders').doc(order.id).set({
-      razorpayOrderId: order.id,
-      userId: context.auth.uid,
-      userEmail: context.auth.token.email || '',
-      amount: order.amount,
-      currency: order.currency,
-      status: order.status,
-      receipt: order.receipt,
-      notes: order.notes,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      autoCaptureEnabled: true,
-    });
-
-    return {
-      success: true,
-      order: {
-        id: order.id,
-        amount: order.amount,
-        currency: order.currency,
-        receipt: order.receipt,
-        status: order.status,
-        autoCaptureEnabled: true,
-      }
-    };
-
-  } catch (error) {
-    console.error('❌ Error creating Razorpay order:', error);
-
-    if (error instanceof functions.https.HttpsError) {
-      throw error;
-    }
-
-    throw new functions.https.HttpsError('internal', 'Failed to create payment order');
-  }
-});
-
-console.log('🚀 Firebase Functions loaded successfully with ALL features: Razorpay integration, device management, session monitoring, and fixed pricing notifications!');
+console.log('🚀 Firebase Functions loaded successfully with simplified stock management (no reservation system)!');

@@ -1,4 +1,4 @@
-// lib/main.dart - COMPLETE VERSION WITH DEVICE MANAGEMENT - NO USERNAME SETUP
+// lib/main.dart - SIMPLIFIED VERSION (NO RESERVATION SYSTEM)
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -19,10 +19,6 @@ import 'package:canteen_app/services/notification_service.dart';
 import 'package:canteen_app/utils/firebase_utils.dart';
 import 'package:canteen_app/services/auth_service.dart';
 import 'package:canteen_app/providers/cart_provider.dart';
-
-// NEW: Import reservation models and services
-import 'package:canteen_app/models/reservation_model.dart';
-import 'package:canteen_app/services/reservation_service.dart';
 
 // Initialize global plugins
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = 
@@ -183,44 +179,19 @@ class _ThintavaAppState extends State<ThintavaApp> {
       _handleForcedLogout();
     });
     
-    print('🚀 Thintava App initialized with Device Management and Stock Reservation System');
-    
-    // NEW: Initialize stock management field for existing items (one-time migration)
-    _initializeStockReservationSystem();
-  }
-  
-  // NEW: Initialize reservation system
-  void _initializeStockReservationSystem() async {
-    try {
-      // Check if we need to initialize reservedQuantity field for existing items
-      final snapshot = await FirebaseFirestore.instance
-          .collection('menuItems')
-          .limit(1)
-          .get();
-      
-      if (snapshot.docs.isNotEmpty) {
-        final firstItem = snapshot.docs.first.data();
-        if (!firstItem.containsKey('reservedQuantity')) {
-          print('🔄 Initializing reservedQuantity field for existing menu items...');
-          // This would typically be done via Cloud Function, but we can check here
-          print('💡 Run the Cloud Function initializeReservedQuantityField to migrate existing items');
-        }
-      }
-    } catch (e) {
-      print('⚠️ Error checking stock reservation system: $e');
-    }
+    print('🚀 Thintava App initialized with Device Management');
   }
   
   // DEVICE MANAGEMENT - FORCED LOGOUT HANDLER
   void _handleForcedLogout() {
     print('🚫 Device session terminated - handling forced logout');
     
-    // Clean up cart and reservations
+    // Clean up cart
     try {
       if (navigatorKey.currentContext != null) {
         final cartProvider = Provider.of<CartProvider>(navigatorKey.currentContext!, listen: false);
         cartProvider.cleanup();
-        print('✅ Cart and reservations cleaned up');
+        print('✅ Cart cleaned up');
       }
     } catch (e) {
       print('⚠️ Error cleaning up cart during forced logout: $e');

@@ -1,4 +1,4 @@
-// lib/presentation/widgets/menu/menu_item_card.dart - UPDATED VERSION (REMOVED ACTIVE ORDER FEATURE)
+// lib/presentation/widgets/menu/menu_item_card.dart - SIMPLIFIED (NO RESERVATION)
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -12,7 +12,7 @@ class MenuItemCard extends StatelessWidget {
   final String id;
   final Map<String, dynamic> data;
   final int index;
-  final bool hasActiveOrder; // Keep parameter but always false
+  final bool hasActiveOrder;
   final VoidCallback? onStockError;
   
   const MenuItemCard({
@@ -20,7 +20,7 @@ class MenuItemCard extends StatelessWidget {
     required this.id,
     required this.data,
     required this.index,
-    this.hasActiveOrder = false, // Always false now
+    this.hasActiveOrder = false,
     this.onStockError,
   }) : super(key: key);
 
@@ -43,7 +43,6 @@ class MenuItemCard extends StatelessWidget {
     return Consumer<CartProvider>(
       builder: (context, cartProvider, child) {
         final cartQuantity = cartProvider.getQuantity(id);
-        final isReserved = cartProvider.isItemReserved(id);
         final canAdd = available && UserUtils.canAddToCart(data, cartQuantity);
         
         return TweenAnimationBuilder<double>(
@@ -59,11 +58,9 @@ class MenuItemCard extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(20),
-                    border: isReserved 
-                      ? Border.all(color: Colors.blue, width: 2)
-                      : isOutOfStock
-                        ? Border.all(color: Colors.red.withOpacity(0.3), width: 1)
-                        : null,
+                    border: isOutOfStock
+                      ? Border.all(color: Colors.red.withOpacity(0.3), width: 1)
+                      : null,
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.06),
@@ -76,23 +73,17 @@ class MenuItemCard extends StatelessWidget {
                     children: [
                       Padding(
                         padding: const EdgeInsets.all(16),
-                        child: Column(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            if (isReserved) _buildReservationBanner(cartProvider),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildFoodImage(imageUrl, isVeg, isOutOfStock),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: _buildFoodDetails(
-                                    name, price, description, stockStatus,
-                                    available, isOutOfStock, cartProvider, cartQuantity,
-                                    canAdd, availableStock, isReserved,
-                                    hasUnlimitedStock, context
-                                  ),
-                                ),
-                              ],
+                            _buildFoodImage(imageUrl, isVeg, isOutOfStock),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: _buildFoodDetails(
+                                name, price, description, stockStatus,
+                                available, isOutOfStock, cartProvider, cartQuantity,
+                                canAdd, availableStock, hasUnlimitedStock, context
+                              ),
                             ),
                           ],
                         ),
@@ -106,33 +97,6 @@ class MenuItemCard extends StatelessWidget {
           },
         );
       },
-    );
-  }
-
-  Widget _buildReservationBanner(CartProvider cartProvider) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.blue.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.blue.withOpacity(0.3)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.schedule, color: Colors.blue, size: 16),
-          const SizedBox(width: 6),
-          Text(
-            "Reserved for you (${cartProvider.getReservedQuantity(id)} item${cartProvider.getReservedQuantity(id) > 1 ? 's' : ''})",
-            style: GoogleFonts.poppins(
-              color: Colors.blue,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -218,7 +182,7 @@ class MenuItemCard extends StatelessWidget {
   Widget _buildFoodDetails(String name, double price, String description, 
       StockStatusType stockStatus, bool available, bool isOutOfStock, 
       CartProvider cartProvider, int cartQuantity, 
-      bool canAdd, int availableStock, bool isReserved, bool hasUnlimitedStock,
+      bool canAdd, int availableStock, bool hasUnlimitedStock,
       BuildContext context) {
     
     return Column(
@@ -273,7 +237,7 @@ class MenuItemCard extends StatelessWidget {
         
         // Cart controls
         _buildCartSection(isOutOfStock, available, hasUnlimitedStock,
-            cartProvider, cartQuantity, canAdd, availableStock, isReserved, context),
+            cartProvider, cartQuantity, canAdd, availableStock, context),
       ],
     );
   }
@@ -292,14 +256,13 @@ class MenuItemCard extends StatelessWidget {
 
   Widget _buildCartSection(bool isOutOfStock, bool available,
       bool hasUnlimitedStock, CartProvider cartProvider, int cartQuantity, 
-      bool canAdd, int availableStock, bool isReserved, BuildContext context) {
+      bool canAdd, int availableStock, BuildContext context) {
     
     if (!isOutOfStock) {
       return CartControls(
         itemId: id,
         cartQuantity: cartQuantity,
         canAdd: canAdd,
-        isReserved: isReserved,
         onStockError: () => _showStockError(context, availableStock),
       );
     } else {

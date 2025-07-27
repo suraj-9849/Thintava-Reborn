@@ -1,4 +1,4 @@
-// lib/presentation/widgets/menu/cart_controls.dart - UPDATED VERSION (REMOVED ACTIVE ORDER FEATURE)
+// lib/presentation/widgets/menu/cart_controls.dart - SIMPLIFIED (NO RESERVATION)
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -8,7 +8,6 @@ class CartControls extends StatelessWidget {
   final String itemId;
   final int cartQuantity;
   final bool canAdd;
-  final bool isReserved;
   final VoidCallback? onStockError;
   
   const CartControls({
@@ -16,7 +15,6 @@ class CartControls extends StatelessWidget {
     required this.itemId,
     required this.cartQuantity,
     required this.canAdd,
-    this.isReserved = false,
     this.onStockError,
   }) : super(key: key);
 
@@ -36,14 +34,10 @@ class CartControls extends StatelessWidget {
   Widget _buildQuantityControls(CartProvider cartProvider) {
     return Container(
       decoration: BoxDecoration(
-        color: isReserved 
-          ? Colors.blue.withOpacity(0.1) 
-          : const Color(0xFFFFB703).withOpacity(0.1),
+        color: const Color(0xFFFFB703).withOpacity(0.1),
         borderRadius: BorderRadius.circular(25),
         border: Border.all(
-          color: isReserved 
-            ? Colors.blue.withOpacity(0.3) 
-            : const Color(0xFFFFB703).withOpacity(0.3)
+          color: const Color(0xFFFFB703).withOpacity(0.3)
         ),
       ),
       child: Row(
@@ -51,13 +45,13 @@ class CartControls extends StatelessWidget {
         children: [
           _buildCartButton(
             icon: Icons.remove_rounded,
-            onTap: isReserved ? null : () => cartProvider.removeItem(itemId),
-            color: isReserved ? Colors.grey : const Color(0xFFFFB703),
+            onTap: () => cartProvider.removeItem(itemId),
+            color: const Color(0xFFFFB703),
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
-              color: isReserved ? Colors.blue : const Color(0xFFFFB703),
+              color: const Color(0xFFFFB703),
               borderRadius: BorderRadius.circular(15),
             ),
             child: Text(
@@ -71,13 +65,13 @@ class CartControls extends StatelessWidget {
           ),
           _buildCartButton(
             icon: Icons.add_rounded,
-            onTap: (isReserved || !canAdd) ? null : () async {
+            onTap: !canAdd ? null : () async {
               final success = await cartProvider.addItem(itemId);
               if (!success && onStockError != null) {
                 onStockError!();
               }
             },
-            color: (isReserved || !canAdd) ? Colors.grey : const Color(0xFFFFB703),
+            color: !canAdd ? Colors.grey : const Color(0xFFFFB703),
           ),
         ],
       ),

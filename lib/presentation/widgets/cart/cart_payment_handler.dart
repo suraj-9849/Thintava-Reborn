@@ -1,4 +1,4 @@
-// lib/presentation/widgets/cart/cart_payment_handler.dart - UPDATED WITH ACTIVE ORDER CHECK
+// lib/presentation/widgets/cart/cart_payment_handler.dart - SIMPLIFIED (NO RESERVATION SYSTEM)
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,8 +7,6 @@ import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:provider/provider.dart';
 import 'package:canteen_app/providers/cart_provider.dart';
-import 'package:canteen_app/models/reservation_model.dart';
-import 'package:canteen_app/services/reservation_service.dart';
 import 'package:canteen_app/services/active_order_service.dart';
 import 'package:canteen_app/presentation/widgets/cart/cart_dialogs.dart';
 
@@ -18,7 +16,6 @@ class CartPaymentHandler {
   final double total;
   late Razorpay _razorpay;
   
-  List<String>? currentReservationIds;
   String? currentRazorpayOrderId;
 
   CartPaymentHandler({
@@ -53,10 +50,23 @@ class CartPaymentHandler {
         }
       });
 
-      if (result.data['success'] == true) {
-        final orderId = result.data['order']['id'];
-        print('✅ Firebase Function created Razorpay order: $orderId');
-        return orderId;
+      print('🔍 Firebase Function response: ${result.data}');
+
+      if (result.data != null && result.data['success'] == true) {
+        // Handle both possible response structures
+        String? orderId;
+        if (result.data['orderId'] != null) {
+          orderId = result.data['orderId'];
+        } else if (result.data['order'] != null && result.data['order']['id'] != null) {
+          orderId = result.data['order']['id'];
+        }
+        
+        if (orderId != null) {
+          print('✅ Firebase Function created Razorpay order: $orderId');
+          return orderId;
+        } else {
+          throw Exception('Order ID not found in response: ${result.data}');
+        }
       } else {
         throw Exception('Failed to create order: ${result.data}');
       }
@@ -66,8 +76,8 @@ class CartPaymentHandler {
     }
   }
 
-  /// Reserve stock and proceed to payment (WITH ACTIVE ORDER CHECK)
-  Future<void> reserveAndProceedToPayment() async {
+  /// Start payment directly (WITH ACTIVE ORDER CHECK)
+  Future<void> startPayment() async {
     final cartProvider = Provider.of<CartProvider>(context, listen: false);
     
     if (cartProvider.isEmpty) {
@@ -75,79 +85,6 @@ class CartPaymentHandler {
       return;
     }
 
-    try {
-      // STEP 1: CHECK FOR ACTIVE ORDER FIRST
-      print('🔍 Checking for active orders before proceeding...');
-      final activeOrderResult = await ActiveOrderService.checkActiveOrder();
-      
-      if (activeOrderResult.hasActiveOrder) {
-        print('❌ Active order found: ${activeOrderResult.orderId} - Status: ${activeOrderResult.status}');
-        CartDialogs.showActiveOrderBlockDialog(context, activeOrderResult);
-        return;
-      }
-      
-      print('✅ No active orders found, proceeding with reservation...');
-
-      // STEP 2: Check if cart can be reserved
-      final reservabilityCheck = await cartProvider.checkCartReservability();
-      
-      if (!reservabilityCheck['canReserve']) {
-        final error = reservabilityCheck['error'] ?? 'Cannot reserve items';
-        final issues = reservabilityCheck['issues'] as Map<String, String>? ?? {};
-        
-        CartDialogs.showReservationErrorDialog(context, error, issues, menuMap);
-        return;
-      }
-
-      // STEP 3: Show reservation confirmation
-      final shouldProceed = await CartDialogs.showReservationConfirmDialog(context);
-      if (!shouldProceed) return;
-
-      // STEP 4: Double-check for active order before reserving (race condition protection)
-      final finalActiveOrderCheck = await ActiveOrderService.checkActiveOrder();
-      if (finalActiveOrderCheck.hasActiveOrder) {
-        print('❌ Active order found during final check: ${finalActiveOrderCheck.orderId}');
-        CartDialogs.showActiveOrderBlockDialog(context, finalActiveOrderCheck);
-        return;
-      }
-
-      // STEP 5: Reserve the items
-      final reservationResult = await cartProvider.reserveCartItems();
-      
-      if (!reservationResult.success) {
-        final error = reservationResult.error ?? 'Failed to reserve items';
-        final itemErrors = reservationResult.itemErrors ?? {};
-        
-        CartDialogs.showReservationErrorDialog(context, error, itemErrors, menuMap);
-        return;
-      }
-
-      // STEP 6: Store reservation IDs
-      currentReservationIds = reservationResult.reservations?.map((r) => r.id).toList();
-
-      // STEP 7: Create Razorpay order for auto-capture
-      currentRazorpayOrderId = await _createRazorpayOrder(total);
-      
-      if (currentRazorpayOrderId == null) {
-        throw Exception('Failed to create payment order');
-      }
-
-      // STEP 8: Proceed to payment gateway
-      _startPaymentWithOrder();
-
-    } catch (e) {
-      _showSnackBar("Error processing payment: $e", Colors.red, Icons.error_outline);
-      
-      // Release reservations on error
-      if (currentReservationIds != null) {
-        await cartProvider.releaseReservations(status: ReservationStatus.failed);
-        currentReservationIds = null;
-      }
-    }
-  }
-
-  /// Direct payment without reservation (for already reserved items) - WITH ACTIVE ORDER CHECK
-  Future<void> startPayment() async {
     try {
       // CHECK FOR ACTIVE ORDER BEFORE ALLOWING PAYMENT
       print('🔍 Checking for active orders before payment...');
@@ -161,15 +98,18 @@ class CartPaymentHandler {
       
       print('✅ No active orders found, proceeding with payment...');
 
-      final orderId = await _createRazorpayOrder(total);
-      if (orderId != null) {
-        currentRazorpayOrderId = orderId;
-        _startPaymentWithOrder();
-      } else {
-        _showSnackBar("Payment setup failed", Colors.red, Icons.error_outline);
+      // Create Razorpay order for auto-capture
+      currentRazorpayOrderId = await _createRazorpayOrder(total);
+      
+      if (currentRazorpayOrderId == null) {
+        throw Exception('Failed to create payment order');
       }
-    } catch (error) {
-      _showSnackBar("Payment setup failed: $error", Colors.red, Icons.error_outline);
+
+      // Proceed to payment gateway
+      _startPaymentWithOrder();
+
+    } catch (e) {
+      _showSnackBar("Error processing payment: $e", Colors.red, Icons.error_outline);
     }
   }
 
@@ -230,13 +170,6 @@ class CartPaymentHandler {
       if (finalCheck.hasActiveOrder) {
         Navigator.pop(context); // Close loading dialog
         
-        // Release reservations and refund if possible
-        if (currentReservationIds != null) {
-          final cartProvider = Provider.of<CartProvider>(context, listen: false);
-          await cartProvider.releaseReservations(status: ReservationStatus.failed);
-          currentReservationIds = null;
-        }
-        
         _showSnackBar(
           "Payment completed but another order is active. Please contact support for refund.",
           Colors.red,
@@ -280,26 +213,15 @@ class CartPaymentHandler {
 
       print('✅ Order created successfully: ${orderDocRef.id}');
 
-      // Confirm reservations
-      bool confirmSuccess = false;
+      // Update stock manually
+      bool stockUpdateSuccess = await _manuallyUpdateStock(cartProvider.cart);
       
-      if (currentReservationIds != null && currentReservationIds!.isNotEmpty) {
-        confirmSuccess = await ReservationService.confirmReservations(currentReservationIds!, orderDocRef.id);
-      } 
-      else if (cartProvider.hasActiveReservations) {
-        final reservationIds = cartProvider.activeReservations.map((r) => r.id).toList();
-        confirmSuccess = await ReservationService.confirmReservations(reservationIds, orderDocRef.id);
-      }
-      else {
-        confirmSuccess = await _manuallyUpdateStock(cartProvider.cart);
+      if (!stockUpdateSuccess) {
+        print('⚠️ Stock update had issues but order was created');
       }
       
-      if (!confirmSuccess) {
-        await _manuallyUpdateStock(cartProvider.cart);
-      }
-      
-      // Clear tracking
-      currentReservationIds = null;
+      // Clear cart and tracking
+      cartProvider.clearCart();
       currentRazorpayOrderId = null;
       
       Navigator.pop(context);
@@ -307,13 +229,6 @@ class CartPaymentHandler {
 
     } catch (e) {
       Navigator.pop(context);
-      
-      if (currentReservationIds != null) {
-        final cartProvider = Provider.of<CartProvider>(context, listen: false);
-        await cartProvider.releaseReservations(status: ReservationStatus.failed);
-        currentReservationIds = null;
-      }
-      
       _showSnackBar("Error processing order: ${e.toString()}", Colors.red, Icons.error_outline);
     }
   }
@@ -346,21 +261,16 @@ class CartPaymentHandler {
       await batch.commit();
       return true;
     } catch (e) {
+      print('❌ Error updating stock: $e');
       return false;
     }
   }
 
   void _handlePaymentError(PaymentFailureResponse response) async {
-    if (currentReservationIds != null) {
-      final cartProvider = Provider.of<CartProvider>(context, listen: false);
-      await cartProvider.releaseReservations(status: ReservationStatus.failed);
-      currentReservationIds = null;
-    }
-
     currentRazorpayOrderId = null;
 
     print('❌ Payment failed: ${response.code} - ${response.message}');
-    // _showSnackBar("Payment failed! Items have been released. Error: ${response.message}", Colors.red, Icons.payment);
+    _showSnackBar("Payment failed! Please try again.", Colors.red, Icons.payment);
   }
 
   void _handleExternalWallet(ExternalWalletResponse response) {

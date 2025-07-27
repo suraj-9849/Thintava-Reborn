@@ -1,15 +1,13 @@
-// lib/presentation/widgets/cart/cart_item_widget.dart
+// lib/presentation/widgets/cart/cart_item_widget.dart - SIMPLIFIED (NO RESERVATION)
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:canteen_app/providers/cart_provider.dart';
-import 'package:canteen_app/widgets/reservation_timer.dart';
 
 class CartItemWidget extends StatelessWidget {
   final String itemId;
   final int quantity;
   final Map<String, dynamic> item;
-  final bool isReserved;
   final CartProvider cartProvider;
 
   const CartItemWidget({
@@ -17,7 +15,6 @@ class CartItemWidget extends StatelessWidget {
     required this.itemId,
     required this.quantity,
     required this.item,
-    required this.isReserved,
     required this.cartProvider,
   }) : super(key: key);
 
@@ -31,9 +28,6 @@ class CartItemWidget extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: isReserved 
-          ? Border.all(color: Colors.blue, width: 2)
-          : null,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
@@ -44,55 +38,16 @@ class CartItemWidget extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Column(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Reservation indicator
-            if (isReserved)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-                margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.schedule, color: Colors.blue, size: 16),
-                    const SizedBox(width: 6),
-                    Text(
-                      "Reserved for you",
-                      style: GoogleFonts.poppins(
-                        color: Colors.blue,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const Spacer(),
-                    if (cartProvider.reservationState.earliestExpiry != null)
-                      ReservationTimer(
-                        expiryTime: cartProvider.reservationState.earliestExpiry!,
-                        showBackground: false,
-                        showIcon: false,
-                        textStyle: GoogleFonts.poppins(fontSize: 10),
-                      ),
-                  ],
-                ),
-              ),
+            // Food image
+            _buildFoodImage(),
+            const SizedBox(width: 12),
             
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Food image
-                _buildFoodImage(),
-                const SizedBox(width: 12),
-                
-                // Dish details
-                Expanded(
-                  child: _buildItemDetails(price),
-                ),
-              ],
+            // Dish details
+            Expanded(
+              child: _buildItemDetails(price),
             ),
           ],
         ),
@@ -213,7 +168,7 @@ class CartItemWidget extends StatelessWidget {
   Widget _buildQuantityControls() {
     return Container(
       decoration: BoxDecoration(
-        color: isReserved ? Colors.grey[200] : Colors.grey[100],
+        color: Colors.grey[100],
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
@@ -221,10 +176,10 @@ class CartItemWidget extends StatelessWidget {
           IconButton(
             icon: Icon(
               Icons.remove_circle_outline,
-              color: isReserved ? Colors.grey : const Color(0xFF023047),
+              color: const Color(0xFF023047),
               size: 20,
             ),
-            onPressed: isReserved ? null : () => cartProvider.removeItem(itemId),
+            onPressed: () => cartProvider.removeItem(itemId),
             constraints: const BoxConstraints(
               minWidth: 32,
               minHeight: 32,
@@ -237,7 +192,7 @@ class CartItemWidget extends StatelessWidget {
               vertical: 2,
             ),
             decoration: BoxDecoration(
-              color: isReserved ? Colors.grey : const Color(0xFFFFB703),
+              color: const Color(0xFFFFB703),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
@@ -251,10 +206,10 @@ class CartItemWidget extends StatelessWidget {
           IconButton(
             icon: Icon(
               Icons.add_circle_outline,
-              color: isReserved ? Colors.grey : const Color(0xFF023047),
+              color: const Color(0xFF023047),
               size: 20,
             ),
-            onPressed: isReserved ? null : () => cartProvider.addItem(itemId),
+            onPressed: () => cartProvider.addItem(itemId),
             constraints: const BoxConstraints(
               minWidth: 32,
               minHeight: 32,
@@ -270,10 +225,10 @@ class CartItemWidget extends StatelessWidget {
     return IconButton(
       icon: Icon(
         Icons.delete_outline,
-        color: isReserved ? Colors.grey : Colors.red,
+        color: Colors.red,
         size: 20,
       ),
-      onPressed: isReserved ? null : () => cartProvider.removeItemCompletely(itemId),
+      onPressed: () => cartProvider.removeItemCompletely(itemId),
       constraints: const BoxConstraints(
         minWidth: 32,
         minHeight: 32,

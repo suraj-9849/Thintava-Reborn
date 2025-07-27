@@ -1,4 +1,4 @@
-// lib/core/utils/user_utils.dart
+// lib/core/utils/user_utils.dart - SIMPLIFIED (NO RESERVATION SYSTEM)
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../enums/user_enums.dart';
@@ -78,7 +78,7 @@ class UserUtils {
     }
   }
   
-  // Stock calculations
+  // Stock calculations (simplified - no reservations)
   static int getAvailableStock(Map<String, dynamic> itemData) {
     final hasUnlimitedStock = itemData['hasUnlimitedStock'] ?? false;
     
@@ -87,10 +87,7 @@ class UserUtils {
     }
     
     final totalStock = itemData['quantity'] ?? 0;
-    final reservedQuantity = itemData['reservedQuantity'] ?? 0;
-    final availableStock = totalStock - reservedQuantity;
-    
-    return availableStock > 0 ? availableStock : 0;
+    return totalStock > 0 ? totalStock : 0;
   }
   
   static StockStatusType getStockStatus(Map<String, dynamic> itemData) {
@@ -137,7 +134,7 @@ class UserUtils {
     }
   }
   
-  // Validation helpers
+  // Validation helpers (simplified - no reservations)
   static bool canAddToCart(Map<String, dynamic> itemData, int currentCartQuantity) {
     final available = itemData['available'] ?? false;
     if (!available) return false;

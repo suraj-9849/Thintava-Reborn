@@ -1,12 +1,11 @@
-// lib/services/stock_management_service.dart - UPDATED WITH RESERVATION SUPPORT
+// lib/services/stock_management_service.dart - SIMPLIFIED (NO RESERVATION SYSTEM)
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:canteen_app/services/reservation_service.dart';
 
 class StockManagementService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  /// Check if items are available in required quantities (considering reservations)
+  /// Check if items are available in required quantities
   static Future<StockCheckResult> checkStockAvailability(Map<String, int> cartItems) async {
     List<String> outOfStockItems = [];
     List<String> insufficientStockItems = [];
@@ -33,17 +32,15 @@ class StockManagementService {
 
           if (!hasUnlimitedStock) {
             final totalStock = data['quantity'] ?? 0;
-            final reservedQuantity = data['reservedQuantity'] ?? 0;
-            final availableQuantity = totalStock - reservedQuantity;
             
-            availableStock[itemId] = availableQuantity;
+            availableStock[itemId] = totalStock;
 
-            if (availableQuantity <= 0) {
+            if (totalStock <= 0) {
               outOfStockItems.add(itemName);
               isValid = false;
-            } else if (availableQuantity < requestedQuantity) {
+            } else if (totalStock < requestedQuantity) {
               insufficientStockItems.add(
-                '$itemName (Available: $availableQuantity, Requested: $requestedQuantity)'
+                '$itemName (Available: $totalStock, Requested: $requestedQuantity)'
               );
               isValid = false;
             }
@@ -68,12 +65,8 @@ class StockManagementService {
     );
   }
 
-  /// Update stock quantities after order placement (now handled by reservation confirmation)
+  /// Update stock quantities after order placement
   static Future<bool> updateStockAfterOrder(Map<String, int> orderItems) async {
-    // NOTE: This is now handled by ReservationService.confirmReservations()
-    // Keeping for backward compatibility
-    print('⚠️ updateStockAfterOrder called - consider using ReservationService.confirmReservations() instead');
-    
     try {
       WriteBatch batch = _firestore.batch();
       
@@ -146,7 +139,7 @@ class StockManagementService {
     }
   }
 
-  /// Get current stock status for a single item (considering reservations)
+  /// Get current stock status for a single item
   static Future<ItemStockStatus> getItemStockStatus(String itemId) async {
     try {
       final doc = await _firestore.collection('menuItems').doc(itemId).get();
@@ -155,17 +148,15 @@ class StockManagementService {
         final data = doc.data()!;
         final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
         final totalQuantity = data['quantity'] ?? 0;
-        final reservedQuantity = data['reservedQuantity'] ?? 0;
         final available = data['available'] ?? false;
-        final availableQuantity = totalQuantity - reservedQuantity;
         
         if (!available) {
           return ItemStockStatus.unavailable;
         } else if (hasUnlimitedStock) {
           return ItemStockStatus.unlimited;
-        } else if (availableQuantity <= 0) {
+        } else if (totalQuantity <= 0) {
           return ItemStockStatus.outOfStock;
-        } else if (availableQuantity <= 5) {
+        } else if (totalQuantity <= 5) {
           return ItemStockStatus.lowStock;
         } else {
           return ItemStockStatus.inStock;
@@ -179,7 +170,7 @@ class StockManagementService {
     }
   }
 
-  /// Get low stock items (for admin notifications) - considering reservations
+  /// Get low stock items (for admin notifications)
   static Future<List<Map<String, dynamic>>> getLowStockItems({int threshold = 5}) async {
     try {
       final snapshot = await _firestore
@@ -191,21 +182,14 @@ class StockManagementService {
       return snapshot.docs.where((doc) {
         final data = doc.data();
         final totalQuantity = data['quantity'] ?? 0;
-        final reservedQuantity = data['reservedQuantity'] ?? 0;
-        final availableQuantity = totalQuantity - reservedQuantity;
-        return availableQuantity <= threshold;
+        return totalQuantity <= threshold;
       }).map((doc) {
         final data = doc.data();
-        final totalQuantity = data['quantity'] ?? 0;
-        final reservedQuantity = data['reservedQuantity'] ?? 0;
-        final availableQuantity = totalQuantity - reservedQuantity;
         
         return {
           'id': doc.id,
           'name': data['name'] ?? 'Unknown Item',
-          'totalQuantity': totalQuantity,
-          'reservedQuantity': reservedQuantity,
-          'availableQuantity': availableQuantity,
+          'quantity': data['quantity'] ?? 0,
           'price': data['price'] ?? 0.0,
         };
       }).toList();
@@ -215,28 +199,22 @@ class StockManagementService {
     }
   }
 
-  /// Get out of stock items - considering reservations
+  /// Get out of stock items
   static Future<List<Map<String, dynamic>>> getOutOfStockItems() async {
     try {
       final snapshot = await _firestore
           .collection('menuItems')
           .where('hasUnlimitedStock', isEqualTo: false)
           .where('available', isEqualTo: true)
+          .where('quantity', isLessThanOrEqualTo: 0)
           .get();
 
-      return snapshot.docs.where((doc) {
-        final data = doc.data();
-        final totalQuantity = data['quantity'] ?? 0;
-        final reservedQuantity = data['reservedQuantity'] ?? 0;
-        final availableQuantity = totalQuantity - reservedQuantity;
-        return availableQuantity <= 0;
-      }).map((doc) {
+      return snapshot.docs.map((doc) {
         final data = doc.data();
         return {
           'id': doc.id,
           'name': data['name'] ?? 'Unknown Item',
-          'totalQuantity': data['quantity'] ?? 0,
-          'reservedQuantity': data['reservedQuantity'] ?? 0,
+          'quantity': data['quantity'] ?? 0,
           'price': data['price'] ?? 0.0,
         };
       }).toList();
@@ -246,7 +224,7 @@ class StockManagementService {
     }
   }
 
-  /// Validate cart against current stock (real-time check with reservations)
+  /// Validate cart against current stock (real-time check)
   static Future<CartValidationResult> validateCart(Map<String, int> cartItems) async {
     List<String> itemsToRemove = [];
     Map<String, int> itemsToUpdate = {};
@@ -261,17 +239,15 @@ class StockManagementService {
           final data = doc.data()!;
           final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
           final totalStock = data['quantity'] ?? 0;
-          final reservedQuantity = data['reservedQuantity'] ?? 0;
           final available = data['available'] ?? false;
-          final availableStock = totalStock - reservedQuantity;
           
           if (!available) {
             itemsToRemove.add(itemId);
           } else if (!hasUnlimitedStock) {
-            if (availableStock <= 0) {
+            if (totalStock <= 0) {
               itemsToRemove.add(itemId);
-            } else if (availableStock < cartQuantity) {
-              itemsToUpdate[itemId] = availableStock;
+            } else if (totalStock < cartQuantity) {
+              itemsToUpdate[itemId] = totalStock;
             }
           }
         } else {
@@ -289,7 +265,7 @@ class StockManagementService {
     );
   }
 
-  /// Check if specific quantity can be added to cart (considering reservations)
+  /// Check if specific quantity can be added to cart
   static Future<bool> canAddToCart(String itemId, int currentCartQuantity, int additionalQuantity) async {
     try {
       final doc = await _firestore.collection('menuItems').doc(itemId).get();
@@ -298,15 +274,13 @@ class StockManagementService {
         final data = doc.data()!;
         final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
         final totalStock = data['quantity'] ?? 0;
-        final reservedQuantity = data['reservedQuantity'] ?? 0;
         final available = data['available'] ?? false;
-        final availableStock = totalStock - reservedQuantity;
         
         if (!available) return false;
         if (hasUnlimitedStock) return true;
         
         final totalRequested = currentCartQuantity + additionalQuantity;
-        return totalRequested <= availableStock;
+        return totalRequested <= totalStock;
       }
       return false;
     } catch (e) {
@@ -315,7 +289,7 @@ class StockManagementService {
     }
   }
 
-  /// Get detailed stock information including reservations (for admin)
+  /// Get detailed stock information (for admin)
   static Future<Map<String, dynamic>> getDetailedStockInfo(String itemId) async {
     try {
       final doc = await _firestore.collection('menuItems').doc(itemId).get();
@@ -323,20 +297,15 @@ class StockManagementService {
       if (doc.exists) {
         final data = doc.data()!;
         final totalQuantity = data['quantity'] ?? 0;
-        final reservedQuantity = data['reservedQuantity'] ?? 0;
-        final availableQuantity = totalQuantity - reservedQuantity;
         
         return {
           'itemId': itemId,
           'name': data['name'] ?? 'Unknown Item',
           'hasUnlimitedStock': data['hasUnlimitedStock'] ?? false,
-          'totalQuantity': totalQuantity,
-          'reservedQuantity': reservedQuantity,
-          'availableQuantity': availableQuantity,
+          'quantity': totalQuantity,
           'available': data['available'] ?? false,
           'price': data['price'] ?? 0.0,
           'lastStockUpdate': data['lastStockUpdate'],
-          'lastReservationUpdate': data['lastReservationUpdate'],
         };
       }
       
@@ -344,31 +313,6 @@ class StockManagementService {
     } catch (e) {
       print('Error getting detailed stock info: $e');
       return {'error': 'Error retrieving stock info'};
-    }
-  }
-
-  /// Initialize reserved quantity field for existing items (migration helper)
-  static Future<bool> initializeReservedQuantityField() async {
-    try {
-      final snapshot = await _firestore.collection('menuItems').get();
-      WriteBatch batch = _firestore.batch();
-      
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        if (!data.containsKey('reservedQuantity')) {
-          batch.update(doc.reference, {
-            'reservedQuantity': 0,
-            'lastReservationUpdate': FieldValue.serverTimestamp(),
-          });
-        }
-      }
-      
-      await batch.commit();
-      print('✅ Initialized reservedQuantity field for all items');
-      return true;
-    } catch (e) {
-      print('❌ Error initializing reservedQuantity field: $e');
-      return false;
     }
   }
 }

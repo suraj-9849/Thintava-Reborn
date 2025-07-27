@@ -1,4 +1,4 @@
-// lib/presentation/widgets/cart/cart_dialogs.dart - UPDATED WITH ACTIVE ORDER CHECK
+// lib/presentation/widgets/cart/cart_dialogs.dart - SIMPLIFIED (NO RESERVATION DIALOGS)
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
@@ -6,220 +6,7 @@ import 'package:canteen_app/screens/user/user_home.dart';
 import 'package:canteen_app/services/active_order_service.dart';
 
 class CartDialogs {
-  static Future<bool> showReservationConfirmDialog(BuildContext context) async {
-    return await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.schedule,
-                color: Colors.blue,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Reserve Items?',
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
-                ),
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'We\'ll reserve these items for you for 10 minutes while you complete payment.',
-              style: GoogleFonts.poppins(fontSize: 16),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.orange.withOpacity(0.3)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.warning_amber, color: Colors.orange, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'If payment isn\'t completed within 10 minutes, items will be released.',
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: Colors.orange.shade700,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.green.withOpacity(0.3)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.check_circle, color: Colors.green, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Payment will be automatically captured after successful authorization.',
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: Colors.green.shade700,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.poppins(
-                color: Colors.grey[600],
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFFB703),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            ),
-            icon: const Icon(Icons.schedule, size: 18),
-            label: Text(
-              'Reserve & Pay',
-              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
-    ) ?? false;
-  }
-
-  static void showReservationErrorDialog(
-    BuildContext context, 
-    String error, 
-    Map<String, String> itemErrors,
-    Map<String, dynamic> menuMap,
-  ) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.error_outline,
-                color: Colors.red,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Cannot Reserve Items',
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
-                ),
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              error,
-              style: GoogleFonts.poppins(fontSize: 16),
-            ),
-            if (itemErrors.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Text(
-                'Item Issues:',
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 8),
-              ...itemErrors.entries.map((entry) {
-                final itemName = menuMap[entry.key]?['name'] ?? entry.key;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.error, color: Colors.red, size: 16),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '$itemName: ${entry.value}',
-                          style: GoogleFonts.poppins(fontSize: 12),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ],
-          ],
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFFB703),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: Text(
-              'OK',
-              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // NEW: Active Order Block Dialog
+  // Active Order Block Dialog (kept as it's still needed)
   static void showActiveOrderBlockDialog(
     BuildContext context,
     ActiveOrderResult activeOrder,
@@ -484,7 +271,7 @@ class CartDialogs {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    "Your order has been placed successfully and payment will be automatically captured.",
+                    "Your order has been placed successfully and payment has been processed.",
                     style: GoogleFonts.poppins(fontSize: 16),
                   ),
                   const SizedBox(height: 12),
@@ -567,7 +354,7 @@ class CartDialogs {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      "Payment will be automatically captured within 12 minutes of authorization.",
+                      "Payment has been successfully processed.",
                       style: GoogleFonts.poppins(
                         fontSize: 13,
                         color: Colors.green.shade700,

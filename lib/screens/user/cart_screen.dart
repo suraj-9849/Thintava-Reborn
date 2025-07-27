@@ -1,11 +1,10 @@
-// lib/screens/user/cart_screen.dart - UPDATED WITH ACTIVE ORDER CHECK
+// lib/screens/user/cart_screen.dart - FIXED VERSION
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:canteen_app/providers/cart_provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:canteen_app/presentation/widgets/cart/cart_item_widget.dart';
-import 'package:canteen_app/presentation/widgets/cart/cart_summary_widget.dart';
 import 'package:canteen_app/presentation/widgets/cart/cart_payment_handler.dart';
 import 'package:canteen_app/presentation/widgets/cart/active_order_banner.dart';
 import 'package:canteen_app/services/active_order_service.dart';
@@ -21,7 +20,7 @@ class _CartScreenState extends State<CartScreen> {
   double total = 0;
   Map<String, dynamic> menuMap = {};
   bool isLoading = true;
-  bool isReserving = false;
+  bool isProcessing = false;
   CartPaymentHandler? _paymentHandler;
   
   // Active order state
@@ -89,24 +88,20 @@ class _CartScreenState extends State<CartScreen> {
     });
   }
 
-  Future<void> _reserveAndProceedToPayment() async {
+  Future<void> _startPayment() async {
     setState(() {
-      isReserving = true;
+      isProcessing = true;
     });
 
     try {
-      await _paymentHandler?.reserveAndProceedToPayment();
+      await _paymentHandler?.startPayment();
     } finally {
       if (mounted) {
         setState(() {
-          isReserving = false;
+          isProcessing = false;
         });
       }
     }
-  }
-
-  void _startPayment() async {
-    await _paymentHandler?.startPayment();
   }
 
   void _showClearCartDialog() {
@@ -119,7 +114,7 @@ class _CartScreenState extends State<CartScreen> {
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
         ),
         content: Text(
-          "Are you sure you want to clear your cart? Any active reservations will be released.",
+          "Are you sure you want to clear your cart?",
           style: GoogleFonts.poppins(),
         ),
         actions: [
@@ -128,10 +123,9 @@ class _CartScreenState extends State<CartScreen> {
             child: Text("CANCEL", style: GoogleFonts.poppins()),
           ),
           TextButton(
-            onPressed: () async {
+            onPressed: () {
               Navigator.pop(context);
               final cartProvider = Provider.of<CartProvider>(context, listen: false);
-              await cartProvider.releaseReservations();
               cartProvider.clearCart();
             },
             child: Text("CLEAR", style: GoogleFonts.poppins()),
@@ -218,13 +212,7 @@ class _CartScreenState extends State<CartScreen> {
         _buildCartContent(cartProvider),
         
         if (!cartProvider.isEmpty)
-          CartSummaryWidget(
-            total: total,
-            isReserving: isReserving,
-            hasActiveReservations: cartProvider.hasActiveReservations,
-            onReserveAndPay: _reserveAndProceedToPayment,
-            onPayNow: _startPayment,
-          ),
+          _buildCartSummary(),
       ],
     );
   }
@@ -254,24 +242,6 @@ class _CartScreenState extends State<CartScreen> {
               color: Colors.white,
             ),
           ),
-          if (cartProvider.hasActiveReservations) ...[
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                "Reserved",
-                style: GoogleFonts.poppins(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
           if (_activeOrder != null) ...[
             const SizedBox(width: 8),
             Container(
@@ -366,17 +336,181 @@ class _CartScreenState extends State<CartScreen> {
         final item = menuMap[itemId];
         
         if (item == null) return const SizedBox();
-        
-        final isReserved = cartProvider.isItemReserved(itemId);
 
         return CartItemWidget(
           itemId: itemId,
           quantity: quantity,
           item: item,
-          isReserved: isReserved,
           cartProvider: cartProvider,
         );
       },
+    );
+  }
+
+  // Inline cart summary to fix the import issue
+  Widget _buildCartSummary() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(24),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Bill details
+          _buildBillDetails(),
+          const SizedBox(height: 16),
+          
+          // Place order button
+          _buildOrderButton(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBillDetails() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          "BILL DETAILS",
+          style: GoogleFonts.poppins(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: const Color(0xFF023047),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              "Item Total",
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                color: Colors.grey[700],
+              ),
+            ),
+            Text(
+              "₹${total.toStringAsFixed(2)}",
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              "GST",
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                color: Colors.grey[700],
+              ),
+            ),
+            Text(
+              "Included",
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        const Divider(),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              "Grand Total",
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFF023047),
+              ),
+            ),
+            Text(
+              "₹${total.toStringAsFixed(2)}",
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFFFFB703),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOrderButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 50,
+      child: ElevatedButton(
+        onPressed: isProcessing ? null : _startPayment,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isProcessing
+            ? Colors.grey[400] 
+            : const Color(0xFFFFB703),
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          elevation: 0,
+        ),
+        child: isProcessing
+          ? Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  "Processing Payment...",
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            )
+          : Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.payment),
+                const SizedBox(width: 8),
+                Text(
+                  "Pay Now • ₹${total.toStringAsFixed(2)}",
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+      ),
     );
   }
 }

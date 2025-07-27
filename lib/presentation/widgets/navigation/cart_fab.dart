@@ -1,4 +1,4 @@
-// lib/presentation/widgets/navigation/cart_fab.dart
+// lib/presentation/widgets/navigation/cart_fab.dart - SIMPLIFIED (NO RESERVATION)
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -67,9 +67,7 @@ class CartFloatingActionButton extends StatelessWidget {
               ],
             ),
             label: Text(
-              cartProvider.hasActiveReservations 
-                ? "View Cart (Reserved)" 
-                : "View Cart",
+              "View Cart",
               style: GoogleFonts.poppins(
                 fontWeight: FontWeight.w700,
                 fontSize: 14,
