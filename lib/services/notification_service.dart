@@ -1,14 +1,10 @@
-// ============================================================================
-// FILE 1: lib/services/notification_service.dart (FIXED VERSION)
-// ============================================================================
-
+// lib/services/notification_service.dart - FINAL FIXED VERSION (PROPER VIBRATION PATTERN HANDLING)
 import 'dart:async';
-import 'dart:typed_data'; // Add this import for Int64List
+import 'dart:typed_data';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/material.dart';
-// FIXED: Add missing imports
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -17,6 +13,12 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   print('📱 Background notification received: ${message.messageId}');
   print('📱 Data: ${message.data}');
+  
+  // Handle session termination notifications in background
+  if (message.data['type'] == 'SESSION_TERMINATED') {
+    print('📱 Session termination notification in background');
+    // The notification will be shown when user opens the app
+  }
   
   // Only process order-related notifications
   if (message.data['type'] != null && 
@@ -32,6 +34,9 @@ class NotificationService {
 
   // Navigation callback for handling notification taps
   static Function(String)? onNotificationTap;
+  
+  // ADDED: Callback for handling session termination notifications
+  static VoidCallback? onSessionTerminationReceived;
 
   static Future<void> initializeNotifications() async {
     print('🔔 Initializing enhanced order notifications...');
@@ -111,30 +116,50 @@ class NotificationService {
         vibrationPattern: Int64List.fromList([0, 500, 1000, 500]),
       );
 
-      // Channel for urgent notifications (expiring orders)
+      // Channel for urgent notifications (expiring orders and session termination)
       final AndroidNotificationChannel urgentChannel = AndroidNotificationChannel(
         'thintava_urgent',
-        'Urgent Order Alerts',
-        description: 'Critical alerts for order expiration and urgent updates',
+        'Urgent Alerts',
+        description: 'Critical alerts for order expiration and security notifications',
         importance: Importance.max,
         playSound: true,
         enableVibration: true,
         vibrationPattern: Int64List.fromList([0, 300, 100, 300, 100, 300]),
       );
 
+      // ADDED: Channel for session/security notifications
+      final AndroidNotificationChannel securityChannel = AndroidNotificationChannel(
+        'thintava_security',
+        'Security Notifications',
+        description: 'Important security and session notifications',
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+        vibrationPattern: Int64List.fromList([0, 1000, 500, 1000]),
+      );
+
       await androidImplementation.createNotificationChannel(orderChannel);
       await androidImplementation.createNotificationChannel(urgentChannel);
+      await androidImplementation.createNotificationChannel(securityChannel);
       
       print('📱 Notification channels created successfully');
     }
   }
 
+  // ENHANCED: Foreground message handler with session termination support
   static Future<void> _setupForegroundMessageHandler() async {
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       print('📱 Foreground notification received: ${message.messageId}');
       print('📱 Data: ${message.data}');
 
-      // Only process order-related notifications
+      // Handle session termination notifications
+      if (message.data['type'] == 'SESSION_TERMINATED') {
+        print('📱 Session termination notification in foreground');
+        _handleSessionTerminationNotification(message);
+        return;
+      }
+
+      // Only process order-related notifications for local display
       if (!_isOrderRelatedNotification(message)) {
         print('📱 Ignoring non-order notification');
         return;
@@ -148,7 +173,69 @@ class NotificationService {
     });
   }
 
-  // FIXED: Add this method to NotificationService class
+  // ADDED: Handle session termination notifications in foreground
+  static void _handleSessionTerminationNotification(RemoteMessage message) {
+    // If we have a session termination callback, call it
+    if (onSessionTerminationReceived != null) {
+      print('📱 Triggering session termination callback');
+      onSessionTerminationReceived!();
+    } else {
+      print('📱 No session termination callback registered');
+      // Show a local notification as fallback
+      _showSessionTerminationLocalNotification(message);
+    }
+  }
+
+  // ADDED: Show local notification for session termination
+  static Future<void> _showSessionTerminationLocalNotification(RemoteMessage message) async {
+    // FIXED: Create AndroidNotificationDetails without const to allow Int64List.fromList()
+    final androidDetails = AndroidNotificationDetails(
+      'thintava_security',
+      'Security Notifications',
+      channelDescription: 'Session security notifications',
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: '@mipmap/ic_launcher',
+      color: const Color(0xFFFF5722),
+      playSound: true,
+      enableVibration: true,
+      vibrationPattern: Int64List.fromList([0, 1000, 500, 1000]),
+      styleInformation: const BigTextStyleInformation(
+        'Your account has been logged in on another device. This device has been logged out for security.',
+        htmlFormatBigText: true,
+        contentTitle: '🔐 New Device Login Detected',
+        htmlFormatContentTitle: true,
+      ),
+      fullScreenIntent: true,
+      category: AndroidNotificationCategory.alarm,
+    );
+
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      sound: 'default',
+      badgeNumber: 1,
+      interruptionLevel: InterruptionLevel.critical,
+    );
+
+    final details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    await flutterLocalNotificationsPlugin.show(
+      999998, // Unique ID for session notifications
+      '🔐 New Device Login Detected',
+      'Your account was logged in on another device',
+      details,
+      payload: 'SESSION_TERMINATED|security_alert|view_auth',
+    );
+
+    print('📱 Session termination local notification shown');
+  }
+
+  // Add method to ensure kitchen FCM token is updated
   static Future<void> ensureKitchenTokenIsUpdated() async {
     try {
       User? currentUser = FirebaseAuth.instance.currentUser;
@@ -184,15 +271,23 @@ class NotificationService {
   static Future<void> _setupNotificationOpenedHandler() async {
     // Handle notification that opened the app from terminated state
     RemoteMessage? initialMessage = await FirebaseMessaging.instance.getInitialMessage();
-    if (initialMessage != null && _isOrderRelatedNotification(initialMessage)) {
-      print('📱 App opened from terminated state by order notification');
-      _handleNotificationNavigation(initialMessage.data);
+    if (initialMessage != null) {
+      if (initialMessage.data['type'] == 'SESSION_TERMINATED') {
+        print('📱 App opened from terminated state by session termination notification');
+        // The app will handle this in the auth flow
+      } else if (_isOrderRelatedNotification(initialMessage)) {
+        print('📱 App opened from terminated state by order notification');
+        _handleNotificationNavigation(initialMessage.data);
+      }
     }
 
     // Handle notification that opened the app from background state
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      print('📱 App opened from background by order notification');
-      if (_isOrderRelatedNotification(message)) {
+      if (message.data['type'] == 'SESSION_TERMINATED') {
+        print('📱 App opened from background by session termination notification');
+        // The session listener will handle this
+      } else if (_isOrderRelatedNotification(message)) {
+        print('📱 App opened from background by order notification');
         _handleNotificationNavigation(message.data);
       }
     });
@@ -225,9 +320,10 @@ class NotificationService {
       color = const Color(0xFFFF5722);
     }
 
-    // Create rich notification content - FIXED FOR MISSING PRICE DATA
+    // Create rich notification content
     String expandedText = _createExpandedNotificationText(message.data);
     
+    // FIXED: Create AndroidNotificationDetails without const to allow Int64List.fromList()
     final androidDetails = AndroidNotificationDetails(
       channelId,
       channelName,
@@ -278,7 +374,7 @@ class NotificationService {
     print('📱 Enhanced local notification shown for type: $type');
   }
 
-  // FIXED: Remove pricing information from notification text
+  // Remove pricing information from notification text
   static String _createExpandedNotificationText(Map<String, dynamic> data) {
     final type = data['type']?.toString() ?? '';
     final orderId = data['orderId']?.toString() ?? '';
@@ -288,7 +384,6 @@ class NotificationService {
       case 'NEW_ORDER':
         final itemCount = data['itemCount']?.toString() ?? '0';
         final customerEmail = data['customerEmail']?.toString() ?? 'Unknown';
-        // REMOVED: orderTotal/pricing information
         return '<b>New Order #$shortOrderId</b><br/>'
                '📦 $itemCount items<br/>'
                '👤 $customerEmail<br/>'
@@ -298,14 +393,12 @@ class NotificationService {
         final oldStatus = data['oldStatus']?.toString() ?? '';
         final newStatus = data['newStatus']?.toString() ?? '';
         final itemCount = data['itemCount']?.toString() ?? '0';
-        // REMOVED: orderTotal/pricing information
         return '<b>Order #$shortOrderId Updated</b><br/>'
                '📋 Status: $oldStatus → $newStatus<br/>'
                '📦 $itemCount items<br/>'
                '<i>Tap to track your order</i>';
                
       case 'ORDER_EXPIRING':
-        // REMOVED: orderTotal/pricing information
         return '<b>⚠ Order #$shortOrderId Expiring!</b><br/>'
                '⏰ Expires in 1 minute<br/>'
                '<b><i>COLLECT NOW!</i></b>';
@@ -377,6 +470,14 @@ class NotificationService {
     final action = data['action']?.toString() ?? '';
     final type = data['type']?.toString() ?? '';
     
+    // Handle session termination navigation
+    if (type == 'SESSION_TERMINATED') {
+      if (onNotificationTap != null) {
+        onNotificationTap!('/auth');
+      }
+      return;
+    }
+    
     // Only handle order-related navigation
     if (onNotificationTap != null) {
       switch (action) {
@@ -399,11 +500,25 @@ class NotificationService {
     }
   }
 
+  // ADDED: Set session termination callback
+  static void setSessionTerminationCallback(VoidCallback callback) {
+    onSessionTerminationReceived = callback;
+    print('📱 Session termination callback registered');
+  }
+
+  // ADDED: Clear session termination callback
+  static void clearSessionTerminationCallback() {
+    onSessionTerminationReceived = null;
+    print('📱 Session termination callback cleared');
+  }
+
   // Call this method when logging out to clean up notification resources
   static Future<void> cleanupNotifications() async {
     try {
       // Clear all displayed notifications
       await flutterLocalNotificationsPlugin.cancelAll();
+      // Clear callbacks
+      onSessionTerminationReceived = null;
       print('🔔 All notifications cleared');
     } catch (e) {
       print("❌ Error cleaning up notifications: $e");
@@ -423,15 +538,16 @@ class NotificationService {
 
   // Method to show a test notification (for debugging)
   static Future<void> showTestOrderNotification() async {
-    const androidDetails = AndroidNotificationDetails(
+    // FIXED: Create AndroidNotificationDetails without const to avoid issues
+    final androidDetails = AndroidNotificationDetails(
       'thintava_orders',
       'Order Updates',
       channelDescription: 'Test notification for order updates',
       importance: Importance.high,
       priority: Priority.high,
       icon: '@mipmap/ic_launcher',
-      color: Color(0xFFFFB703),
-      styleInformation: BigTextStyleInformation(
+      color: const Color(0xFFFFB703),
+      styleInformation: const BigTextStyleInformation(
         'This is a test notification to verify that order notifications are working correctly.',
         htmlFormatBigText: true,
         contentTitle: '🧪 Test Order Notification',
@@ -445,7 +561,7 @@ class NotificationService {
       presentSound: true,
     );
 
-    const details = NotificationDetails(
+    final details = NotificationDetails(
       android: androidDetails,
       iOS: iosDetails,
     );

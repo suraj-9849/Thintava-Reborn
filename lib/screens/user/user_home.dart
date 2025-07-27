@@ -1,4 +1,4 @@
-// lib/screens/user/user_home.dart - OPTIMIZED VERSION
+// lib/screens/user/user_home.dart - FIXED VERSION (PREVENTS DIALOG ON INTENTIONAL LOGOUT)
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -27,6 +27,9 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
   final _authService = AuthService();
   late int _currentIndex;
   final PageController _pageController = PageController();
+  
+  // ADDED: Flag to track if we're in intentional logout process
+  bool _isLoggingOut = false;
 
   @override
   void initState() {
@@ -45,8 +48,14 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
       }
     });
     
+    // FIXED: Enhanced session listener with intentional logout check
     _authService.startSessionListener(() {
-      logout(context, forceLogout: true);
+      // Only show dialog if we're not in an intentional logout process
+      if (!_isLoggingOut && mounted) {
+        logout(context, forceLogout: true);
+      } else {
+        print('🚪 Skipping forced logout - intentional logout in progress or widget disposed');
+      }
     });
   }
 
@@ -63,8 +72,20 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
     _fadeController.forward();
   }
 
+  // FIXED: Enhanced logout method with intentional logout flag
   void logout(BuildContext context, {bool forceLogout = false}) async {
+    // Prevent multiple logout attempts
+    if (_isLoggingOut) {
+      print('🚪 Logout already in progress, skipping');
+      return;
+    }
+    
     if (!forceLogout) {
+      // Set the flag BEFORE starting logout process
+      setState(() {
+        _isLoggingOut = true;
+      });
+      
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -119,32 +140,61 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
       );
       
       await Future.delayed(const Duration(seconds: 2));
+    } else {
+      // For forced logout, also set the flag
+      setState(() {
+        _isLoggingOut = true;
+      });
+      print('🚫 Forced logout initiated');
     }
     
-    final cartProvider = Provider.of<CartProvider>(context, listen: false);
-    await cartProvider.cleanup();
+    try {
+      // Clean up cart first
+      final cartProvider = Provider.of<CartProvider>(context, listen: false);
+      await cartProvider.cleanup();
+      print('✅ Cart cleaned up during logout');
+      
+      // Perform the actual logout
+      await _authService.logout();
+      print('✅ AuthService logout completed');
+      
+    } catch (e) {
+      print('❌ Error during logout: $e');
+    }
     
-    await _authService.logout();
-    
+    // Navigate to auth screen
     if (!forceLogout && context.mounted) {
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(); // Close the dialog
     }
     
     if (context.mounted) {
       Navigator.popUntil(context, (route) => route.isFirst);
       Navigator.of(context).pushReplacementNamed('/auth');
     }
+    
+    // Reset the logout flag
+    if (mounted) {
+      setState(() {
+        _isLoggingOut = false;
+      });
+    }
   }
 
   @override
   void dispose() {
+    // Stop session listener and cleanup
+    _authService.stopSessionListener();
     _fadeController.dispose();
     _pageController.dispose();
-    _authService.stopSessionListener();
     super.dispose();
   }
 
   void navigateToTab(int index) {
+    if (_isLoggingOut) {
+      print('🚪 Ignoring navigation - logout in progress');
+      return;
+    }
+    
     setState(() {
       _currentIndex = index;
     });
@@ -157,13 +207,41 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    // Show loading if logout is in progress
+    if (_isLoggingOut) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFB703)),
+                strokeWidth: 3,
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Logging out...',
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  color: Colors.grey[700],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    
     return Scaffold(
       body: PageView(
         controller: _pageController,
         onPageChanged: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
+          if (!_isLoggingOut) {
+            setState(() {
+              _currentIndex = index;
+            });
+          }
         },
         children: [
           HomeTab(
@@ -179,10 +257,12 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
         currentIndex: _currentIndex,
         onTap: navigateToTab,
       ),
-      floatingActionButton: _currentIndex == 0
+      floatingActionButton: (_currentIndex == 0 && !_isLoggingOut)
           ? CartFloatingActionButton(
               onPressed: () {
-                Navigator.pushNamed(context, '/cart');
+                if (!_isLoggingOut) {
+                  Navigator.pushNamed(context, '/cart');
+                }
               },
             )
           : null,

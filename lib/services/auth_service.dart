@@ -1,4 +1,4 @@
-// lib/services/auth_service.dart - REMOVE USERNAME SETUP REQUIREMENT
+// lib/services/auth_service.dart - FIXED VERSION (PREVENTS DIALOG ON INTENTIONAL LOGOUT)
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -11,10 +11,13 @@ class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
-  final SessionManager _sessionManager = SessionManager(); // ENABLED
+  final SessionManager _sessionManager = SessionManager();
 
   // Flag to prevent session check during login process
   bool _isLoggingIn = false;
+  
+  // ADDED: Flag to prevent forced logout dialog during intentional logout
+  bool _isIntentionalLogout = false;
 
   // Simple Google Sign-In with Device Management
   Future<UserAuthResult> signInWithGoogle() async {
@@ -190,9 +193,13 @@ class AuthService {
     return true;
   }
 
-  // Logout with session cleanup
+  // FIXED: Logout with session cleanup and intentional logout flag
   Future<void> logout() async {
     try {
+      // IMPORTANT: Set intentional logout flag FIRST
+      _isIntentionalLogout = true;
+      print('🚪 Starting intentional logout - flag set to prevent forced logout dialog');
+      
       final user = _auth.currentUser;
       
       if (user != null) {
@@ -215,8 +222,15 @@ class AuthService {
       await _auth.signOut();
       
       print('✅ Logout successful');
+      
+      // IMPORTANT: Reset the flag after logout is complete
+      _isIntentionalLogout = false;
+      
     } catch (e) {
       print('❌ Logout error: $e');
+      // Reset flag on error too
+      _isIntentionalLogout = false;
+      
       // Force logout
       try {
         await _sessionManager.clearSession();
@@ -239,6 +253,12 @@ class AuthService {
         return true;
       }
 
+      // ADDED: Skip session check during intentional logout
+      if (_isIntentionalLogout) {
+        print('⏳ Skipping session check - intentional logout in progress');
+        return true;
+      }
+
       final user = _auth.currentUser;
       if (user == null) {
         print('❌ No current user for session check');
@@ -252,9 +272,18 @@ class AuthService {
     }
   }
   
-  // Start listening for session changes
+  // FIXED: Start listening for session changes with intentional logout check
   void startSessionListener(VoidCallback onForcedLogout) {
-    _sessionManager.startSessionListener(onForcedLogout);
+    _sessionManager.startSessionListener(() {
+      // ADDED: Check if this is an intentional logout before showing dialog
+      if (_isIntentionalLogout) {
+        print('🚪 Skipping forced logout callback - intentional logout in progress');
+        return;
+      }
+      
+      print('🚫 Forced logout triggered by session manager');
+      onForcedLogout();
+    });
   }
   
   // Stop listening for session changes
@@ -315,6 +344,9 @@ class AuthService {
   String? get currentUserDisplayName => _auth.currentUser?.displayName;
   String? get currentUserPhotoURL => _auth.currentUser?.photoURL;
   Stream<User?> get authStateChanges => _auth.authStateChanges();
+
+  // ADDED: Getter to check if intentional logout is in progress (for debugging)
+  bool get isIntentionalLogout => _isIntentionalLogout;
 
   // User data methods
   Future<String?> getUserRole(String uid) async {

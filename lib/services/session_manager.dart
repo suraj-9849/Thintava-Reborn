@@ -1,4 +1,4 @@
-// lib/services/session_manager.dart - ENHANCED VERSION FOR DEVICE MANAGEMENT
+// lib/services/session_manager.dart - CORRECTED VERSION (FIXED SYNTAX ERRORS)
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +14,9 @@ class SessionManager {
   
   // Collection name for session management
   static const String _sessionCollection = 'user_sessions';
+  
+  // ADDED: Flag to track if session is being cleared intentionally
+  bool _isIntentionalClear = false;
   
   // Get current device identifier with better error handling
   Future<String> _getDeviceId() async {
@@ -275,9 +278,12 @@ class SessionManager {
     }
   }
   
-  // Clear the current session on logout with better error handling
+  // Clear the current session on logout with intentional flag
   Future<void> clearSession() async {
     try {
+      // Set the intentional clear flag
+      _isIntentionalClear = true;
+      
       final user = _auth.currentUser;
       if (user == null) {
         print('⚠️ No current user for session clearing');
@@ -285,7 +291,7 @@ class SessionManager {
       }
       
       final String deviceId = await _getDeviceId();
-      print("🧹 Clearing session for device: $deviceId");
+      print("🧹 Clearing session intentionally for device: $deviceId");
       
       // Get current session with timeout
       DocumentSnapshot sessionDoc = await _db.collection(_sessionCollection)
@@ -327,7 +333,7 @@ class SessionManager {
               .delete()
               .timeout(const Duration(seconds: 10));
           
-          print('✅ Session cleared for device: $deviceId');
+          print('✅ Session cleared intentionally for device: $deviceId');
         } else {
           print('⚠️ Device mismatch during session clearing: $activeDeviceId vs $deviceId');
         }
@@ -337,12 +343,20 @@ class SessionManager {
     } catch (e) {
       print('❌ Error clearing session: $e');
       // Don't throw - session clearing failure shouldn't prevent logout
+    } finally {
+      // Reset the flag after a delay
+      Future.delayed(const Duration(seconds: 2), () {
+        _isIntentionalClear = false;
+        print('✅ Intentional clear flag reset');
+      });
     }
   }
   
   // Set up a listener for session changes with better error handling
   StreamSubscription<DocumentSnapshot>? _sessionListener;
+  VoidCallback? _onForcedLogout;
   
+  // Enhanced session listener with intentional clear check
   void startSessionListener(VoidCallback onForcedLogout) {
     try {
       final user = _auth.currentUser;
@@ -351,6 +365,7 @@ class SessionManager {
         return;
       }
       
+      _onForcedLogout = onForcedLogout;
       print('👂 Starting session listener for user: ${user.uid}');
       
       _sessionListener = _db.collection(_sessionCollection)
@@ -358,10 +373,16 @@ class SessionManager {
           .snapshots()
           .listen((snapshot) async {
         try {
+          // ADDED: Check if this is an intentional clear
+          if (_isIntentionalClear) {
+            print('🚪 Session listener: Intentional clear in progress, skipping forced logout');
+            return;
+          }
+          
           if (!snapshot.exists || snapshot.data() == null) {
             // Session document was deleted
             print('❌ Session document no longer exists - forced logout');
-            onForcedLogout();
+            _triggerForcedLogout();
             return;
           }
           
@@ -378,7 +399,7 @@ class SessionManager {
             print('❌ Another device is now the active session - forced logout');
             final deviceInfo = data['deviceInfo'] as Map<String, dynamic>?;
             print('📱 New active device: ${deviceInfo?['platform']} ${deviceInfo?['model']}');
-            onForcedLogout();
+            _triggerForcedLogout();
           }
         } catch (e) {
           print('❌ Error in session listener callback: $e');
@@ -394,10 +415,24 @@ class SessionManager {
     }
   }
   
+  // Helper method to trigger forced logout with additional checks
+  void _triggerForcedLogout() {
+    if (_isIntentionalClear) {
+      print('🚪 Skipping forced logout trigger - intentional clear in progress');
+      return;
+    }
+    
+    if (_onForcedLogout != null) {
+      print('🚫 Triggering forced logout callback');
+      _onForcedLogout!();
+    }
+  }
+  
   void stopSessionListener() {
     try {
       _sessionListener?.cancel();
       _sessionListener = null;
+      _onForcedLogout = null;
       print('🛑 Session listener stopped');
     } catch (e) {
       print('❌ Error stopping session listener: $e');
@@ -457,4 +492,7 @@ class SessionManager {
       // Don't throw - this is not critical
     }
   }
+  
+  // Getter to check if intentional clear is in progress (for debugging)
+  bool get isIntentionalClear => _isIntentionalClear;
 }

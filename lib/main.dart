@@ -1,4 +1,4 @@
-// lib/main.dart - SIMPLIFIED VERSION (NO RESERVATION SYSTEM)
+// lib/main.dart - CORRECTED VERSION (FIXED AppBarThemeData ERROR)
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -182,9 +182,15 @@ class _ThintavaAppState extends State<ThintavaApp> {
     print('🚀 Thintava App initialized with Device Management');
   }
   
-  // DEVICE MANAGEMENT - FORCED LOGOUT HANDLER
+  // FIXED: DEVICE MANAGEMENT - ENHANCED FORCED LOGOUT HANDLER
   void _handleForcedLogout() {
     print('🚫 Device session terminated - handling forced logout');
+    
+    // Check if we're currently showing a dialog to avoid stacking dialogs
+    if (ModalRoute.of(navigatorKey.currentContext!)?.isCurrent != true) {
+      print('⚠️ Modal route not current, skipping forced logout dialog');
+      return;
+    }
     
     // Clean up cart
     try {
@@ -197,92 +203,137 @@ class _ThintavaAppState extends State<ThintavaApp> {
       print('⚠️ Error cleaning up cart during forced logout: $e');
     }
     
-    // Show notification dialog
-    if (navigatorKey.currentContext != null) {
-      showDialog(
-        context: navigatorKey.currentContext!,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: Row(
-            children: [
-              Icon(
+    // Show notification dialog ONLY if app is in foreground and context is available
+    if (navigatorKey.currentContext != null && WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+      // Add a small delay to ensure the UI is ready
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (navigatorKey.currentContext != null) {
+          _showForcedLogoutDialog();
+        }
+      });
+    } else {
+      // If app is not in foreground, just navigate to auth screen
+      print('📱 App not in foreground, navigating to auth without dialog');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (navigatorKey.currentContext != null) {
+          Navigator.pushNamedAndRemoveUntil(
+            navigatorKey.currentContext!,
+            '/auth',
+            (route) => false,
+          );
+        }
+      });
+    }
+  }
+  
+  // ADDED: Separate method for showing forced logout dialog
+  void _showForcedLogoutDialog() {
+    // Check if a dialog is already showing
+    if (ModalRoute.of(navigatorKey.currentContext!)?.settings.name == 'forced_logout_dialog') {
+      print('⚠️ Forced logout dialog already showing, skipping');
+      return;
+    }
+    
+    showDialog(
+      context: navigatorKey.currentContext!,
+      barrierDismissible: false,
+      routeSettings: const RouteSettings(name: 'forced_logout_dialog'), // Add route name
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
                 Icons.devices_other,
                 color: Colors.red,
                 size: 24,
               ),
-              const SizedBox(width: 8),
-              Text(
-                'Session Expired', 
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'New Device Login Detected', 
                 style: GoogleFonts.poppins(
                   fontWeight: FontWeight.bold,
                   color: Colors.red,
-                ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Your account has been logged in on another device.',
-                style: GoogleFonts.poppins(
                   fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'For security reasons, you have been automatically logged out from this device.',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline, color: Colors.blue, size: 16),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Only one device can be logged in at a time for security.',
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          color: Colors.blue[700],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                Navigator.pushNamedAndRemoveUntil(context, '/auth', (route) => false);
-              },
-              child: Text(
-                'Sign In Again',
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFFFFB703),
                 ),
               ),
             ),
           ],
         ),
-      );
-    }
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Your account has been logged in on another device.',
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'For security reasons, you have been automatically logged out from this device.',
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.blue, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Only one device can be logged in at a time for security.',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: Colors.blue[700],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop();
+              Navigator.pushNamedAndRemoveUntil(context, '/auth', (route) => false);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFB703),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            ),
+            icon: const Icon(Icons.login, size: 18),
+            label: Text(
+              'Sign In Again',
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
   
   @override
@@ -510,6 +561,7 @@ class _ThintavaAppState extends State<ThintavaApp> {
         ),
         color: Colors.white,
       ),
+      // FIXED: Changed AppBarThemeData to AppBarTheme
       appBarTheme: AppBarTheme(
         backgroundColor: const Color(0xFF004D40),
         elevation: 0,
