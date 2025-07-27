@@ -1,5 +1,7 @@
+// lib/screens/admin/admin_home.dart - UPDATED WITH ANALYTICS
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:canteen_app/services/auth_service.dart';
 import 'dart:ui';
 
@@ -53,6 +55,9 @@ class AdminHome extends StatelessWidget {
       Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
     }
   }
+
+  // Remove the analytics data fetching function since we don't need it in admin home anymore
+  // Future<Map<String, dynamic>> _getAnalyticsData() async { ... } - REMOVED
 
   @override
   Widget build(BuildContext context) {
@@ -222,22 +227,17 @@ class AdminHome extends StatelessWidget {
                   // Quick Actions Header
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 30, 20, 20),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Quick Actions',
-                          style: GoogleFonts.poppins(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
-                          ),
-                        ),
-                       ],
+                    child: Text(
+                      'Quick Actions',
+                      style: GoogleFonts.poppins(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
                     ),
                   ),
                   
-                  // Action Cards Grid
+                  // Action Cards Grid - UPDATED: Removed Live Orders, kept Kitchen View
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: GridView.count(
@@ -251,18 +251,18 @@ class AdminHome extends StatelessWidget {
                         _buildActionCard(
                           context,
                           title: 'Manage Menu',
-                          subtitle: 'Edit Menu',
+                          subtitle: 'Edit Menu Items',
                           icon: Icons.restaurant_menu,
                           color: Colors.orange,
                           onTap: () => Navigator.pushNamed(context, '/admin/menu'),
                         ),
                         _buildActionCard(
                           context,
-                          title: 'Live Orders',
-                          subtitle: 'View and manage current orders',
-                          icon: Icons.receipt_long,
-                          color: Colors.red,
-                          onTap: () => Navigator.pushNamed(context, '/admin/live-orders'),
+                          title: 'Kitchen View',
+                          subtitle: 'Monitor kitchen operations',
+                          icon: Icons.kitchen,
+                          color: Colors.green,
+                          onTap: () => Navigator.pushNamed(context, '/admin/admin-kitchen-view'),
                         ),
                         _buildActionCard(
                           context,
@@ -274,17 +274,16 @@ class AdminHome extends StatelessWidget {
                         ),
                         _buildActionCard(
                           context,
-                          title: 'Kitchen View',
-                          subtitle: 'Monitor kitchen operations',
-                          icon: Icons.kitchen,
-                          color: Colors.green,
-                          onTap: () => Navigator.pushNamed(context, '/admin/admin-kitchen-view'),
+                          title: 'Analytics',
+                          subtitle: 'Detailed analytics & reports',
+                          icon: Icons.analytics,
+                          color: Colors.purple,
+                          onTap: () => Navigator.pushNamed(context, '/admin/analytics'),
                         ),
                       ],
                     ),
                   ),
                   
-               
                   // Version Footer
                   Center(
                     child: Padding(
@@ -332,48 +331,48 @@ class AdminHome extends StatelessWidget {
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: iconBgColor,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              icon,
-              size: 24,
-              color: iconColor,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: iconBgColor,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  icon,
+                  size: 20,
+                  color: iconColor,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              color: Colors.grey[600],
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  title,
-                  style: GoogleFonts.poppins(
-                    fontSize: 13,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                Text(
-                  value,
-                  style: GoogleFonts.poppins(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  subtitle,
-                  style: GoogleFonts.poppins(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
-                ),
-              ],
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: GoogleFonts.poppins(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              color: Colors.grey[600],
             ),
           ),
         ],
@@ -453,60 +452,6 @@ class AdminHome extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildActivityItem({
-    required String title,
-    required String time,
-    required IconData icon,
-    required Color color,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              icon,
-              size: 24,
-              color: color,
-            ),
-          ),
-          const SizedBox(width: 15),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: GoogleFonts.poppins(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                Text(
-                  time,
-                  style: GoogleFonts.poppins(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Icon(
-            Icons.more_horiz,
-            color: Colors.grey[400],
-          ),
-        ],
       ),
     );
   }

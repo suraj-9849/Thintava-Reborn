@@ -1,4 +1,4 @@
-// lib/config/route_config.dart - UPDATED TO REMOVE KITCHEN DASHBOARD ROUTE
+// lib/config/route_config.dart - UPDATED ROUTES (REMOVED LIVE ORDERS, ADDED ANALYTICS)
 import 'package:flutter/material.dart';
 import 'package:canteen_app/screens/auth/auth_menu.dart';
 import 'package:canteen_app/screens/auth/username_setup_screen.dart';
@@ -11,8 +11,8 @@ import 'package:canteen_app/screens/admin/admin_home.dart';
 import 'package:canteen_app/screens/admin/menu_management_screen.dart';
 import 'package:canteen_app/screens/admin/admin_order_history_screen.dart';
 import 'package:canteen_app/screens/admin/admin_kitchen_view_screen.dart';
-import 'package:canteen_app/screens/admin/admin_live_orders.dart';
-import 'package:canteen_app/screens/kitchen/kitchen_home.dart'; // Now serves as the main dashboard
+import 'package:canteen_app/screens/admin/admin_analytics_screen.dart'; // NEW
+import 'package:canteen_app/screens/kitchen/kitchen_home.dart';
 import 'package:canteen_app/screens/splash/splash_screen.dart';
 
 class RouteConfig {
@@ -37,12 +37,12 @@ class RouteConfig {
       // Cart route (standalone is fine)
       '/cart': (_) => const CartScreen(),
       
-      // Admin routes
+      // Admin routes - UPDATED: REMOVED LIVE ORDERS, ADDED ANALYTICS
       '/admin/home': (_) => const AdminHome(),
       '/admin/menu': (_) => const MenuManagementScreen(),
-      '/admin/live-orders': (_) => const AdminLiveOrdersScreen(),
       '/admin/admin-history': (_) => const AdminOrderHistoryScreen(),
       '/admin/admin-kitchen-view': (_) => const AdminKitchenViewScreen(),
+      '/admin/analytics': (_) => const AdminAnalyticsScreen(), // NEW ANALYTICS ROUTE
       
       // Kitchen routes - SIMPLIFIED TO JUST ONE MAIN ROUTE
       '/kitchen': (_) => const KitchenHome(), // Now serves as the main dashboard
@@ -54,7 +54,7 @@ class RouteConfig {
     };
   }
   
-  // NEW: Helper methods for navigation
+  // Helper methods for navigation
   static void navigateToUserHome(BuildContext context, {int initialIndex = 0}) {
     Navigator.pushAndRemoveUntil(
       context,
@@ -77,7 +77,7 @@ class RouteConfig {
     navigateToUserHome(context, initialIndex: 3);
   }
 
-  // NEW: Kitchen navigation helper
+  // Kitchen navigation helper
   static void navigateToKitchenDashboard(BuildContext context) {
     Navigator.pushAndRemoveUntil(
       context,
@@ -86,5 +86,10 @@ class RouteConfig {
       ),
       (route) => false,
     );
+  }
+
+  // NEW: Admin analytics navigation helper
+  static void navigateToAdminAnalytics(BuildContext context) {
+    Navigator.pushNamed(context, '/admin/analytics');
   }
 }
