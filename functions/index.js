@@ -1,4 +1,4 @@
-// functions/index.js - SIMPLIFIED WITHOUT RESERVATION SYSTEM
+// functions/index.js - COMPLETE WITH RESERVATION SYSTEM
 const functions = require('firebase-functions/v1');
 const admin = require('firebase-admin');
 
@@ -236,10 +236,6 @@ exports.notifyKitchenOnNewOrder = functions.firestore
     }
   });
 
-// ============================================================================
-// STEP 2: ADD THIS TEST FUNCTION TO YOUR functions/index.js
-// ============================================================================
-
 // 🧪 Test function to manually trigger kitchen notifications
 exports.testKitchenNotifications = functions.https.onRequest(async (req, res) => {
   try {
@@ -286,7 +282,7 @@ exports.testKitchenNotifications = functions.https.onRequest(async (req, res) =>
   }
 });
 
-// 🚀 Enhanced function: notify user when order status changes - FIXED PRICING
+// 🚀 Enhanced function: notify user when order status changes
 exports.notifyUserOnOrderStatusChange = functions.firestore
   .document('orders/{orderId}')
   .onUpdate(async (change, context) => {
@@ -489,7 +485,7 @@ exports.sendWelcomeNotification = functions.firestore
   });
 
 // ============================================================================
-// RAZORPAY FUNCTIONS - AUTO-CAPTURE INTEGRATION (NO RESERVATION CHANGES)
+// RAZORPAY FUNCTIONS - AUTO-CAPTURE INTEGRATION WITH RESERVATION SYSTEM
 // ============================================================================
 
 // 🔥 Create Razorpay order for auto-capture
@@ -554,7 +550,7 @@ exports.createRazorpayOrder = functions.https.onCall(async (data, context) => {
   }
 });
 
-// 🔥 Verify Razorpay payment
+// 🔥 Verify Razorpay payment WITH RESERVATION SYSTEM
 exports.verifyRazorpayPayment = functions.https.onCall(async (data, context) => {
   try {
     // Check if user is authenticated
@@ -569,7 +565,7 @@ exports.verifyRazorpayPayment = functions.https.onCall(async (data, context) => 
       throw new functions.https.HttpsError('invalid-argument', 'Payment ID, Order ID, and Signature are required');
     }
 
-    console.log(`🔍 Verifying payment: ${razorpay_payment_id} for order: ${razorpay_order_id}`);
+    console.log(`🔍 Verifying payment with reservation: ${razorpay_payment_id} for order: ${razorpay_order_id}`);
 
     // Create signature verification string
     const generated_signature = crypto
@@ -581,7 +577,11 @@ exports.verifyRazorpayPayment = functions.https.onCall(async (data, context) => 
     const isSignatureValid = generated_signature === razorpay_signature;
 
     if (!isSignatureValid) {
-      console.log('❌ Invalid payment signature');
+      console.log('❌ Invalid payment signature - failing reservation');
+      
+      // Fail any associated reservation
+      await failReservationByPaymentId(razorpay_order_id);
+      
       throw new functions.https.HttpsError('permission-denied', 'Invalid payment signature');
     }
 
@@ -589,6 +589,9 @@ exports.verifyRazorpayPayment = functions.https.onCall(async (data, context) => 
 
     // Get payment details from Razorpay
     const payment = await razorpay.payments.fetch(razorpay_payment_id);
+
+    // Complete the reservation
+    await completeReservationByPaymentId(razorpay_order_id);
 
     // Store payment info in Firestore
     await admin.firestore().collection('razorpay_payments').doc(razorpay_payment_id).set({
@@ -602,6 +605,7 @@ exports.verifyRazorpayPayment = functions.https.onCall(async (data, context) => 
       verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
       razorpayData: payment,
       autoCaptured: payment.captured || false,
+      reservationCompleted: true,
     });
 
     // Update order status
@@ -611,9 +615,10 @@ exports.verifyRazorpayPayment = functions.https.onCall(async (data, context) => 
       paymentVerified: true,
       verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
       autoCaptured: payment.captured || false,
+      reservationCompleted: true,
     });
 
-    console.log(`✅ Payment verification completed for: ${razorpay_payment_id}`);
+    console.log(`✅ Payment verification and reservation completion done for: ${razorpay_payment_id}`);
 
     return {
       success: true,
@@ -623,10 +628,17 @@ exports.verifyRazorpayPayment = functions.https.onCall(async (data, context) => 
       method: payment.method,
       captured: payment.captured || false,
       verified: true,
+      reservationCompleted: true,
     };
 
   } catch (error) {
-    console.error('❌ Error verifying payment:', error);
+    console.error('❌ Error verifying payment with reservation:', error);
+    
+    // Try to fail reservation on any error
+    if (data.razorpay_order_id) {
+      await failReservationByPaymentId(data.razorpay_order_id);
+    }
+    
     if (error instanceof functions.https.HttpsError) {
       throw error;
     }
@@ -634,10 +646,10 @@ exports.verifyRazorpayPayment = functions.https.onCall(async (data, context) => 
   }
 });
 
-// 🔥 Razorpay webhook handler for auto-capture events
+// 🔥 Razorpay webhook handler WITH RESERVATION SYSTEM
 exports.handleRazorpayWebhook = functions.https.onRequest(async (req, res) => {
   try {
-    console.log('📨 Razorpay webhook received');
+    console.log('📨 Razorpay webhook received (with reservations)');
 
     // Verify webhook signature
     const webhookSignature = req.headers['x-razorpay-signature'];
@@ -678,15 +690,18 @@ exports.handleRazorpayWebhook = functions.https.onRequest(async (req, res) => {
 
     res.status(200).send('OK');
   } catch (error) {
-    console.error('❌ Error handling webhook:', error);
+    console.error('❌ Error handling webhook with reservations:', error);
     res.status(500).send('Internal server error');
   }
 });
 
-// Helper function to handle payment captured event
+// Helper function to handle payment captured event WITH RESERVATION
 async function handlePaymentCaptured(payment) {
   try {
-    console.log(`✅ Payment auto-captured: ${payment.id} for amount ${payment.amount}`);
+    console.log(`✅ Payment auto-captured with reservation: ${payment.id} for amount ${payment.amount}`);
+
+    // Complete the reservation
+    await completeReservationByPaymentId(payment.order_id);
 
     // Update payment status in Firestore
     await admin.firestore().collection('razorpay_payments').doc(payment.id).set({
@@ -699,6 +714,7 @@ async function handlePaymentCaptured(payment) {
       razorpayData: payment,
       awaitingCapture: false,
       autoCaptured: true,
+      reservationCompleted: true,
     }, { merge: true });
 
     // Find and update the corresponding order
@@ -715,11 +731,12 @@ async function handlePaymentCaptured(payment) {
         paymentCapturedAt: admin.firestore.FieldValue.serverTimestamp(),
         paymentMethod: payment.method,
         autoCaptured: true,
+        reservationCompleted: true,
       });
 
-      console.log(`✅ Order ${orderDoc.id} updated with auto-capture status`);
+      console.log(`✅ Order ${orderDoc.id} updated with auto-capture and reservation completion status`);
 
-      // Send notification to kitchen about confirmed payment - NO PRICING
+      // Send notification to kitchen about confirmed payment
       const kitchenUsers = await admin.firestore().collection('users')
         .where('role', '==', 'kitchen')
         .get();
@@ -745,14 +762,17 @@ async function handlePaymentCaptured(payment) {
       }
     }
   } catch (error) {
-    console.error('❌ Error handling payment captured:', error);
+    console.error('❌ Error handling payment captured with reservation:', error);
   }
 }
 
-// Helper function to handle payment failed event
+// Helper function to handle payment failed event WITH RESERVATION
 async function handlePaymentFailed(payment) {
   try {
-    console.log(`❌ Payment failed: ${payment.id} - ${payment.error_description}`);
+    console.log(`❌ Payment failed with reservation: ${payment.id} - ${payment.error_description}`);
+
+    // Fail the reservation to release items
+    await failReservationByPaymentId(payment.order_id);
 
     // Update payment status
     await admin.firestore().collection('razorpay_payments').doc(payment.id).set({
@@ -764,6 +784,7 @@ async function handlePaymentFailed(payment) {
       errorCode: payment.error_code,
       errorDescription: payment.error_description,
       razorpayData: payment,
+      reservationFailed: true,
     }, { merge: true });
 
     // Handle order cleanup if needed
@@ -780,34 +801,552 @@ async function handlePaymentFailed(payment) {
         paymentFailedAt: admin.firestore.FieldValue.serverTimestamp(),
         paymentError: payment.error_description,
         status: 'Payment Failed',
+        reservationFailed: true,
       });
 
-      console.log(`❌ Order ${orderDoc.id} marked as payment failed`);
+      console.log(`❌ Order ${orderDoc.id} marked as payment failed with reservation release`);
     }
 
   } catch (error) {
-    console.error('❌ Error handling payment failed:', error);
+    console.error('❌ Error handling payment failed with reservation:', error);
   }
 }
 
 // Helper function to handle order paid event
 async function handleOrderPaid(order) {
   try {
-    console.log(`💰 Order paid: ${order.id} for amount ${order.amount_paid}`);
+    console.log(`💰 Order paid with reservation: ${order.id} for amount ${order.amount_paid}`);
 
     // Update order status
     await admin.firestore().collection('razorpay_orders').doc(order.id).update({
       status: 'paid',
       amountPaid: order.amount_paid,
       paidAt: admin.firestore.FieldValue.serverTimestamp(),
+      reservationHandled: true,
     });
 
   } catch (error) {
-    console.error('❌ Error handling order paid:', error);
+    console.error('❌ Error handling order paid with reservation:', error);
   }
 }
 
-// SIMPLIFIED FUNCTIONS (NO RESERVATION FEATURES)
+// ============================================================================
+// RESERVATION SYSTEM FUNCTIONS - NEW
+// ============================================================================
+
+// IMMEDIATE FIX: Replace your cleanupExpiredReservations function with this version
+// This version doesn't require a composite index
+
+exports.cleanupExpiredReservations = functions.pubsub
+  .schedule('every 1 minutes')
+  .timeZone('UTC')
+  .onRun(async (context) => {
+    try {
+      const db = admin.firestore();
+      const now = admin.firestore.Timestamp.now();
+      
+      console.log('🔄 Starting reservation cleanup at:', now.toDate().toISOString());
+
+      // ✅ FIX: Get ALL active reservations first (no composite index needed)
+      const activeReservationsQuery = await db.collection('reservations')
+        .where('status', '==', 'active')
+        .get();
+
+      console.log('📋 Found active reservations:', activeReservationsQuery.size);
+
+      if (activeReservationsQuery.empty) {
+        console.log('✅ No active reservations found');
+        return { success: true, expiredReservations: 0 };
+      }
+
+      // ✅ FIX: Filter expired ones in code instead of Firestore query
+      const batch = db.batch();
+      let expiredCount = 0;
+      const expiredReservations = [];
+
+      activeReservationsQuery.forEach(doc => {
+        const data = doc.data();
+        const expiresAt = data.expiresAt;
+        
+        // Check if expired in JavaScript instead of Firestore query
+        if (expiresAt.toMillis() <= now.toMillis()) {
+          console.log(`⏰ Expiring reservation: ${doc.id} (Payment: ${data.paymentId})`);
+          console.log(`   Expired by: ${Math.round((now.toMillis() - expiresAt.toMillis()) / (1000 * 60))} minutes`);
+          
+          batch.update(doc.ref, {
+            status: 'expired',
+            expiredAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          
+          expiredReservations.push({
+            id: doc.id,
+            paymentId: data.paymentId,
+            expiredBy: Math.round((now.toMillis() - expiresAt.toMillis()) / (1000 * 60))
+          });
+          
+          expiredCount++;
+        } else {
+          const minutesLeft = Math.round((expiresAt.toMillis() - now.toMillis()) / (1000 * 60));
+          console.log(`⏳ Reservation ${doc.id} expires in ${minutesLeft} minutes`);
+        }
+      });
+
+      // Commit expired reservations
+      if (expiredCount > 0) {
+        await batch.commit();
+        console.log(`✅ Successfully expired ${expiredCount} reservations:`, expiredReservations);
+      } else {
+        console.log('✅ No reservations need to be expired yet');
+      }
+
+      // Optional: Clean up old expired/failed reservations (older than 24 hours)
+      // This uses a simple single-field query (no index needed)
+      const twentyFourHoursAgo = admin.firestore.Timestamp.fromMillis(
+        now.toMillis() - (24 * 60 * 60 * 1000)
+      );
+
+      const oldExpiredQuery = await db.collection('reservations')
+        .where('status', '==', 'expired')
+        .get();
+
+      const oldFailedQuery = await db.collection('reservations')
+        .where('status', '==', 'failed')
+        .get();
+
+      // Filter old ones in code
+      const deleteBatch = db.batch();
+      let deletedCount = 0;
+
+      [...oldExpiredQuery.docs, ...oldFailedQuery.docs].forEach(doc => {
+        const data = doc.data();
+        const expiresAt = data.expiresAt;
+        
+        if (expiresAt.toMillis() <= twentyFourHoursAgo.toMillis()) {
+          deleteBatch.delete(doc.ref);
+          deletedCount++;
+        }
+      });
+
+      if (deletedCount > 0) {
+        await deleteBatch.commit();
+        console.log(`🗑️ Cleaned up ${deletedCount} old reservations`);
+      }
+
+      return {
+        success: true,
+        expiredReservations: expiredCount,
+        cleanedUpOld: deletedCount,
+        totalActiveChecked: activeReservationsQuery.size,
+        timestamp: now.toDate().toISOString(),
+      };
+
+    } catch (error) {
+      console.error('❌ Error in reservation cleanup:', error);
+      return {
+        success: false,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      };
+    }
+  });
+
+// 🧪 IMMEDIATE TEST FUNCTION (works without index)
+exports.testReservationExpiry = functions.https.onRequest(async (req, res) => {
+  try {
+    const db = admin.firestore();
+    const now = admin.firestore.Timestamp.now();
+    
+    console.log('🧪 Testing reservation expiry logic');
+
+    // Get all active reservations (no index needed)
+    const activeReservations = await db.collection('reservations')
+      .where('status', '==', 'active')
+      .get();
+
+    const results = [];
+    let shouldExpireCount = 0;
+
+    activeReservations.forEach(doc => {
+      const data = doc.data();
+      const expiresAt = data.expiresAt;
+      const isExpired = expiresAt.toMillis() <= now.toMillis();
+      const minutesDiff = Math.round((now.toMillis() - expiresAt.toMillis()) / (1000 * 60));
+
+      const result = {
+        id: doc.id,
+        paymentId: data.paymentId,
+        status: data.status,
+        createdAt: data.createdAt.toDate().toISOString(),
+        expiresAt: expiresAt.toDate().toISOString(),
+        currentTime: now.toDate().toISOString(),
+        isExpired: isExpired,
+        minutesSinceExpiry: minutesDiff,
+        shouldExpire: isExpired
+      };
+
+      if (isExpired) {
+        shouldExpireCount++;
+      }
+
+      results.push(result);
+    });
+
+    res.status(200).json({
+      success: true,
+      currentTime: now.toDate().toISOString(),
+      totalActiveReservations: activeReservations.size,
+      shouldExpireCount: shouldExpireCount,
+      reservations: results,
+      message: shouldExpireCount > 0 
+        ? `${shouldExpireCount} reservations should be expired` 
+        : 'No reservations need expiring yet'
+    });
+
+  } catch (error) {
+    console.error('❌ Test error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 🔧 MANUAL CLEANUP (works without index)
+exports.manualCleanupExpiredReservations = functions.https.onRequest(async (req, res) => {
+  try {
+    const db = admin.firestore();
+    const now = admin.firestore.Timestamp.now();
+    
+    console.log('🔧 Manual cleanup starting');
+
+    // Get all active reservations
+    const activeReservations = await db.collection('reservations')
+      .where('status', '==', 'active')
+      .get();
+
+    const batch = db.batch();
+    let expiredCount = 0;
+    const processedReservations = [];
+
+    activeReservations.forEach(doc => {
+      const data = doc.data();
+      const expiresAt = data.expiresAt;
+      const isExpired = expiresAt.toMillis() <= now.toMillis();
+      const minutesDiff = Math.round((now.toMillis() - expiresAt.toMillis()) / (1000 * 60));
+
+      processedReservations.push({
+        id: doc.id,
+        paymentId: data.paymentId,
+        isExpired: isExpired,
+        minutesSinceExpiry: minutesDiff
+      });
+
+      if (isExpired) {
+        console.log(`🔧 Manually expiring: ${doc.id} (expired ${minutesDiff} minutes ago)`);
+        batch.update(doc.ref, {
+          status: 'expired',
+          expiredAt: admin.firestore.FieldValue.serverTimestamp(),
+          manuallyExpired: true,
+        });
+        expiredCount++;
+      }
+    });
+
+    if (expiredCount > 0) {
+      await batch.commit();
+      console.log(`🔧 Manually expired ${expiredCount} reservations`);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Manual cleanup completed - expired ${expiredCount} reservations`,
+      totalActive: activeReservations.size,
+      expiredCount: expiredCount,
+      processedReservations: processedReservations
+    });
+
+  } catch (error) {
+    console.error('❌ Manual cleanup error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 🆕 Manual reservation cleanup trigger for testing
+exports.manualReservationCleanup = functions.https.onRequest(async (req, res) => {
+  try {
+    const db = admin.firestore();
+    const now = admin.firestore.Timestamp.now();
+    
+    // Find all expired active reservations
+    const expiredQuery = await db.collection('reservations')
+      .where('status', '==', 'active')
+      .where('expiresAt', '<=', now)
+      .get();
+
+    const batch = db.batch();
+    let count = 0;
+
+    expiredQuery.forEach(doc => {
+      batch.update(doc.ref, {
+        status: 'expired',
+        expiredAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      count++;
+    });
+
+    await batch.commit();
+
+    res.status(200).json({
+      success: true,
+      expiredReservations: count,
+      message: `Manually expired ${count} reservations`,
+      timestamp: new Date().toISOString(),
+    });
+
+  } catch (error) {
+    console.error('Error in manual cleanup:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// 🆕 Get reservation statistics (for admin monitoring)
+exports.getReservationStats = functions.https.onRequest(async (req, res) => {
+  try {
+    const db = admin.firestore();
+    
+    const reservationsSnapshot = await db.collection('reservations').get();
+    
+    let stats = {
+      total: 0,
+      active: 0,
+      completed: 0,
+      failed: 0,
+      expired: 0,
+      totalValue: 0,
+    };
+
+    reservationsSnapshot.forEach(doc => {
+      const data = doc.data();
+      const status = data.status || 'active';
+      const amount = data.totalAmount || 0;
+      
+      stats.total++;
+      stats[status] = (stats[status] || 0) + 1;
+      
+      if (status === 'active') {
+        stats.totalValue += amount;
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      stats: stats,
+      timestamp: new Date().toISOString(),
+    });
+
+  } catch (error) {
+    console.error('Error getting reservation stats:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// 🆕 Get active reservations (for admin monitoring)
+exports.getActiveReservations = functions.https.onRequest(async (req, res) => {
+  try {
+    const db = admin.firestore();
+    
+    const activeReservations = await db.collection('reservations')
+      .where('status', '==', 'active')
+      .orderBy('createdAt', 'desc')
+      .get();
+
+    const reservations = [];
+    
+    activeReservations.forEach(doc => {
+      const data = doc.data();
+      reservations.push({
+        id: doc.id,
+        paymentId: data.paymentId,
+        items: data.items || [],
+        totalAmount: data.totalAmount || 0,
+        createdAt: data.createdAt.toDate().toISOString(),
+        expiresAt: data.expiresAt.toDate().toISOString(),
+        timeRemaining: Math.max(0, data.expiresAt.toMillis() - Date.now()),
+      });
+    });
+
+    res.status(200).json({
+      success: true,
+      activeReservations: reservations,
+      count: reservations.length,
+      timestamp: new Date().toISOString(),
+    });
+
+  } catch (error) {
+    console.error('Error getting active reservations:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// 🆕 Force expire a specific reservation (admin function)
+exports.forceExpireReservation = functions.https.onRequest(async (req, res) => {
+  try {
+    if (req.method !== 'POST') {
+      return res.status(405).send('Method Not Allowed');
+    }
+
+    const { reservationId } = req.body;
+
+    if (!reservationId) {
+      return res.status(400).json({ error: 'reservationId is required' });
+    }
+
+    const db = admin.firestore();
+    const reservationRef = db.collection('reservations').doc(reservationId);
+    const reservationDoc = await reservationRef.get();
+
+    if (!reservationDoc.exists) {
+      return res.status(404).json({ error: 'Reservation not found' });
+    }
+
+    const reservationData = reservationDoc.data();
+
+    if (reservationData.status !== 'active') {
+      return res.status(400).json({ 
+        error: `Reservation is not active. Current status: ${reservationData.status}` 
+      });
+    }
+
+    // Force expire the reservation
+    await reservationRef.update({
+      status: 'expired',
+      expiredAt: admin.firestore.FieldValue.serverTimestamp(),
+      forceExpired: true,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Reservation ${reservationId} has been force expired`,
+      paymentId: reservationData.paymentId,
+    });
+
+  } catch (error) {
+    console.error('Error force expiring reservation:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// ============================================================================
+// RESERVATION HELPER FUNCTIONS
+// ============================================================================
+
+// Helper function to complete reservation by payment ID
+async function completeReservationByPaymentId(paymentId) {
+  try {
+    const db = admin.firestore();
+    
+    const reservationQuery = await db.collection('reservations')
+      .where('paymentId', '==', paymentId)
+      .where('status', '==', 'active')
+      .limit(1)
+      .get();
+
+    if (!reservationQuery.empty) {
+      const reservationDoc = reservationQuery.docs[0];
+      const reservationData = reservationDoc.data();
+      
+      // Update reservation status
+      await reservationDoc.ref.update({
+        status: 'completed',
+        completedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // Decrease actual stock
+      const batch = db.batch();
+      
+      for (const item of reservationData.items) {
+        const itemRef = db.collection('menuItems').doc(item.itemId);
+        const itemDoc = await itemRef.get();
+        
+        if (itemDoc.exists) {
+          const itemData = itemDoc.data();
+          const hasUnlimitedStock = itemData.hasUnlimitedStock || false;
+          
+          if (!hasUnlimitedStock) {
+            const currentStock = itemData.quantity || 0;
+            const newStock = Math.max(0, currentStock - item.quantity);
+            
+            batch.update(itemRef, {
+              quantity: newStock,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+        }
+      }
+      
+      await batch.commit();
+      
+      console.log(`✅ Completed reservation: ${reservationDoc.id} for payment: ${paymentId}`);
+      return true;
+    }
+    
+    console.log(`⚠️ No active reservation found for payment: ${paymentId}`);
+    return false;
+  } catch (error) {
+    console.error(`❌ Error completing reservation for payment ${paymentId}:`, error);
+    return false;
+  }
+}
+
+// Helper function to fail reservation by payment ID
+async function failReservationByPaymentId(paymentId) {
+  try {
+    const db = admin.firestore();
+    
+    const reservationQuery = await db.collection('reservations')
+      .where('paymentId', '==', paymentId)
+      .where('status', '==', 'active')
+      .limit(1)
+      .get();
+
+    if (!reservationQuery.empty) {
+      const reservationDoc = reservationQuery.docs[0];
+      
+      await reservationDoc.ref.update({
+        status: 'failed',
+        failedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      
+      console.log(`✅ Failed reservation: ${reservationDoc.id} for payment: ${paymentId}`);
+      return true;
+    }
+    
+    console.log(`⚠️ No active reservation found to fail for payment: ${paymentId}`);
+    return false;
+  } catch (error) {
+    console.error(`❌ Error failing reservation for payment ${paymentId}:`, error);
+    return false;
+  }
+}
+
+// ============================================================================
+// EXISTING PAYMENT ANALYTICS AND ADMIN FUNCTIONS
+// ============================================================================
 
 // 🔥 Function to get payment analytics (for admin)
 exports.getPaymentAnalytics = functions.https.onCall(async (data, context) => {
@@ -1000,6 +1539,7 @@ exports.getOrderWithPaymentStatus = functions.https.onCall(async (data, context)
           captured: paymentData.autoCaptured || false,
           verifiedAt: paymentData.verifiedAt,
           refunded: paymentData.refunded || false,
+          reservationCompleted: paymentData.reservationCompleted || false,
         };
       }
     }
@@ -1022,7 +1562,9 @@ exports.getOrderWithPaymentStatus = functions.https.onCall(async (data, context)
   }
 });
 
-// DEVICE MANAGEMENT AND SESSION CLEANUP FUNCTIONS (KEPT)
+// ============================================================================
+// DEVICE MANAGEMENT AND SESSION CLEANUP FUNCTIONS (KEEP)
+// ============================================================================
 
 // 🔥 Clean up expired session history
 exports.cleanupExpiredSessions = functions.pubsub
@@ -1244,4 +1786,4 @@ exports.forceLogoutUser = functions.https.onRequest(async (req, res) => {
   }
 });
 
-console.log('🚀 Firebase Functions loaded successfully with simplified stock management (no reservation system)!');
+console.log('🚀 Firebase Functions loaded successfully with RESERVATION SYSTEM enabled!');

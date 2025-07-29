@@ -1,7 +1,8 @@
-// lib/providers/cart_provider.dart - SIMPLIFIED VERSION (REMOVED RESERVATION SYSTEM)
+// lib/providers/cart_provider.dart - WITH RESERVATION SYSTEM
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:canteen_app/services/stock_management_service.dart';
+import 'package:canteen_app/services/reservation_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
 
@@ -15,11 +16,11 @@ class CartProvider extends ChangeNotifier {
   List<String> get itemIds => _cart.keys.toList();
   bool get isValidatingStock => _isValidatingStock;
   
-  // Add item to cart with stock validation
+  // Add item to cart with reservation-aware stock validation
   Future<bool> addItem(String itemId, {int quantity = 1}) async {
     final currentQuantity = _cart[itemId] ?? 0;
     
-    // Check if we can add this quantity
+    // Check if we can add this quantity (considering reservations)
     final canAdd = await StockManagementService.canAddToCart(
       itemId, 
       currentQuantity, 
@@ -33,7 +34,7 @@ class CartProvider extends ChangeNotifier {
       print('✅ Added $quantity of $itemId to cart. Total: ${_cart[itemId]}');
       return true;
     } else {
-      print('❌ Cannot add $quantity of $itemId to cart - insufficient stock');
+      print('❌ Cannot add $quantity of $itemId to cart - insufficient available stock');
       return false;
     }
   }
@@ -62,7 +63,7 @@ class CartProvider extends ChangeNotifier {
     }
   }
   
-  // Update item quantity with stock validation
+  // Update item quantity with reservation-aware stock validation
   Future<bool> updateQuantity(String itemId, int quantity) async {
     if (quantity <= 0) {
       _cart.remove(itemId);
@@ -71,7 +72,7 @@ class CartProvider extends ChangeNotifier {
       return true;
     }
     
-    // Check if the new quantity is valid
+    // Check if the new quantity is valid (considering reservations)
     final canAdd = await StockManagementService.canAddToCart(itemId, 0, quantity);
     
     if (canAdd) {
@@ -81,7 +82,7 @@ class CartProvider extends ChangeNotifier {
       print('✅ Updated $itemId quantity to $quantity');
       return true;
     } else {
-      print('❌ Cannot update $itemId quantity to $quantity - insufficient stock');
+      print('❌ Cannot update $itemId quantity to $quantity - insufficient available stock');
       return false;
     }
   }
@@ -114,7 +115,7 @@ class CartProvider extends ChangeNotifier {
     return total;
   }
   
-  // Validate entire cart against current stock
+  // Validate entire cart against current available stock (with reservations)
   Future<CartValidationResult> validateCartStock() async {
     _isValidatingStock = true;
     notifyListeners();
@@ -140,12 +141,12 @@ class CartProvider extends ChangeNotifier {
       }
     }
     
-    // Update quantities for items with insufficient stock
-    validationResult.itemsToUpdate.forEach((itemId, maxQuantity) {
-      if (_cart.containsKey(itemId) && _cart[itemId]! > maxQuantity) {
-        _cart[itemId] = maxQuantity;
+    // Update quantities for items with insufficient available stock
+    validationResult.itemsToUpdate.forEach((itemId, maxAvailableQuantity) {
+      if (_cart.containsKey(itemId) && _cart[itemId]! > maxAvailableQuantity) {
+        _cart[itemId] = maxAvailableQuantity;
         cartChanged = true;
-        print('📝 Updated $itemId quantity to $maxQuantity (limited stock)');
+        print('📝 Updated $itemId quantity to $maxAvailableQuantity (limited available stock)');
       }
     });
     
@@ -155,18 +156,167 @@ class CartProvider extends ChangeNotifier {
     }
   }
   
-  // Check stock availability for entire cart
+  // Check available stock for entire cart (considering reservations)
   Future<StockCheckResult> checkStockAvailability() async {
     return await StockManagementService.checkStockAvailability(_cart);
   }
   
-  // Check if can proceed to checkout
+  // Check if can proceed to checkout (considering reservations)
   Future<bool> canProceedToCheckout() async {
     if (_cart.isEmpty) return false;
     
-    // Check if stock is available
+    // Check if available stock exists for all items
     final stockCheck = await checkStockAvailability();
     return stockCheck.isValid;
+  }
+  
+  // Get reservation-aware stock status for cart items
+  Future<Map<String, ItemStockStatus>> getCartItemsStockStatus() async {
+    Map<String, ItemStockStatus> stockStatus = {};
+    
+    for (String itemId in _cart.keys) {
+      final status = await StockManagementService.getItemStockStatus(itemId);
+      stockStatus[itemId] = status;
+    }
+    
+    return stockStatus;
+  }
+  
+  // Get maximum addable quantity for an item (considering reservations)
+  Future<int> getMaxAddableQuantity(String itemId) async {
+    final currentCartQuantity = getQuantity(itemId);
+    
+    try {
+      // Get available stock (actual - reserved)
+      final availableStock = await ReservationService.getAvailableStock(itemId);
+      final maxAddable = availableStock - currentCartQuantity;
+      return maxAddable > 0 ? maxAddable : 0;
+    } catch (e) {
+      print('Error getting max addable quantity: $e');
+      return 0;
+    }
+  }
+  
+  // Get detailed stock info for cart items (including reservations)
+  Future<Map<String, Map<String, int>>> getCartStockInfo() async {
+    Map<String, Map<String, int>> stockInfo = {};
+    
+    for (String itemId in _cart.keys) {
+      try {
+        final doc = await FirebaseFirestore.instance.collection('menuItems').doc(itemId).get();
+        
+        if (doc.exists) {
+          final data = doc.data()!;
+          final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
+          
+          if (hasUnlimitedStock) {
+            stockInfo[itemId] = {
+              'actual': 999999,
+              'available': 999999,
+              'reserved': 0,
+            };
+          } else {
+            final actualStock = data['quantity'] ?? 0;
+            final reservedStock = await ReservationService.getActiveReservationsForItem(itemId);
+            final availableStock = actualStock - reservedStock;
+            
+            stockInfo[itemId] = {
+              'actual': actualStock,
+              'available': availableStock > 0 ? availableStock : 0,
+              'reserved': reservedStock,
+            };
+          }
+        } else {
+          stockInfo[itemId] = {
+            'actual': 0,
+            'available': 0,
+            'reserved': 0,
+          };
+        }
+      } catch (e) {
+        print('Error getting stock info for $itemId: $e');
+        stockInfo[itemId] = {
+          'actual': 0,
+          'available': 0,
+          'reserved': 0,
+        };
+      }
+    }
+    
+    return stockInfo;
+  }
+  
+  // Get items that have stock issues (considering reservations)
+  Future<List<CartStockIssue>> getCartStockIssues() async {
+    List<CartStockIssue> issues = [];
+    
+    final stockInfo = await getCartStockInfo();
+    
+    stockInfo.forEach((itemId, info) {
+      final cartQuantity = getQuantity(itemId);
+      final availableQuantity = info['available'] ?? 0;
+      final actualQuantity = info['actual'] ?? 0;
+      final reservedQuantity = info['reserved'] ?? 0;
+      
+      if (availableQuantity == 0 && actualQuantity == 0) {
+        issues.add(CartStockIssue(
+          itemId: itemId,
+          issueType: StockIssueType.outOfStock,
+          currentQuantity: cartQuantity,
+          availableQuantity: 0,
+          message: 'This item is out of stock',
+        ));
+      } else if (availableQuantity == 0 && reservedQuantity > 0) {
+        issues.add(CartStockIssue(
+          itemId: itemId,
+          issueType: StockIssueType.fullyReserved,
+          currentQuantity: cartQuantity,
+          availableQuantity: 0,
+          message: 'This item is currently reserved by other customers',
+        ));
+      } else if (availableQuantity < cartQuantity) {
+        issues.add(CartStockIssue(
+          itemId: itemId,
+          issueType: StockIssueType.insufficientStock,
+          currentQuantity: cartQuantity,
+          availableQuantity: availableQuantity,
+          message: 'Only $availableQuantity available (you have $cartQuantity in cart)',
+        ));
+      } else if (availableQuantity <= 5 && availableQuantity > 0) {
+        issues.add(CartStockIssue(
+          itemId: itemId,
+          issueType: StockIssueType.lowStock,
+          currentQuantity: cartQuantity,
+          availableQuantity: availableQuantity,
+          message: 'Low stock: only $availableQuantity left',
+        ));
+      }
+    });
+    
+    return issues;
+  }
+  
+  // Pre-checkout validation (comprehensive check before payment)
+  Future<PreCheckoutValidation> validateForCheckout() async {
+    final issues = await getCartStockIssues();
+    final stockCheck = await checkStockAvailability();
+    
+    final criticalIssues = issues.where((issue) => 
+      issue.issueType == StockIssueType.outOfStock ||
+      issue.issueType == StockIssueType.insufficientStock ||
+      issue.issueType == StockIssueType.fullyReserved
+    ).toList();
+    
+    final warnings = issues.where((issue) => 
+      issue.issueType == StockIssueType.lowStock
+    ).toList();
+    
+    return PreCheckoutValidation(
+      canProceed: criticalIssues.isEmpty && stockCheck.isValid,
+      criticalIssues: criticalIssues,
+      warnings: warnings,
+      needsCartUpdate: criticalIssues.isNotEmpty,
+    );
   }
   
   // Save cart to local storage
@@ -181,7 +331,7 @@ class CartProvider extends ChangeNotifier {
     }
   }
   
-  // Load cart from local storage
+  // Load cart from local storage with reservation validation
   Future<void> loadFromStorage() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -191,13 +341,13 @@ class CartProvider extends ChangeNotifier {
         final Map<String, dynamic> decoded = json.decode(cartJson);
         _cart = decoded.map((key, value) => MapEntry(key, value as int));
         
-        // Validate loaded cart against current stock
+        // Validate loaded cart against current available stock (with reservations)
         final validationResult = await validateCartStock();
         if (!validationResult.isValid) {
           await autoFixCart(validationResult);
         }
         
-        print('📱 Cart loaded from storage: $_cart');
+        print('📱 Cart loaded from storage and validated: $_cart');
       } else {
         print('📱 No cart data found in storage');
       }
@@ -231,101 +381,21 @@ class CartProvider extends ChangeNotifier {
     return items.join(', ');
   }
   
-  // Get items that are low stock or out of stock in current cart
-  Future<Map<String, ItemStockStatus>> getCartItemsStockStatus() async {
-    Map<String, ItemStockStatus> stockStatus = {};
-    
-    for (String itemId in _cart.keys) {
-      final status = await StockManagementService.getItemStockStatus(itemId);
-      stockStatus[itemId] = status;
-    }
-    
-    return stockStatus;
-  }
-  
-  // Get maximum addable quantity for an item
-  Future<int> getMaxAddableQuantity(String itemId) async {
-    final currentCartQuantity = getQuantity(itemId);
-    
-    try {
-      // Get available stock
-      final doc = await FirebaseFirestore.instance.collection('menuItems').doc(itemId).get();
-      if (doc.exists) {
-        final data = doc.data()!;
-        final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
-        
-        if (hasUnlimitedStock) {
-          return 999999;
-        }
-        
-        final totalStock = data['quantity'] ?? 0;
-        final maxAddable = totalStock - currentCartQuantity;
-        return maxAddable > 0 ? maxAddable : 0;
-      }
-      return 0;
-    } catch (e) {
-      print('Error getting max addable quantity: $e');
-      return 0;
-    }
-  }
-  
-  // Debug method to print cart contents
-  void printCart() {
-    print('=== CART CONTENTS ===');
+  // Debug method to print cart contents with stock info
+  Future<void> printCartWithStockInfo() async {
+    print('=== CART CONTENTS WITH STOCK INFO ===');
     if (_cart.isEmpty) {
       print('Cart is empty');
     } else {
+      final stockInfo = await getCartStockInfo();
+      
       _cart.forEach((itemId, quantity) {
-        print('$itemId: $quantity');
+        final info = stockInfo[itemId] ?? {'actual': 0, 'available': 0, 'reserved': 0};
+        print('$itemId: $quantity (Actual: ${info['actual']}, Available: ${info['available']}, Reserved: ${info['reserved']})');
       });
       print('Total items: $itemCount');
     }
-    print('====================');
-  }
-  
-  // Get items that have stock issues
-  Future<List<CartStockIssue>> getCartStockIssues() async {
-    List<CartStockIssue> issues = [];
-    
-    final stockStatuses = await getCartItemsStockStatus();
-    
-    stockStatuses.forEach((itemId, status) {
-      final quantity = getQuantity(itemId);
-      
-      switch (status) {
-        case ItemStockStatus.outOfStock:
-          issues.add(CartStockIssue(
-            itemId: itemId,
-            issueType: StockIssueType.outOfStock,
-            currentQuantity: quantity,
-            availableQuantity: 0,
-            message: 'This item is out of stock',
-          ));
-          break;
-        case ItemStockStatus.lowStock:
-          issues.add(CartStockIssue(
-            itemId: itemId,
-            issueType: StockIssueType.lowStock,
-            currentQuantity: quantity,
-            availableQuantity: null,
-            message: 'This item has low stock',
-          ));
-          break;
-        case ItemStockStatus.unavailable:
-          issues.add(CartStockIssue(
-            itemId: itemId,
-            issueType: StockIssueType.unavailable,
-            currentQuantity: quantity,
-            availableQuantity: 0,
-            message: 'This item is no longer available',
-          ));
-          break;
-        default:
-          break;
-      }
-    });
-    
-    return issues;
+    print('======================================');
   }
   
   // Cleanup method (call on logout)
@@ -336,7 +406,7 @@ class CartProvider extends ChangeNotifier {
   }
 }
 
-// Helper class for cart stock issues
+// Enhanced helper class for cart stock issues (with reservation awareness)
 class CartStockIssue {
   final String itemId;
   final StockIssueType issueType;
@@ -358,4 +428,24 @@ enum StockIssueType {
   lowStock,
   insufficientStock,
   unavailable,
+  fullyReserved, // New: when item has stock but it's all reserved
+}
+
+// New helper class for pre-checkout validation
+class PreCheckoutValidation {
+  final bool canProceed;
+  final List<CartStockIssue> criticalIssues;
+  final List<CartStockIssue> warnings;
+  final bool needsCartUpdate;
+
+  PreCheckoutValidation({
+    required this.canProceed,
+    required this.criticalIssues,
+    required this.warnings,
+    required this.needsCartUpdate,
+  });
+
+  bool get hasIssues => criticalIssues.isNotEmpty || warnings.isNotEmpty;
+  bool get hasCriticalIssues => criticalIssues.isNotEmpty;
+  bool get hasWarnings => warnings.isNotEmpty;
 }

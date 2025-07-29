@@ -1,7 +1,8 @@
-// lib/core/utils/user_utils.dart - SIMPLIFIED (NO RESERVATION SYSTEM)
+// lib/core/utils/user_utils.dart - WITH RESERVATION SYSTEM
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../enums/user_enums.dart';
+import '../../services/reservation_service.dart';
 
 class UserUtils {
   // Date formatting without intl package
@@ -78,26 +79,54 @@ class UserUtils {
     }
   }
   
-  // Stock calculations (simplified - no reservations)
-  static int getAvailableStock(Map<String, dynamic> itemData) {
+  // Stock calculations (WITH RESERVATIONS)
+  static Future<int> getAvailableStock(Map<String, dynamic> itemData, String itemId) async {
     final hasUnlimitedStock = itemData['hasUnlimitedStock'] ?? false;
     
     if (hasUnlimitedStock) {
       return 999999;
     }
     
+    // Get available stock from reservation service (actual - reserved)
+    return await ReservationService.getAvailableStock(itemId);
+  }
+  
+  // Legacy method for backward compatibility (now async)
+  static int getAvailableStockSync(Map<String, dynamic> itemData) {
+    final hasUnlimitedStock = itemData['hasUnlimitedStock'] ?? false;
+    
+    if (hasUnlimitedStock) {
+      return 999999;
+    }
+    
+    // Return actual stock for immediate display (will be updated by async calls)
     final totalStock = itemData['quantity'] ?? 0;
     return totalStock > 0 ? totalStock : 0;
   }
   
-  static StockStatusType getStockStatus(Map<String, dynamic> itemData) {
+  static Future<StockStatusType> getStockStatus(Map<String, dynamic> itemData, String itemId) async {
     final available = itemData['available'] ?? false;
     final hasUnlimitedStock = itemData['hasUnlimitedStock'] ?? false;
     
     if (!available) return StockStatusType.unavailable;
     if (hasUnlimitedStock) return StockStatusType.unlimited;
     
-    final availableStock = getAvailableStock(itemData);
+    final availableStock = await getAvailableStock(itemData, itemId);
+    
+    if (availableStock <= 0) return StockStatusType.outOfStock;
+    if (availableStock <= 5) return StockStatusType.lowStock;
+    return StockStatusType.inStock;
+  }
+  
+  // Legacy sync method for immediate display
+  static StockStatusType getStockStatusSync(Map<String, dynamic> itemData) {
+    final available = itemData['available'] ?? false;
+    final hasUnlimitedStock = itemData['hasUnlimitedStock'] ?? false;
+    
+    if (!available) return StockStatusType.unavailable;
+    if (hasUnlimitedStock) return StockStatusType.unlimited;
+    
+    final availableStock = getAvailableStockSync(itemData);
     
     if (availableStock <= 0) return StockStatusType.outOfStock;
     if (availableStock <= 5) return StockStatusType.lowStock;
@@ -134,15 +163,70 @@ class UserUtils {
     }
   }
   
-  // Validation helpers (simplified - no reservations)
-  static bool canAddToCart(Map<String, dynamic> itemData, int currentCartQuantity) {
+  // Validation helpers (WITH RESERVATIONS)
+  static Future<bool> canAddToCart(Map<String, dynamic> itemData, String itemId, int currentCartQuantity) async {
     final available = itemData['available'] ?? false;
     if (!available) return false;
     
     final hasUnlimitedStock = itemData['hasUnlimitedStock'] ?? false;
     if (hasUnlimitedStock) return true;
     
-    final availableStock = getAvailableStock(itemData);
+    final availableStock = await getAvailableStock(itemData, itemId);
     return (currentCartQuantity + 1) <= availableStock;
+  }
+  
+  // Legacy sync method for immediate validation
+  static bool canAddToCartSync(Map<String, dynamic> itemData, int currentCartQuantity) {
+    final available = itemData['available'] ?? false;
+    if (!available) return false;
+    
+    final hasUnlimitedStock = itemData['hasUnlimitedStock'] ?? false;
+    if (hasUnlimitedStock) return true;
+    
+    final availableStock = getAvailableStockSync(itemData);
+    return (currentCartQuantity + 1) <= availableStock;
+  }
+  
+  // Helper method to get both actual and available stock info
+  static Future<Map<String, int>> getStockInfo(String itemId) async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('menuItems').doc(itemId).get();
+      
+      if (doc.exists) {
+        final data = doc.data()!;
+        final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
+        
+        if (hasUnlimitedStock) {
+          return {
+            'actual': 999999,
+            'available': 999999,
+            'reserved': 0,
+          };
+        }
+        
+        final actualStock = data['quantity'] ?? 0;
+        final reservedStock = await ReservationService.getActiveReservationsForItem(itemId);
+        final availableStock = actualStock - reservedStock;
+        
+        return {
+          'actual': actualStock,
+          'available': availableStock > 0 ? availableStock : 0,
+          'reserved': reservedStock,
+        };
+      }
+      
+      return {
+        'actual': 0,
+        'available': 0,
+        'reserved': 0,
+      };
+    } catch (e) {
+      print('Error getting stock info: $e');
+      return {
+        'actual': 0,
+        'available': 0,
+        'reserved': 0,
+      };
+    }
   }
 }

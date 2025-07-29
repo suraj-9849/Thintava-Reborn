@@ -1,4 +1,4 @@
-// lib/presentation/widgets/cart/cart_payment_handler.dart - SIMPLIFIED (NO RESERVATION SYSTEM)
+// lib/presentation/widgets/cart/cart_payment_handler.dart - FIXED VERSION
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -8,6 +8,8 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:provider/provider.dart';
 import 'package:canteen_app/providers/cart_provider.dart';
 import 'package:canteen_app/services/active_order_service.dart';
+import 'package:canteen_app/services/reservation_service.dart';
+import 'package:canteen_app/models/reservation_model.dart';
 import 'package:canteen_app/presentation/widgets/cart/cart_dialogs.dart';
 
 class CartPaymentHandler {
@@ -17,6 +19,7 @@ class CartPaymentHandler {
   late Razorpay _razorpay;
   
   String? currentRazorpayOrderId;
+  Reservation? currentReservation;
 
   CartPaymentHandler({
     required this.context,
@@ -53,7 +56,6 @@ class CartPaymentHandler {
       print('🔍 Firebase Function response: ${result.data}');
 
       if (result.data != null && result.data['success'] == true) {
-        // Handle both possible response structures
         String? orderId;
         if (result.data['orderId'] != null) {
           orderId = result.data['orderId'];
@@ -76,7 +78,7 @@ class CartPaymentHandler {
     }
   }
 
-  /// Start payment directly (WITH ACTIVE ORDER CHECK)
+  /// Start payment with reservation system
   Future<void> startPayment() async {
     final cartProvider = Provider.of<CartProvider>(context, listen: false);
     
@@ -86,7 +88,7 @@ class CartPaymentHandler {
     }
 
     try {
-      // CHECK FOR ACTIVE ORDER BEFORE ALLOWING PAYMENT
+      // STEP 1: CHECK FOR ACTIVE ORDER
       print('🔍 Checking for active orders before payment...');
       final activeOrderResult = await ActiveOrderService.checkActiveOrder();
       
@@ -98,22 +100,46 @@ class CartPaymentHandler {
       
       print('✅ No active orders found, proceeding with payment...');
 
-      // Create Razorpay order for auto-capture
+      // STEP 2: CREATE RAZORPAY ORDER
       currentRazorpayOrderId = await _createRazorpayOrder(total);
       
       if (currentRazorpayOrderId == null) {
         throw Exception('Failed to create payment order');
       }
 
-      // Proceed to payment gateway
+      // STEP 3: CREATE RESERVATION (Dart service for UI feedback)
+      print('🔄 Creating reservation for payment: $currentRazorpayOrderId');
+      
+      final reservationRequest = ReservationCreateRequest(
+        paymentId: currentRazorpayOrderId!,
+        cartItems: cartProvider.cart,
+        menuMap: menuMap,
+        totalAmount: total,
+      );
+
+      currentReservation = await ReservationService.createReservation(reservationRequest);
+      
+      if (currentReservation == null) {
+        throw Exception('Failed to reserve items - they may no longer be available');
+      }
+
+      print('✅ Reservation created: ${currentReservation!.id}');
+      print('📋 Reserved items: ${currentReservation!.items.map((e) => '${e.itemName} x${e.quantity}').join(', ')}');
+
+      // STEP 4: START PAYMENT
       _startPaymentWithOrder();
 
     } catch (e) {
+      // Clean up if anything fails
+      if (currentReservation != null) {
+        await ReservationService.failReservation(currentRazorpayOrderId!);
+      }
+      
       _showSnackBar("Error processing payment: $e", Colors.red, Icons.error_outline);
     }
   }
 
-  /// Start payment with Razorpay order (for auto-capture)
+  /// Start payment with Razorpay order
   void _startPaymentWithOrder() {
     if (currentRazorpayOrderId == null) {
       _showSnackBar("Payment setup failed", Colors.red, Icons.error_outline);
@@ -125,7 +151,7 @@ class CartPaymentHandler {
       'amount': (total * 100).toInt(),
       'currency': 'INR',
       'name': 'Thintava',
-      'description': 'Food Order Payment - Auto Capture Enabled',
+      'description': 'Food Order Payment - Items Reserved',
       'order_id': currentRazorpayOrderId,
       'prefill': {
         'contact': '',
@@ -137,12 +163,13 @@ class CartPaymentHandler {
       'notes': {
         'app': 'Thintava',
         'user_id': FirebaseAuth.instance.currentUser?.uid ?? '',
+        'reservation_id': currentReservation?.id ?? '',
         'auto_capture': 'enabled',
       }
     };
 
     try {
-      print('🚀 Starting Razorpay payment with order ID: $currentRazorpayOrderId');
+      print('🚀 Starting Razorpay payment with reservation: ${currentReservation?.id}');
       _razorpay.open(options);
     } catch (e) {
       debugPrint("Error: $e");
@@ -165,7 +192,25 @@ class CartPaymentHandler {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
-      // FINAL CHECK: Ensure no active order exists before creating new one
+      print('✅ Payment successful: ${response.paymentId}');
+
+      // STEP 1: VERIFY PAYMENT (This will complete the reservation automatically)
+      // ✅ FIXED: Use Firebase Function that handles reservation completion
+      final callable = FirebaseFunctions.instance.httpsCallable('verifyRazorpayPayment');
+      
+      final verificationResult = await callable.call({
+        'razorpay_payment_id': response.paymentId,
+        'razorpay_order_id': currentRazorpayOrderId,
+        'razorpay_signature': response.signature,
+      });
+
+      if (verificationResult.data['success'] != true) {
+        throw Exception('Payment verification failed');
+      }
+
+      print('✅ Payment verified and reservation completed automatically by Firebase Function');
+
+      // STEP 2: FINAL CHECK FOR ACTIVE ORDER
       final finalCheck = await ActiveOrderService.checkActiveOrder();
       if (finalCheck.hasActiveOrder) {
         Navigator.pop(context); // Close loading dialog
@@ -182,7 +227,7 @@ class CartPaymentHandler {
 
       final cartProvider = Provider.of<CartProvider>(context, listen: false);
       
-      // Create order items list
+      // STEP 3: CREATE ORDER DOCUMENT
       final List<Map<String, dynamic>> orderItems = [];
       cartProvider.cart.forEach((itemId, qty) {
         final itemData = menuMap[itemId];
@@ -197,7 +242,6 @@ class CartPaymentHandler {
         }
       });
 
-      // Create order document
       final orderDocRef = await FirebaseFirestore.instance.collection('orders').add({
         'userId': user.uid,
         'userEmail': user.email,
@@ -207,70 +251,52 @@ class CartPaymentHandler {
         'total': total,
         'paymentId': response.paymentId,
         'razorpayOrderId': currentRazorpayOrderId,
+        'reservationId': currentReservation?.id,
         'paymentStatus': 'success',
         'autoCaptureEnabled': true,
+        'reservationCompleted': true, // ✅ ADDED: Mark reservation as completed
       });
 
       print('✅ Order created successfully: ${orderDocRef.id}');
-
-      // Update stock manually
-      bool stockUpdateSuccess = await _manuallyUpdateStock(cartProvider.cart);
       
-      if (!stockUpdateSuccess) {
-        print('⚠️ Stock update had issues but order was created');
-      }
-      
-      // Clear cart and tracking
+      // STEP 4: CLEAR CART AND TRACKING
       cartProvider.clearCart();
       currentRazorpayOrderId = null;
+      currentReservation = null;
       
       Navigator.pop(context);
       CartDialogs.showPaymentSuccessDialog(context, response, orderDocRef.id, total);
 
     } catch (e) {
       Navigator.pop(context);
+      
+      // ✅ FIXED: Let Firebase Function handle reservation failure via verifyRazorpayPayment
+      // The enhanced verifyRazorpayPayment function will fail the reservation if verification fails
+      
       _showSnackBar("Error processing order: ${e.toString()}", Colors.red, Icons.error_outline);
     }
   }
 
-  Future<bool> _manuallyUpdateStock(Map<String, int> cartItems) async {
-    try {
-      WriteBatch batch = FirebaseFirestore.instance.batch();
-      
-      for (String itemId in cartItems.keys) {
-        final orderedQuantity = cartItems[itemId] ?? 0;
-        final docRef = FirebaseFirestore.instance.collection('menuItems').doc(itemId);
-        
-        final doc = await docRef.get();
-        if (doc.exists) {
-          final data = doc.data()!;
-          final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
-          
-          if (!hasUnlimitedStock) {
-            final currentStock = data['quantity'] ?? 0;
-            final newStock = currentStock - orderedQuantity;
-            
-            batch.update(docRef, {
-              'quantity': newStock >= 0 ? newStock : 0,
-              'updatedAt': FieldValue.serverTimestamp(),
-            });
-          }
-        }
-      }
-      
-      await batch.commit();
-      return true;
-    } catch (e) {
-      print('❌ Error updating stock: $e');
-      return false;
-    }
-  }
-
   void _handlePaymentError(PaymentFailureResponse response) async {
-    currentRazorpayOrderId = null;
-
     print('❌ Payment failed: ${response.code} - ${response.message}');
-    _showSnackBar("Payment failed! Please try again.", Colors.red, Icons.payment);
+    
+    // ✅ FIXED: Use Dart service to fail reservation immediately (for quick user feedback)
+    // The webhook will also handle this, but this provides immediate feedback
+    if (currentReservation != null && currentRazorpayOrderId != null) {
+      final reservationFailed = await ReservationService.failReservation(currentRazorpayOrderId!);
+      
+      if (reservationFailed) {
+        print('✅ Reservation failed and items released');
+      } else {
+        print('⚠️ Warning: Failed to release reservation - items will auto-expire in 10 minutes');
+      }
+    }
+
+    // Clean up tracking
+    currentRazorpayOrderId = null;
+    currentReservation = null;
+
+    _showSnackBar("Payment failed! Items have been released. Please try again.", Colors.red, Icons.payment);
   }
 
   void _handleExternalWallet(ExternalWalletResponse response) {
