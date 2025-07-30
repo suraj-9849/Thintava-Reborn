@@ -1,10 +1,9 @@
-// lib/screens/kitchen/kitchen_home.dart - FULLY CLIENT-SIDE FILTERING
+// lib/screens/kitchen/kitchen_home.dart - REMOVED DEBUG BUTTON AND TERMINATED OPTION
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:canteen_app/services/auth_service.dart';
 import 'package:canteen_app/widgets/order_expiry_timer.dart';
-import 'package:canteen_app/screens/kitchen/kitchen_notification_test.dart';
 import 'package:canteen_app/widgets/session_checker.dart';
 
 // Capitalize helper
@@ -84,9 +83,6 @@ class _KitchenHomeState extends State<KitchenHome>
       }
       if (newStatus == 'Pick Up') {
         updates['pickedUpTime'] = FieldValue.serverTimestamp();
-      }
-      if (newStatus == 'Terminated') {
-        updates['terminatedTime'] = FieldValue.serverTimestamp();
       }
 
       await orderRef.update(updates);
@@ -228,34 +224,14 @@ class _KitchenHomeState extends State<KitchenHome>
             tabs: _statusFilters.map((status) => Tab(text: status)).toList(),
           ),
         ),
-        floatingActionButton: Column(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            FloatingActionButton(
-              heroTag: "notification_test",
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-              mini: true,
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const KitchenNotificationTest()),
-                );
-              },
-              child: const Icon(Icons.bug_report),
-            ),
-            const SizedBox(height: 8),
-            FloatingActionButton(
-              heroTag: "refresh",
-              backgroundColor: const Color(0xFFFFB703),
-              foregroundColor: Colors.black87,
-              onPressed: () {
-                setState(() {});
-              },
-              child: const Icon(Icons.refresh),
-            ),
-          ],
+        // REMOVED DEBUG BUTTON - Only refresh button remains
+        floatingActionButton: FloatingActionButton(
+          backgroundColor: const Color(0xFFFFB703),
+          foregroundColor: Colors.black87,
+          onPressed: () {
+            setState(() {});
+          },
+          child: const Icon(Icons.refresh),
         ),
         body: StreamBuilder<QuerySnapshot>(
           stream: getAllOrdersStream(),
@@ -757,12 +733,12 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
                                   widget.onUpdate(widget.orderId, newStatus);
                                 }
                               },
+                              // REMOVED 'Terminated' FROM DROPDOWN OPTIONS
                               items: [
                                 'Placed',
                                 'Cooking',
                                 'Cooked',
-                                'Pick Up',
-                                'Terminated'
+                                'Pick Up'
                               ]
                                   .map((s) => DropdownMenuItem(
                                         value: s,

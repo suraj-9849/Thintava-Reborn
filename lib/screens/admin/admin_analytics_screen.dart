@@ -1,7 +1,8 @@
-// lib/screens/admin/admin_analytics_screen.dart - FIXED OVERFLOW ISSUES
+// lib/screens/admin/admin_analytics_screen.dart - COMPLETE UPDATED VERSION
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'dart:math' as math;
 
 class AdminAnalyticsScreen extends StatefulWidget {
   const AdminAnalyticsScreen({Key? key}) : super(key: key);
@@ -61,7 +62,6 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
       Map<String, int> statusCounts = {};
       Map<String, double> dailyRevenue = {};
       Map<String, int> dailyOrders = {};
-      Map<String, int> hourlyOrders = {};
       Map<String, double> itemRevenue = {};
       Map<String, int> itemCounts = {};
       double averageOrderValue = 0;
@@ -82,10 +82,6 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
           final dayKey = '${timestamp.day}/${timestamp.month}';
           dailyRevenue[dayKey] = (dailyRevenue[dayKey] ?? 0) + total;
           dailyOrders[dayKey] = (dailyOrders[dayKey] ?? 0) + 1;
-
-          // Hourly breakdown
-          final hourKey = '${timestamp.hour}:00';
-          hourlyOrders[hourKey] = (hourlyOrders[hourKey] ?? 0) + 1;
 
           // Item breakdown
           final items = data['items'];
@@ -141,7 +137,6 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
         'statusCounts': statusCounts,
         'dailyRevenue': dailyRevenue,
         'dailyOrders': dailyOrders,
-        'hourlyOrders': hourlyOrders,
         'itemRevenue': itemRevenue,
         'itemCounts': itemCounts,
         'totalMenuItems': totalMenuItems,
@@ -185,7 +180,7 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
       ),
       body: Column(
         children: [
-          // Period Selector - FIXED OVERFLOW
+          // Period Selector
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -305,10 +300,9 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
           ),
           const SizedBox(height: 16),
           
-          // Key metrics grid - FIXED FOR RESPONSIVE
+          // Key metrics grid
           LayoutBuilder(
             builder: (context, constraints) {
-              // Determine the number of columns based on screen width
               int crossAxisCount = constraints.maxWidth > 600 ? 2 : 1;
               double childAspectRatio = constraints.maxWidth > 600 ? 1.2 : 2.0;
               
@@ -389,7 +383,7 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
           ),
           const SizedBox(height: 16),
           
-          // Revenue by day - FIXED WITH CONTAINER HEIGHT
+          // REVENUE CHART WITH FIXED Y-AXIS
           if (dailyRevenue.isNotEmpty) ...[
             Text(
               'Daily Revenue',
@@ -399,10 +393,7 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
               ),
             ),
             const SizedBox(height: 12),
-            SizedBox(
-              height: 200, // Constrained height to prevent overflow
-              child: _buildRevenueChart(dailyRevenue),
-            ),
+            _buildRevenueChart(dailyRevenue),
             const SizedBox(height: 24),
           ],
           
@@ -423,7 +414,6 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
 
   Widget _buildOrdersTab(Map<String, dynamic> data) {
     final dailyOrders = data['dailyOrders'] as Map<String, int>? ?? {};
-    final hourlyOrders = data['hourlyOrders'] as Map<String, int>? ?? {};
     final itemCounts = data['itemCounts'] as Map<String, int>? ?? {};
     
     return SingleChildScrollView(
@@ -440,20 +430,17 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
           ),
           const SizedBox(height: 16),
           
-          // Peak hours - FIXED WITH CONTAINER HEIGHT
-          if (hourlyOrders.isNotEmpty) ...[
+          // DAILY ORDERS CHART WITH FIXED Y-AXIS
+          if (dailyOrders.isNotEmpty) ...[
             Text(
-              'Peak Hours',
+              'Daily Orders',
               style: GoogleFonts.poppins(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 12),
-            SizedBox(
-              height: 200, // Constrained height to prevent overflow
-              child: _buildPeakHoursChart(hourlyOrders),
-            ),
+            _buildOrdersChart(dailyOrders),
             const SizedBox(height: 24),
           ],
           
@@ -487,10 +474,9 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
           ),
           const SizedBox(height: 16),
           
-          // Inventory overview - FIXED RESPONSIVE GRID
+          // Inventory overview
           LayoutBuilder(
             builder: (context, constraints) {
-              // Determine the number of columns based on screen width
               int crossAxisCount = constraints.maxWidth > 600 ? 2 : 1;
               double childAspectRatio = constraints.maxWidth > 600 ? 1.8 : 3.0;
               
@@ -538,6 +524,435 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
         ],
       ),
     );
+  }
+
+  // REVENUE CHART WITH FIXED Y-AXIS
+  Widget _buildRevenueChart(Map<String, double> dailyRevenue) {
+    final sortedEntries = dailyRevenue.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    
+    if (sortedEntries.isEmpty) {
+      return Container(
+        height: 250,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            'No revenue data available',
+            style: GoogleFonts.poppins(color: Colors.grey[600]),
+          ),
+        ),
+      );
+    }
+
+    // Calculate Y-axis scale for revenue
+    final maxRevenue = sortedEntries.map((e) => e.value).reduce(math.max);
+    
+    double yAxisMax;
+    int yAxisSteps = 5;
+    
+    if (maxRevenue <= 100) {
+      yAxisMax = ((maxRevenue / 20).ceil() * 20).toDouble();
+    } else if (maxRevenue <= 500) {
+      yAxisMax = ((maxRevenue / 100).ceil() * 100).toDouble();
+    } else if (maxRevenue <= 1000) {
+      yAxisMax = ((maxRevenue / 200).ceil() * 200).toDouble();
+    } else if (maxRevenue <= 5000) {
+      yAxisMax = ((maxRevenue / 1000).ceil() * 1000).toDouble();
+    } else if (maxRevenue <= 10000) {
+      yAxisMax = ((maxRevenue / 2000).ceil() * 2000).toDouble();
+    } else {
+      yAxisMax = ((maxRevenue / 5000).ceil() * 5000).toDouble();
+    }
+
+    final yAxisInterval = yAxisMax / yAxisSteps;
+    
+    return Container(
+      height: 250,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 16, 16, 16), // Reduced left padding
+        child: Column(
+          mainAxisSize: MainAxisSize.min, // Prevent overflow
+          children: [
+            Text(
+              'Revenue Trend',
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 12), // Reduced spacing
+            
+            Expanded(
+              child: Row(
+                children: [
+                  // Fixed Y-axis - reduced width
+                  SizedBox(
+                    width: 50, // Reduced from 60
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: List.generate(yAxisSteps + 1, (index) {
+                        final value = yAxisMax - (index * yAxisInterval);
+                        return SizedBox(
+                          height: 18, // Reduced height
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: Text(
+                              _formatCurrency(value),
+                              style: GoogleFonts.poppins(
+                                fontSize: 9, // Slightly smaller font
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+                  
+                  const SizedBox(width: 4), // Reduced spacing
+                  
+                  // Scrollable chart area
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: SizedBox(
+                        width: math.max(280, sortedEntries.length * 45.0), // Slightly reduced
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Chart bars
+                            SizedBox(
+                              height: 150, // Fixed height to prevent overflow
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                children: sortedEntries.map((entry) {
+                                  final barHeight = ((entry.value / yAxisMax) * 120).clamp(4.0, 120.0);
+                                  
+                                  return SizedBox(
+                                    width: 35,
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.end,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        // Value label on top of bar
+                                        if (barHeight > 18)
+                                          Padding(
+                                            padding: const EdgeInsets.only(bottom: 2),
+                                            child: Text(
+                                              '₹${entry.value.toStringAsFixed(0)}',
+                                              style: GoogleFonts.poppins(
+                                                fontSize: 7,
+                                                fontWeight: FontWeight.w600,
+                                                color: const Color(0xFFFFB703),
+                                              ),
+                                            ),
+                                          ),
+                                        
+                                        // Bar
+                                        Container(
+                                          width: 24,
+                                          height: barHeight,
+                                          decoration: BoxDecoration(
+                                            gradient: LinearGradient(
+                                              begin: Alignment.bottomCenter,
+                                              end: Alignment.topCenter,
+                                              colors: [
+                                                const Color(0xFFFFB703),
+                                                const Color(0xFFFFB703).withOpacity(0.7),
+                                              ],
+                                            ),
+                                            borderRadius: BorderRadius.circular(3),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: const Color(0xFFFFB703).withOpacity(0.3),
+                                                blurRadius: 3,
+                                                offset: const Offset(0, 1),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                            
+                            const SizedBox(height: 6), // Reduced spacing
+                            
+                            // X-axis labels
+                            SizedBox(
+                              height: 16, // Reduced height
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                children: sortedEntries.map((entry) {
+                                  return SizedBox(
+                                    width: 35,
+                                    child: Text(
+                                      entry.key,
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 9,
+                                        color: Colors.grey[600],
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ORDERS CHART WITH FIXED Y-AXIS
+  Widget _buildOrdersChart(Map<String, int> dailyOrders) {
+    final sortedEntries = dailyOrders.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    
+    if (sortedEntries.isEmpty) {
+      return Container(
+        height: 250,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            'No orders data available',
+            style: GoogleFonts.poppins(color: Colors.grey[600]),
+          ),
+        ),
+      );
+    }
+
+    // Calculate Y-axis scale for orders
+    final maxOrders = sortedEntries.map((e) => e.value).reduce(math.max);
+    
+    double yAxisMax;
+    int yAxisSteps = 5;
+    
+    if (maxOrders <= 10) {
+      yAxisMax = ((maxOrders / 2).ceil() * 2).toDouble();
+    } else if (maxOrders <= 25) {
+      yAxisMax = ((maxOrders / 5).ceil() * 5).toDouble();
+    } else if (maxOrders <= 50) {
+      yAxisMax = ((maxOrders / 10).ceil() * 10).toDouble();
+    } else if (maxOrders <= 100) {
+      yAxisMax = ((maxOrders / 20).ceil() * 20).toDouble();
+    } else {
+      yAxisMax = ((maxOrders / 50).ceil() * 50).toDouble();
+    }
+
+    final yAxisInterval = yAxisMax / yAxisSteps;
+    
+    return Container(
+      height: 250,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 16, 16, 16), // Reduced left padding
+        child: Column(
+          mainAxisSize: MainAxisSize.min, // Prevent overflow
+          children: [
+            Text(
+              'Daily Orders',
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 12), // Reduced spacing
+            
+            Expanded(
+              child: Row(
+                children: [
+                  // Fixed Y-axis - reduced width
+                  SizedBox(
+                    width: 50, // Reduced from 60
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: List.generate(yAxisSteps + 1, (index) {
+                        final value = yAxisMax - (index * yAxisInterval);
+                        return SizedBox(
+                          height: 18, // Reduced height
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: Text(
+                              '${value.toInt()}',
+                              style: GoogleFonts.poppins(
+                                fontSize: 9, // Slightly smaller font
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+                  
+                  const SizedBox(width: 4), // Reduced spacing
+                  
+                  // Scrollable chart area
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: SizedBox(
+                        width: math.max(280, sortedEntries.length * 45.0), // Slightly reduced
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Chart bars
+                            SizedBox(
+                              height: 150, // Fixed height to prevent overflow
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                children: sortedEntries.map((entry) {
+                                  final barHeight = ((entry.value / yAxisMax) * 120).clamp(4.0, 120.0);
+                                  
+                                  return SizedBox(
+                                    width: 35,
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.end,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        // Value label on top of bar
+                                        if (barHeight > 18)
+                                          Padding(
+                                            padding: const EdgeInsets.only(bottom: 2),
+                                            child: Text(
+                                              '${entry.value}',
+                                              style: GoogleFonts.poppins(
+                                                fontSize: 7,
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.blue,
+                                              ),
+                                            ),
+                                          ),
+                                        
+                                        // Bar
+                                        Container(
+                                          width: 24,
+                                          height: barHeight,
+                                          decoration: BoxDecoration(
+                                            gradient: LinearGradient(
+                                              begin: Alignment.bottomCenter,
+                                              end: Alignment.topCenter,
+                                              colors: [
+                                                Colors.blue,
+                                                Colors.blue.withOpacity(0.7),
+                                              ],
+                                            ),
+                                            borderRadius: BorderRadius.circular(3),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.blue.withOpacity(0.3),
+                                                blurRadius: 3,
+                                                offset: const Offset(0, 1),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                            
+                            const SizedBox(height: 6), // Reduced spacing
+                            
+                            // X-axis labels
+                            SizedBox(
+                              height: 16, // Reduced height
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                children: sortedEntries.map((entry) {
+                                  return SizedBox(
+                                    width: 35,
+                                    child: Text(
+                                      entry.key,
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 9,
+                                        color: Colors.grey[600],
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Helper function to format currency values for Y-axis
+  String _formatCurrency(double value) {
+    if (value >= 1000) {
+      return '₹${(value / 1000).toStringAsFixed(1)}k';
+    } else {
+      return '₹${value.toStringAsFixed(0)}';
+    }
   }
 
   Widget _buildMetricCard(String title, String value, IconData icon, Color color, String subtitle) {
@@ -706,158 +1121,6 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
           ),
         );
       }).toList(),
-    );
-  }
-
-  Widget _buildRevenueChart(Map<String, double> dailyRevenue) {
-    final sortedEntries = dailyRevenue.entries.toList()
-      ..sort((a, b) => a.key.compareTo(b.key));
-    
-    return Container(
-      height: 180, // Fixed height to prevent overflow
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Text(
-            'Revenue Trend',
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Container(
-                height: 120, // Fixed height for chart area
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: sortedEntries.map((entry) {
-                    final maxRevenue = sortedEntries.map((e) => e.value).reduce((a, b) => a > b ? a : b);
-                    final height = maxRevenue > 0 ? (entry.value / maxRevenue * 100).toDouble() : 0.0;
-                    
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 30,
-                            height: height,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFFB703),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          SizedBox(
-                            width: 35,
-                            child: Text(
-                              entry.key,
-                              style: GoogleFonts.poppins(fontSize: 9),
-                              textAlign: TextAlign.center,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPeakHoursChart(Map<String, int> hourlyOrders) {
-    final sortedHours = hourlyOrders.entries.toList()
-      ..sort((a, b) => int.parse(a.key.split(':')[0]).compareTo(int.parse(b.key.split(':')[0])));
-    
-    return Container(
-      height: 180, // Fixed height to prevent overflow
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Text(
-            'Orders by Hour',
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Container(
-                height: 120, // Fixed height for chart area
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: sortedHours.map((entry) {
-                    final maxOrders = sortedHours.map((e) => e.value).reduce((a, b) => a > b ? a : b);
-                    final height = maxOrders > 0 ? (entry.value / maxOrders * 100).toDouble() : 0.0;
-                    
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 2),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 20,
-                            height: height,
-                            decoration: BoxDecoration(
-                              color: Colors.blue,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          SizedBox(
-                            width: 24,
-                            child: Text(
-                              entry.key,
-                              style: GoogleFonts.poppins(fontSize: 7),
-                              textAlign: TextAlign.center,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
