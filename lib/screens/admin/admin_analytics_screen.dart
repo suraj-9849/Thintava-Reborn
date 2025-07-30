@@ -1,4 +1,4 @@
-// lib/screens/admin/admin_analytics_screen.dart - NEW ANALYTICS SCREEN
+// lib/screens/admin/admin_analytics_screen.dart - FIXED OVERFLOW ISSUES
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -185,7 +185,7 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
       ),
       body: Column(
         children: [
-          // Period Selector
+          // Period Selector - FIXED OVERFLOW
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -198,45 +198,46 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
                 ),
               ],
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Period: ',
+                  'Period Selection:',
                   style: GoogleFonts.poppins(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
+                    fontSize: 14,
                   ),
                 ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: _periods.map((period) {
-                        final isSelected = period == _selectedPeriod;
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: FilterChip(
-                            label: Text(
-                              period,
-                              style: GoogleFonts.poppins(
-                                color: isSelected ? const Color(0xFFFFB703) : Colors.black87,
-                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                fontSize: 12,
-                              ),
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: _periods.map((period) {
+                      final isSelected = period == _selectedPeriod;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: FilterChip(
+                          label: Text(
+                            period,
+                            style: GoogleFonts.poppins(
+                              color: isSelected ? const Color(0xFFFFB703) : Colors.black87,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              fontSize: 12,
                             ),
-                            selected: isSelected,
-                            onSelected: (selected) {
-                              setState(() {
-                                _selectedPeriod = period;
-                              });
-                            },
-                            backgroundColor: Colors.white.withOpacity(0.2),
-                            selectedColor: Colors.white,
-                            checkmarkColor: const Color(0xFFFFB703),
                           ),
-                        );
-                      }).toList(),
-                    ),
+                          selected: isSelected,
+                          onSelected: (selected) {
+                            setState(() {
+                              _selectedPeriod = period;
+                            });
+                          },
+                          backgroundColor: Colors.white.withOpacity(0.2),
+                          selectedColor: Colors.white,
+                          checkmarkColor: const Color(0xFFFFB703),
+                        ),
+                      );
+                    }).toList(),
                   ),
                 ),
               ],
@@ -304,44 +305,52 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
           ),
           const SizedBox(height: 16),
           
-          // Key metrics grid
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 2,
-            childAspectRatio: 1.2,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-            children: [
-              _buildMetricCard(
-                'Total Revenue',
-                '₹${(data['totalRevenue'] ?? 0).toStringAsFixed(2)}',
-                Icons.currency_rupee,
-                Colors.green,
-                data['period'] ?? '',
-              ),
-              _buildMetricCard(
-                'Total Orders',
-                '${data['totalOrders'] ?? 0}',
-                Icons.receipt_long,
-                Colors.blue,
-                data['period'] ?? '',
-              ),
-              _buildMetricCard(
-                'Average Order',
-                '₹${(data['averageOrderValue'] ?? 0).toStringAsFixed(2)}',
-                Icons.trending_up,
-                Colors.orange,
-                'Per order',
-              ),
-              _buildMetricCard(
-                'Menu Items',
-                '${data['totalMenuItems'] ?? 0}',
-                Icons.restaurant_menu,
-                Colors.purple,
-                '${data['availableItems'] ?? 0} available',
-              ),
-            ],
+          // Key metrics grid - FIXED FOR RESPONSIVE
+          LayoutBuilder(
+            builder: (context, constraints) {
+              // Determine the number of columns based on screen width
+              int crossAxisCount = constraints.maxWidth > 600 ? 2 : 1;
+              double childAspectRatio = constraints.maxWidth > 600 ? 1.2 : 2.0;
+              
+              return GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: crossAxisCount,
+                childAspectRatio: childAspectRatio,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+                children: [
+                  _buildMetricCard(
+                    'Total Revenue',
+                    '₹${(data['totalRevenue'] ?? 0).toStringAsFixed(2)}',
+                    Icons.currency_rupee,
+                    Colors.green,
+                    data['period'] ?? '',
+                  ),
+                  _buildMetricCard(
+                    'Total Orders',
+                    '${data['totalOrders'] ?? 0}',
+                    Icons.receipt_long,
+                    Colors.blue,
+                    data['period'] ?? '',
+                  ),
+                  _buildMetricCard(
+                    'Average Order',
+                    '₹${(data['averageOrderValue'] ?? 0).toStringAsFixed(2)}',
+                    Icons.trending_up,
+                    Colors.orange,
+                    'Per order',
+                  ),
+                  _buildMetricCard(
+                    'Menu Items',
+                    '${data['totalMenuItems'] ?? 0}',
+                    Icons.restaurant_menu,
+                    Colors.purple,
+                    '${data['availableItems'] ?? 0} available',
+                  ),
+                ],
+              );
+            },
           ),
           
           const SizedBox(height: 24),
@@ -380,7 +389,7 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
           ),
           const SizedBox(height: 16),
           
-          // Revenue by day
+          // Revenue by day - FIXED WITH CONTAINER HEIGHT
           if (dailyRevenue.isNotEmpty) ...[
             Text(
               'Daily Revenue',
@@ -390,7 +399,10 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
               ),
             ),
             const SizedBox(height: 12),
-            _buildRevenueChart(dailyRevenue),
+            SizedBox(
+              height: 200, // Constrained height to prevent overflow
+              child: _buildRevenueChart(dailyRevenue),
+            ),
             const SizedBox(height: 24),
           ],
           
@@ -428,7 +440,7 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
           ),
           const SizedBox(height: 16),
           
-          // Peak hours
+          // Peak hours - FIXED WITH CONTAINER HEIGHT
           if (hourlyOrders.isNotEmpty) ...[
             Text(
               'Peak Hours',
@@ -438,7 +450,10 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
               ),
             ),
             const SizedBox(height: 12),
-            _buildPeakHoursChart(hourlyOrders),
+            SizedBox(
+              height: 200, // Constrained height to prevent overflow
+              child: _buildPeakHoursChart(hourlyOrders),
+            ),
             const SizedBox(height: 24),
           ],
           
@@ -472,40 +487,48 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
           ),
           const SizedBox(height: 16),
           
-          // Inventory overview
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 2,
-            childAspectRatio: 1.5,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-            children: [
-              _buildInventoryCard(
-                'Total Items',
-                '${data['totalMenuItems'] ?? 0}',
-                Icons.inventory,
-                Colors.blue,
-              ),
-              _buildInventoryCard(
-                'Available',
-                '${data['availableItems'] ?? 0}',
-                Icons.check_circle,
-                Colors.green,
-              ),
-              _buildInventoryCard(
-                'Low Stock',
-                '${data['lowStockItems'] ?? 0}',
-                Icons.warning,
-                Colors.orange,
-              ),
-              _buildInventoryCard(
-                'Out of Stock',
-                '${data['outOfStockItems'] ?? 0}',
-                Icons.remove_circle,
-                Colors.red,
-              ),
-            ],
+          // Inventory overview - FIXED RESPONSIVE GRID
+          LayoutBuilder(
+            builder: (context, constraints) {
+              // Determine the number of columns based on screen width
+              int crossAxisCount = constraints.maxWidth > 600 ? 2 : 1;
+              double childAspectRatio = constraints.maxWidth > 600 ? 1.8 : 3.0;
+              
+              return GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: crossAxisCount,
+                childAspectRatio: childAspectRatio,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+                children: [
+                  _buildInventoryCard(
+                    'Total Items',
+                    '${data['totalMenuItems'] ?? 0}',
+                    Icons.inventory,
+                    Colors.blue,
+                  ),
+                  _buildInventoryCard(
+                    'Available',
+                    '${data['availableItems'] ?? 0}',
+                    Icons.check_circle,
+                    Colors.green,
+                  ),
+                  _buildInventoryCard(
+                    'Low Stock',
+                    '${data['lowStockItems'] ?? 0}',
+                    Icons.warning,
+                    Colors.orange,
+                  ),
+                  _buildInventoryCard(
+                    'Out of Stock',
+                    '${data['outOfStockItems'] ?? 0}',
+                    Icons.remove_circle,
+                    Colors.red,
+                  ),
+                ],
+              );
+            },
           ),
           
           const SizedBox(height: 24),
@@ -533,6 +556,7 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -547,20 +571,25 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
               ),
             ],
           ),
-          const Spacer(),
+          const SizedBox(height: 8),
           Text(
             title,
             style: GoogleFonts.poppins(
               fontSize: 12,
               color: Colors.grey[600],
             ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 4),
-          Text(
-            value,
-            style: GoogleFonts.poppins(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              value,
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
           const SizedBox(height: 4),
@@ -570,6 +599,8 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
               fontSize: 10,
               color: Colors.grey[500],
             ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -591,24 +622,43 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
           ),
         ],
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Row(
         children: [
-          Icon(icon, color: color, size: 32),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: GoogleFonts.poppins(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: color,
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              shape: BoxShape.circle,
             ),
+            child: Icon(icon, color: color, size: 24),
           ),
-          Text(
-            title,
-            style: GoogleFonts.poppins(
-              fontSize: 12,
-              color: Colors.grey[600],
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    value,
+                    style: GoogleFonts.poppins(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+                  ),
+                ),
+                Text(
+                  title,
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
           ),
         ],
@@ -664,7 +714,7 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
       ..sort((a, b) => a.key.compareTo(b.key));
     
     return Container(
-      height: 180,
+      height: 180, // Fixed height to prevent overflow
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -686,44 +736,48 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
               fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           Expanded(
-            child: ListView.builder(
+            child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
-              itemCount: sortedEntries.length,
-              itemBuilder: (context, index) {
-                final entry = sortedEntries[index];
-                final maxRevenue = sortedEntries.map((e) => e.value).reduce((a, b) => a > b ? a : b);
-                final height = maxRevenue > 0 ? (entry.value / maxRevenue * 100).toDouble() : 0.0;
-                
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 30,
-                        height: height,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFB703),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
+              child: Container(
+                height: 120, // Fixed height for chart area
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: sortedEntries.map((entry) {
+                    final maxRevenue = sortedEntries.map((e) => e.value).reduce((a, b) => a > b ? a : b);
+                    final height = maxRevenue > 0 ? (entry.value / maxRevenue * 100).toDouble() : 0.0;
+                    
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 30,
+                            height: height,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFB703),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          SizedBox(
+                            width: 35,
+                            child: Text(
+                              entry.key,
+                              style: GoogleFonts.poppins(fontSize: 9),
+                              textAlign: TextAlign.center,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 4),
-                      SizedBox(
-                        width: 35,
-                        child: Text(
-                          entry.key,
-                          style: GoogleFonts.poppins(fontSize: 9),
-                          textAlign: TextAlign.center,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
+                    );
+                  }).toList(),
+                ),
+              ),
             ),
           ),
         ],
@@ -736,7 +790,7 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
       ..sort((a, b) => int.parse(a.key.split(':')[0]).compareTo(int.parse(b.key.split(':')[0])));
     
     return Container(
-      height: 180,
+      height: 180, // Fixed height to prevent overflow
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -758,44 +812,48 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
               fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           Expanded(
-            child: ListView.builder(
+            child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
-              itemCount: sortedHours.length,
-              itemBuilder: (context, index) {
-                final entry = sortedHours[index];
-                final maxOrders = sortedHours.map((e) => e.value).reduce((a, b) => a > b ? a : b);
-                final height = maxOrders > 0 ? (entry.value / maxOrders * 100).toDouble() : 0.0;
-                
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 20,
-                        height: height,
-                        decoration: BoxDecoration(
-                          color: Colors.blue,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
+              child: Container(
+                height: 120, // Fixed height for chart area
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: sortedHours.map((entry) {
+                    final maxOrders = sortedHours.map((e) => e.value).reduce((a, b) => a > b ? a : b);
+                    final height = maxOrders > 0 ? (entry.value / maxOrders * 100).toDouble() : 0.0;
+                    
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 20,
+                            height: height,
+                            decoration: BoxDecoration(
+                              color: Colors.blue,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          SizedBox(
+                            width: 24,
+                            child: Text(
+                              entry.key,
+                              style: GoogleFonts.poppins(fontSize: 7),
+                              textAlign: TextAlign.center,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 4),
-                      SizedBox(
-                        width: 24,
-                        child: Text(
-                          entry.key,
-                          style: GoogleFonts.poppins(fontSize: 7),
-                          textAlign: TextAlign.center,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
+                    );
+                  }).toList(),
+                ),
+              ),
             ),
           ),
         ],
@@ -860,6 +918,8 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
             title: Text(
               item.key,
               style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
             trailing: Text(
               value,
@@ -929,6 +989,7 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> with Single
           child: Text(
             label,
             style: GoogleFonts.poppins(fontSize: 12),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
         Expanded(

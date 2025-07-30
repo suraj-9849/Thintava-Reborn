@@ -1,4 +1,4 @@
-// lib/screens/admin/menu_management_screen.dart - FIXED FOR CLIENT-SIDE FILTERING
+// lib/screens/admin/menu_management_screen.dart - FIXED VEG TOGGLE LAYOUT
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -609,26 +609,19 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> with Ticker
         ),
         const SizedBox(height: 16),
         
-        // Price and Type Row
-        Row(
-          children: [
-            Expanded(
-              flex: 2,
-              child: _buildTextField(
-                controller: priceController,
-                label: "Price (₹)",
-                hint: "0.00",
-                icon: Icons.currency_rupee,
-                keyboardType: TextInputType.number,
-                required: true,
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: _buildVegToggle(),
-            ),
-          ],
+        // Price field (full width)
+        _buildTextField(
+          controller: priceController,
+          label: "Price (₹)",
+          hint: "0.00",
+          icon: Icons.currency_rupee,
+          keyboardType: TextInputType.number,
+          required: true,
         ),
+        const SizedBox(height: 16),
+        
+        // Veg toggle (below price, full width)
+        _buildVegToggle(),
         const SizedBox(height: 24),
         
         // Stock Management Section
@@ -812,8 +805,10 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> with Ticker
     );
   }
 
+  // FIXED VEG TOGGLE WITH BETTER LAYOUT AND NO OVERFLOW
   Widget _buildVegToggle() {
     return Container(
+      width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(15),
@@ -826,42 +821,135 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> with Ticker
           ),
         ],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            "Type",
+            "Food Type",
             style: GoogleFonts.poppins(
               fontSize: 12,
               color: Colors.grey[700],
               fontWeight: FontWeight.w500,
             ),
           ),
-          const SizedBox(height: 4),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                isVeg ? "Veg" : "Non-Veg",
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: isVeg ? Colors.green : Colors.red,
+          const SizedBox(height: 12),
+          
+          // Toggle buttons for Veg/Non-Veg - FIXED OVERFLOW
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        isVeg = true;
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                      decoration: BoxDecoration(
+                        color: isVeg ? Colors.green : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: isVeg ? Colors.white : Colors.green,
+                                width: 2,
+                              ),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                            child: Container(
+                              margin: EdgeInsets.all(2),
+                              decoration: BoxDecoration(
+                                color: isVeg ? Colors.white : Colors.green,
+                                borderRadius: BorderRadius.circular(1),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              "Veg",
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: isVeg ? Colors.white : Colors.green,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-              Switch(
-                value: isVeg,
-                onChanged: (value) {
-                  setState(() {
-                    isVeg = value;
-                  });
-                },
-                activeColor: Colors.green,
-                inactiveThumbColor: Colors.red,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-            ],
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        isVeg = false;
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                      decoration: BoxDecoration(
+                        color: !isVeg ? Colors.red : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: !isVeg ? Colors.white : Colors.red,
+                                width: 2,
+                              ),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Container(
+                              margin: EdgeInsets.all(2),
+                              decoration: BoxDecoration(
+                                color: !isVeg ? Colors.white : Colors.red,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              "Non-Veg",
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: !isVeg ? Colors.white : Colors.red,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -1080,11 +1168,14 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> with Ticker
                   children: [
                     Icon(showEditForm ? Icons.update : Icons.add),
                     const SizedBox(width: 8),
-                    Text(
-                      showEditForm ? "Update Item" : "Add to ${_selectedMenuType.displayName}",
-                      style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
+                    Flexible(
+                      child: Text(
+                        showEditForm ? "Update Item" : "Add to ${_selectedMenuType.displayName}",
+                        style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],

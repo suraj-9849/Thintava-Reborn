@@ -1,4 +1,4 @@
-// lib/screens/admin/admin_home.dart - UPDATED WITH FIXED CANTEEN STATUS
+// lib/screens/admin/admin_home.dart - FIXED OVERFLOW ISSUES
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -98,12 +98,15 @@ class AdminHome extends StatelessWidget {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'Admin Dashboard',
-                          style: GoogleFonts.poppins(
-                            fontSize: 26,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                        Expanded(
+                          child: Text(
+                            'Admin Dashboard',
+                            style: GoogleFonts.poppins(
+                              fontSize: 26,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         // Logout Icon Button
@@ -242,56 +245,84 @@ class AdminHome extends StatelessWidget {
                     ),
                   ),
                   
-                  // Action Cards Grid
+                  // Action Cards Grid - FIXED EQUAL SIZE LAYOUT
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: GridView.count(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      crossAxisCount: 2,
-                      childAspectRatio: 0.85,
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 16,
+                    child: Column(
                       children: [
-                        _buildActionCard(
-                          context,
-                          title: 'Menu Operations',
-                          subtitle: 'Enable/disable menus',
-                          icon: Icons.restaurant_menu,
-                          color: Colors.blue,
-                          onTap: () => Navigator.pushNamed(context, '/admin/menu-operations'),
+                        // First row - 2 cards
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildActionCard(
+                                context,
+                                title: 'Menu Operations',
+                                subtitle: 'Enable/disable menus',
+                                icon: Icons.restaurant_menu,
+                                color: Colors.blue,
+                                onTap: () => Navigator.pushNamed(context, '/admin/menu-operations'),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: _buildActionCard(
+                                context,
+                                title: 'Manage Menu',
+                                subtitle: 'Edit Menu Items',
+                                icon: Icons.edit_note,
+                                color: Colors.orange,
+                                onTap: () => Navigator.pushNamed(context, '/admin/menu'),
+                              ),
+                            ),
+                          ],
                         ),
-                        _buildActionCard(
-                          context,
-                          title: 'Manage Menu',
-                          subtitle: 'Edit Menu Items',
-                          icon: Icons.edit_note,
-                          color: Colors.orange,
-                          onTap: () => Navigator.pushNamed(context, '/admin/menu'),
+                        const SizedBox(height: 16),
+                        
+                        // Second row - 2 cards (Analytics moved up, Kitchen View)
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildActionCard(
+                                context,
+                                title: 'Analytics',
+                                subtitle: 'Reports & insights',
+                                icon: Icons.analytics,
+                                color: Colors.purple,
+                                onTap: () => Navigator.pushNamed(context, '/admin/analytics'),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: _buildActionCard(
+                                context,
+                                title: 'Kitchen View',
+                                subtitle: 'Monitor operations',
+                                icon: Icons.kitchen,
+                                color: Colors.green,
+                                onTap: () => Navigator.pushNamed(context, '/admin/admin-kitchen-view'),
+                              ),
+                            ),
+                          ],
                         ),
-                        _buildActionCard(
-                          context,
-                          title: 'Kitchen View',
-                          subtitle: 'Monitor kitchen operations',
-                          icon: Icons.kitchen,
-                          color: Colors.green,
-                          onTap: () => Navigator.pushNamed(context, '/admin/admin-kitchen-view'),
-                        ),
-                        _buildActionCard(
-                          context,
-                          title: 'Order History',
-                          subtitle: 'View past orders',
-                          icon: Icons.history,
-                          color: Colors.indigo,
-                          onTap: () => Navigator.pushNamed(context, '/admin/admin-history'),
-                        ),
-                        _buildActionCard(
-                          context,
-                          title: 'Analytics',
-                          subtitle: 'Detailed analytics & reports',
-                          icon: Icons.analytics,
-                          color: Colors.purple,
-                          onTap: () => Navigator.pushNamed(context, '/admin/analytics'),
+                        const SizedBox(height: 16),
+                        
+                        // Third row - 1 centered card (Order History moved down)
+                        Row(
+                          children: [
+                            Expanded(flex: 1, child: Container()), // Spacer
+                            Expanded(
+                              flex: 2,
+                              child: _buildActionCard(
+                                context,
+                                title: 'Order History',
+                                subtitle: 'View past orders',
+                                icon: Icons.history,
+                                color: Colors.indigo,
+                                onTap: () => Navigator.pushNamed(context, '/admin/admin-history'),
+                              ),
+                            ),
+                            Expanded(flex: 1, child: Container()), // Spacer
+                          ],
                         ),
                       ],
                     ),
@@ -502,7 +533,8 @@ class AdminHome extends StatelessWidget {
                   const SizedBox(height: 16),
                   
                   // Enabled menus
-                  Row(
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         'Enabled Menus:',
@@ -512,41 +544,40 @@ class AdminHome extends StatelessWidget {
                           color: Colors.black87,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Wrap(
-                          spacing: 8,
-                          children: enabledMenus.map((status) => Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: status.menuType.color.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: status.menuType.color.withOpacity(0.3),
-                                width: 1,
-                              ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: enabledMenus.map((status) => Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: status.menuType.color.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: status.menuType.color.withOpacity(0.3),
+                              width: 1,
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  status.menuType.icon,
-                                  size: 14,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                status.menuType.icon,
+                                size: 14,
+                                color: status.menuType.color,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                status.menuType.displayName,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
                                   color: status.menuType.color,
                                 ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  status.menuType.displayName,
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                    color: status.menuType.color,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )).toList(),
-                        ),
+                              ),
+                            ],
+                          ),
+                        )).toList(),
                       ),
                     ],
                   ),
@@ -571,6 +602,7 @@ class AdminHome extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
+        height: 160, // Fixed height for all cards
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
@@ -584,48 +616,63 @@ class AdminHome extends StatelessWidget {
           ],
         ),
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(16), // Reduced padding
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(10), // Reduced icon padding
                 decoration: BoxDecoration(
                   color: color.withOpacity(0.2),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
                   icon,
-                  size: 32,
+                  size: 28, // Slightly smaller icon
                   color: color,
                 ),
               ),
-              const Spacer(),
-              Text(
-                title,
-                style: GoogleFonts.poppins(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          title,
+                          style: GoogleFonts.poppins(
+                            fontSize: 15, // Slightly smaller font
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                          maxLines: 1,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: GoogleFonts.poppins(
+                          fontSize: 11, // Smaller subtitle font
+                          color: Colors.grey[600],
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: GoogleFonts.poppins(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const Spacer(),
               Align(
                 alignment: Alignment.centerRight,
                 child: Icon(
                   Icons.arrow_forward,
                   color: color,
-                  size: 20,
+                  size: 18, // Smaller arrow
                 ),
               ),
             ],
