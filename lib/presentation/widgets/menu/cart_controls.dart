@@ -1,10 +1,10 @@
-// lib/presentation/widgets/menu/cart_controls.dart - SIMPLIFIED (NO RESERVATION)
+// lib/presentation/widgets/menu/cart_controls.dart - IMPROVED WITH BETTER ERROR HANDLING
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../../providers/cart_provider.dart';
 
-class CartControls extends StatelessWidget {
+class CartControls extends StatefulWidget {
   final String itemId;
   final int cartQuantity;
   final bool canAdd;
@@ -19,10 +19,17 @@ class CartControls extends StatelessWidget {
   }) : super(key: key);
 
   @override
+  State<CartControls> createState() => _CartControlsState();
+}
+
+class _CartControlsState extends State<CartControls> {
+  bool _isLoading = false;
+
+  @override
   Widget build(BuildContext context) {
     return Consumer<CartProvider>(
       builder: (context, cartProvider, child) {
-        if (cartQuantity > 0) {
+        if (widget.cartQuantity > 0) {
           return _buildQuantityControls(cartProvider);
         } else {
           return _buildAddToCartButton(cartProvider);
@@ -45,7 +52,7 @@ class CartControls extends StatelessWidget {
         children: [
           _buildCartButton(
             icon: Icons.remove_rounded,
-            onTap: () => cartProvider.removeItem(itemId),
+            onTap: _isLoading ? null : () => _handleRemove(cartProvider),
             color: const Color(0xFFFFB703),
           ),
           Container(
@@ -54,24 +61,28 @@ class CartControls extends StatelessWidget {
               color: const Color(0xFFFFB703),
               borderRadius: BorderRadius.circular(15),
             ),
-            child: Text(
-              cartQuantity.toString(),
-              style: GoogleFonts.poppins(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 16,
-              ),
-            ),
+            child: _isLoading 
+              ? SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : Text(
+                  widget.cartQuantity.toString(),
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                  ),
+                ),
           ),
           _buildCartButton(
             icon: Icons.add_rounded,
-            onTap: !canAdd ? null : () async {
-              final success = await cartProvider.addItem(itemId);
-              if (!success && onStockError != null) {
-                onStockError!();
-              }
-            },
-            color: !canAdd ? Colors.grey : const Color(0xFFFFB703),
+            onTap: (_isLoading || !widget.canAdd) ? null : () => _handleAdd(cartProvider),
+            color: (!widget.canAdd || _isLoading) ? Colors.grey : const Color(0xFFFFB703),
           ),
         ],
       ),
@@ -82,14 +93,9 @@ class CartControls extends StatelessWidget {
     return Container(
       width: double.infinity,
       child: ElevatedButton.icon(
-        onPressed: canAdd ? () async {
-          final success = await cartProvider.addItem(itemId);
-          if (!success && onStockError != null) {
-            onStockError!();
-          }
-        } : null,
+        onPressed: (_isLoading || !widget.canAdd) ? null : () => _handleAdd(cartProvider),
         style: ElevatedButton.styleFrom(
-          backgroundColor: canAdd ? const Color(0xFFFFB703) : Colors.grey[400],
+          backgroundColor: widget.canAdd ? const Color(0xFFFFB703) : Colors.grey[400],
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           shape: RoundedRectangleBorder(
@@ -97,9 +103,18 @@ class CartControls extends StatelessWidget {
           ),
           elevation: 0,
         ),
-        icon: const Icon(Icons.add_shopping_cart_rounded, size: 20),
+        icon: _isLoading 
+          ? SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            )
+          : const Icon(Icons.add_shopping_cart_rounded, size: 20),
         label: Text(
-          "Add to Cart",
+          _isLoading ? "Adding..." : "Add to Cart",
           style: GoogleFonts.poppins(
             fontWeight: FontWeight.w600,
             fontSize: 14,
@@ -109,7 +124,11 @@ class CartControls extends StatelessWidget {
     );
   }
 
-  Widget _buildCartButton({required IconData icon, required VoidCallback? onTap, required Color color}) {
+  Widget _buildCartButton({
+    required IconData icon, 
+    required VoidCallback? onTap, 
+    required Color color
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -121,5 +140,52 @@ class CartControls extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _handleAdd(CartProvider cartProvider) async {
+    if (_isLoading) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final success = await cartProvider.addItem(widget.itemId);
+      
+      if (!success && widget.onStockError != null) {
+        widget.onStockError!();
+      }
+    } catch (e) {
+      print('Error adding item to cart: $e');
+      if (widget.onStockError != null) {
+        widget.onStockError!();
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _handleRemove(CartProvider cartProvider) async {
+    if (_isLoading) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      cartProvider.removeItem(widget.itemId);
+    } catch (e) {
+      print('Error removing item from cart: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 }

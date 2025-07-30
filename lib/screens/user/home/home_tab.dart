@@ -1,4 +1,4 @@
-// lib/screens/user/home/home_tab.dart - FIXED FOR UPDATED SYSTEM
+// lib/screens/user/home/home_tab.dart - FIXED WITHOUT COMPOSITE INDEX
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -9,6 +9,7 @@ import 'package:canteen_app/presentation/widgets/menu/search_filter_bar.dart';
 import 'package:canteen_app/presentation/widgets/menu/menu_item_card.dart';
 import 'package:canteen_app/presentation/widgets/common/loading_states.dart';
 import 'package:canteen_app/presentation/widgets/common/empty_state.dart';
+import 'package:canteen_app/core/utils/user_utils.dart';
 import '../../../services/menu_operations_service.dart';
 import '../../../models/menu_type.dart';
 
@@ -58,10 +59,16 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin {
     });
   }
 
-  bool _passesFilters(Map<String, dynamic> data) {
+  // ✅ FIXED: Enhanced filtering logic (client-side to avoid composite index)
+  Future<bool> _passesFilters(Map<String, dynamic> data, String itemId) async {
     final name = (data['name'] ?? '').toString().toLowerCase();
     final isVeg = data['isVeg'] ?? false;
-    final available = data['available'] ?? true;
+    final available = data['available'] ?? false; // Item must be available (not hidden)
+    
+    // ✅ FIRST CHECK: Item must be available (not hidden by admin)
+    if (!available) {
+      return false; // Hidden items should NEVER show in any filter
+    }
     
     // Search filter
     if (_searchQuery.isNotEmpty && !name.contains(_searchQuery)) {
@@ -75,10 +82,31 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin {
       case 'Non-Veg':
         return !isVeg;
       case 'Available':
-        return available;
+        // ✅ FIXED: "Available" should only show items that are both available AND have stock
+        return await _isActuallyAvailable(data, itemId);
       case 'All':
       default:
-        return true;
+        // ✅ FIXED: "All" should show all available items (but not hidden ones)
+        return true; // We already checked available=true above
+    }
+  }
+
+  // ✅ NEW: Helper method to check if item is actually available (has stock)
+  Future<bool> _isActuallyAvailable(Map<String, dynamic> data, String itemId) async {
+    try {
+      final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
+      
+      if (hasUnlimitedStock) {
+        return true; // Unlimited stock is always available
+      }
+      
+      // Check available stock (considering reservations)
+      final availableStock = await UserUtils.getAvailableStock(data, itemId);
+      return availableStock > 0;
+    } catch (e) {
+      print('Error checking availability for $itemId: $e');
+      // Fallback to sync check
+      return UserUtils.getAvailableStockSync(data) > 0;
     }
   }
 
@@ -470,6 +498,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin {
         }
 
         if (snapshot.hasError) {
+          print('Stream error: ${snapshot.error}');
           return EmptyState(
             icon: Icons.error_outline,
             title: 'Error Loading Menu',
@@ -491,19 +520,41 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin {
           );
         }
 
-        final allItems = snapshot.data!.docs;
-        final filteredItems = allItems.where((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          return _passesFilters(data);
-        }).toList();
+        return _buildFilteredItemsList(snapshot.data!.docs);
+      },
+    );
+  }
+
+  // ✅ NEW: Separate method to handle filtered items list
+  Widget _buildFilteredItemsList(List<QueryDocumentSnapshot> allItems) {
+    return FutureBuilder<List<QueryDocumentSnapshot>>(
+      future: _getFilteredItems(allItems),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const LoadingGrid();
+        }
+
+        if (snapshot.hasError) {
+          print('Filtering error: ${snapshot.error}');
+          return EmptyState(
+            icon: Icons.error_outline,
+            title: 'Error Loading Items',
+            subtitle: 'Unable to filter menu items. Please try again.',
+            actionText: 'Retry',
+            onActionPressed: () {
+              setState(() {});
+            },
+            iconColor: Colors.red,
+          );
+        }
+
+        final filteredItems = snapshot.data ?? [];
 
         if (filteredItems.isEmpty) {
           return EmptyState(
             icon: Icons.search_off,
             title: 'No Results Found',
-            subtitle: _searchQuery.isNotEmpty
-                ? 'No items match "$_searchQuery" with current filters'
-                : 'No items match the current filters',
+            subtitle: _buildNoResultsMessage(),
             actionText: 'Clear Filters',
             onActionPressed: () {
               _onClearSearch();
@@ -539,6 +590,46 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin {
     );
   }
 
+  // ✅ NEW: Async method to filter items properly
+  Future<List<QueryDocumentSnapshot>> _getFilteredItems(List<QueryDocumentSnapshot> allItems) async {
+    List<QueryDocumentSnapshot> filteredItems = [];
+
+    for (final doc in allItems) {
+      final data = doc.data() as Map<String, dynamic>;
+      
+      // ✅ FIXED: Use async filtering method
+      try {
+        if (await _passesFilters(data, doc.id)) {
+          filteredItems.add(doc);
+        }
+      } catch (e) {
+        print('Error filtering item ${doc.id}: $e');
+        // Include item if filtering fails (show rather than hide)
+        filteredItems.add(doc);
+      }
+    }
+
+    return filteredItems;
+  }
+
+  String _buildNoResultsMessage() {
+    if (_searchQuery.isNotEmpty) {
+      return 'No items match "$_searchQuery" with current filters';
+    }
+    
+    switch (_selectedFilter) {
+      case 'Available':
+        return 'No items are currently available with stock';
+      case 'Veg':
+        return 'No vegetarian items match your search';
+      case 'Non-Veg':
+        return 'No non-vegetarian items match your search';
+      default:
+        return 'No items match the current filters';
+    }
+  }
+
+  // ✅ FIXED: Use orderBy only, then filter client-side to avoid composite index
   Stream<QuerySnapshot> _buildEnabledMenuItemsStream() async* {
     final enabledMenuTypes = await MenuOperationsService.getEnabledMenuTypes();
     
@@ -550,17 +641,20 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin {
     try {
       final enabledMenuValues = enabledMenuTypes.map((type) => type.value).toList();
       
-      // Use 'arrayContainsAny' or client-side filtering to avoid compound queries
+      // ✅ FIXED: Use simple orderBy query, then filter client-side to avoid composite index
       yield* FirebaseFirestore.instance
           .collection('menuItems')
-          .orderBy('name')
+          .orderBy('name') // Only order by name to avoid composite index
           .snapshots()
           .map((snapshot) {
-            // Client-side filtering for enabled menu types
+            // Client-side filtering for both enabled menu types AND available items
             final filteredDocs = snapshot.docs.where((doc) {
               final data = doc.data();
               final menuType = data['menuType'] ?? 'breakfast';
-              return enabledMenuValues.contains(menuType);
+              final available = data['available'] ?? false;
+              
+              // Must be both enabled menu type AND available (not hidden)
+              return enabledMenuValues.contains(menuType) && available;
             }).toList();
             
             // Create a new QuerySnapshot with filtered docs

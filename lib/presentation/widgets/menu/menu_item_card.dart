@@ -1,4 +1,4 @@
-// lib/presentation/widgets/menu/menu_item_card.dart - FIXED WITH RESERVATION SYSTEM
+// lib/presentation/widgets/menu/menu_item_card.dart - FIXED STOCK FLICKERING ISSUE
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -8,7 +8,36 @@ import '../../../providers/cart_provider.dart';
 import '../common/stock_indicator.dart';
 import 'cart_controls.dart';
 
-class MenuItemCard extends StatelessWidget {
+// Enhanced stock state to prevent flickering
+class StockState {
+  final StockStatusType status;
+  final int availableStock;
+  final bool isLoading;
+  final bool hasUnlimitedStock;
+
+  StockState({
+    required this.status,
+    required this.availableStock,
+    this.isLoading = false,
+    this.hasUnlimitedStock = false,
+  });
+
+  StockState copyWith({
+    StockStatusType? status,
+    int? availableStock,
+    bool? isLoading,
+    bool? hasUnlimitedStock,
+  }) {
+    return StockState(
+      status: status ?? this.status,
+      availableStock: availableStock ?? this.availableStock,
+      isLoading: isLoading ?? this.isLoading,
+      hasUnlimitedStock: hasUnlimitedStock ?? this.hasUnlimitedStock,
+    );
+  }
+}
+
+class MenuItemCard extends StatefulWidget {
   final String id;
   final Map<String, dynamic> data;
   final int index;
@@ -25,30 +54,124 @@ class MenuItemCard extends StatelessWidget {
   }) : super(key: key);
 
   @override
+  State<MenuItemCard> createState() => _MenuItemCardState();
+}
+
+class _MenuItemCardState extends State<MenuItemCard> {
+  late StockState _stockState;
+  bool _isInitialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeStockState();
+  }
+
+  void _initializeStockState() {
+    final hasUnlimitedStock = widget.data['hasUnlimitedStock'] ?? false;
+    final available = widget.data['available'] ?? true;
+    
+    if (!available) {
+      _stockState = StockState(
+        status: StockStatusType.unavailable,
+        availableStock: 0,
+        hasUnlimitedStock: false,
+      );
+      _isInitialized = true;
+      return;
+    }
+
+    if (hasUnlimitedStock) {
+      _stockState = StockState(
+        status: StockStatusType.unlimited,
+        availableStock: 999999,
+        hasUnlimitedStock: true,
+      );
+      _isInitialized = true;
+      return;
+    }
+
+    // For limited stock items, start with loading state to prevent flickering
+    _stockState = StockState(
+      status: StockStatusType.inStock, // Start with reasonable default
+      availableStock: UserUtils.getAvailableStockSync(widget.data),
+      isLoading: true,
+      hasUnlimitedStock: false,
+    );
+
+    // Load actual stock asynchronously
+    _loadActualStock();
+  }
+
+  Future<void> _loadActualStock() async {
+    try {
+      final stockInfo = await UserUtils.getStockInfo(widget.id);
+      final actualStock = stockInfo['actual'] ?? 0;
+      final availableStock = stockInfo['available'] ?? 0;
+      final hasUnlimitedStock = widget.data['hasUnlimitedStock'] ?? false;
+
+      if (!mounted) return;
+
+      StockStatusType status;
+      if (hasUnlimitedStock) {
+        status = StockStatusType.unlimited;
+      } else if (availableStock <= 0) {
+        status = StockStatusType.outOfStock;
+      } else if (availableStock <= 5) {
+        status = StockStatusType.lowStock;
+      } else {
+        status = StockStatusType.inStock;
+      }
+
+      setState(() {
+        _stockState = StockState(
+          status: status,
+          availableStock: availableStock,
+          isLoading: false,
+          hasUnlimitedStock: hasUnlimitedStock,
+        );
+        _isInitialized = true;
+      });
+    } catch (e) {
+      print('Error loading stock for ${widget.id}: $e');
+      if (!mounted) return;
+      
+      // Fallback to sync calculation
+      final syncStock = UserUtils.getAvailableStockSync(widget.data);
+      final syncStatus = UserUtils.getStockStatusSync(widget.data);
+      
+      setState(() {
+        _stockState = StockState(
+          status: syncStatus,
+          availableStock: syncStock,
+          isLoading: false,
+          hasUnlimitedStock: widget.data['hasUnlimitedStock'] ?? false,
+        );
+        _isInitialized = true;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final name = data['name'] ?? 'Unknown Item';
-    final price = (data['price'] ?? 0.0) is double 
-      ? (data['price'] ?? 0.0) 
-      : double.parse((data['price'] ?? '0').toString());
-    final description = data['description'] ?? '';
-    final imageUrl = data['imageUrl'] as String?;
-    final isVeg = data['isVeg'] ?? false;
-    final available = data['available'] ?? true;
+    final name = widget.data['name'] ?? 'Unknown Item';
+    final price = (widget.data['price'] ?? 0.0) is double 
+      ? (widget.data['price'] ?? 0.0) 
+      : double.parse((widget.data['price'] ?? '0').toString());
+    final description = widget.data['description'] ?? '';
+    final imageUrl = widget.data['imageUrl'] as String?;
+    final isVeg = widget.data['isVeg'] ?? false;
+    final available = widget.data['available'] ?? true;
     
-    // ✅ FIXED: Use sync versions for immediate display, async versions for real data
-    final actualStock = UserUtils.getAvailableStockSync(data);
-    final stockStatusSync = UserUtils.getStockStatusSync(data);
-    final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
-    
-    // For immediate display - will be updated by FutureBuilder
-    final isOutOfStock = !available || (!hasUnlimitedStock && actualStock <= 0);
+    final isOutOfStock = !available || 
+        (!_stockState.hasUnlimitedStock && _stockState.availableStock <= 0);
 
     return Consumer<CartProvider>(
       builder: (context, cartProvider, child) {
-        final cartQuantity = cartProvider.getQuantity(id);
+        final cartQuantity = cartProvider.getQuantity(widget.id);
         
         return TweenAnimationBuilder<double>(
-          duration: Duration(milliseconds: 300 + (index * 100)),
+          duration: Duration(milliseconds: 300 + (widget.index * 100)),
           tween: Tween(begin: 0.0, end: 1.0),
           builder: (context, value, child) {
             return Transform.translate(
@@ -83,14 +206,14 @@ class MenuItemCard extends StatelessWidget {
                             Expanded(
                               child: _buildFoodDetails(
                                 name, price, description, 
-                                available, cartProvider, cartQuantity,
-                                hasUnlimitedStock, context
+                                available, cartProvider, cartQuantity, context
                               ),
                             ),
                           ],
                         ),
                       ),
-                      if (isOutOfStock && !hasUnlimitedStock) _buildOutOfStockOverlay(),
+                      if (isOutOfStock && !_stockState.hasUnlimitedStock) 
+                        _buildOutOfStockOverlay(),
                     ],
                   ),
                 ),
@@ -182,8 +305,7 @@ class MenuItemCard extends StatelessWidget {
   }
 
   Widget _buildFoodDetails(String name, double price, String description, 
-      bool available, CartProvider cartProvider, int cartQuantity, 
-      bool hasUnlimitedStock, BuildContext context) {
+      bool available, CartProvider cartProvider, int cartQuantity, BuildContext context) {
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -203,8 +325,8 @@ class MenuItemCard extends StatelessWidget {
         
         const SizedBox(height: 4),
         
-        // ✅ FIXED: Real-time stock status with FutureBuilder
-        _buildAsyncStockIndicator(),
+        // ✅ FIXED: Use stable stock indicator that doesn't flicker
+        _buildStableStockIndicator(),
         
         if (description.isNotEmpty) ...[
           const SizedBox(height: 8),
@@ -235,92 +357,51 @@ class MenuItemCard extends StatelessWidget {
         
         const SizedBox(height: 16),
         
-        // ✅ FIXED: Real-time cart controls with FutureBuilder
-        _buildAsyncCartControls(cartProvider, cartQuantity, context),
+        // ✅ FIXED: Use stable cart controls that don't flicker
+        _buildStableCartControls(cartProvider, cartQuantity, context),
       ],
     );
   }
 
-  // ✅ NEW: Real-time stock indicator with reservation awareness
-  Widget _buildAsyncStockIndicator() {
-    return FutureBuilder<StockStatusType>(
-      future: UserUtils.getStockStatus(data, id),
-      builder: (context, snapshot) {
-        if (snapshot.hasData) {
-          return FutureBuilder<int>(
-            future: UserUtils.getAvailableStock(data, id),
-            builder: (context, stockSnapshot) {
-              final availableStock = stockSnapshot.data ?? 0;
-              return StockIndicator(
-                status: snapshot.data!,
-                availableStock: availableStock,
-                isCompact: true,
-              );
-            },
-          );
-        } else {
-          // Show sync version while loading
-          return StockIndicator(
-            status: UserUtils.getStockStatusSync(data),
-            availableStock: UserUtils.getAvailableStockSync(data),
-            isCompact: true,
-          );
-        }
-      },
+  // ✅ FIXED: Stable stock indicator without flickering
+  Widget _buildStableStockIndicator() {
+    return StockIndicator(
+      status: _stockState.status,
+      availableStock: _stockState.availableStock,
+      isCompact: true,
+      isLoading: _stockState.isLoading && !_isInitialized,
     );
   }
 
-  // ✅ NEW: Real-time cart controls with reservation awareness
-  Widget _buildAsyncCartControls(CartProvider cartProvider, int cartQuantity, BuildContext context) {
-    final available = data['available'] ?? true;
-    final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
+  // ✅ FIXED: Stable cart controls without flickering
+  Widget _buildStableCartControls(CartProvider cartProvider, int cartQuantity, BuildContext context) {
+    final available = widget.data['available'] ?? true;
     
     if (!available) {
       return _buildUnavailableButton('Currently Unavailable');
     }
 
-    return FutureBuilder<bool>(
-      future: UserUtils.canAddToCart(data, id, cartQuantity),
-      builder: (context, snapshot) {
-        if (snapshot.hasData) {
-          final canAdd = snapshot.data!;
-          
-          if (hasUnlimitedStock || canAdd) {
-            return CartControls(
-              itemId: id,
-              cartQuantity: cartQuantity,
-              canAdd: canAdd,
-              onStockError: () => _showStockError(context),
-            );
-          } else {
-            return FutureBuilder<int>(
-              future: UserUtils.getAvailableStock(data, id),
-              builder: (context, stockSnapshot) {
-                final availableStock = stockSnapshot.data ?? 0;
-                if (availableStock <= 0) {
-                  return _buildUnavailableButton('Out of Stock');
-                } else {
-                  return CartControls(
-                    itemId: id,
-                    cartQuantity: cartQuantity,
-                    canAdd: false,
-                    onStockError: () => _showStockError(context, availableStock),
-                  );
-                }
-              },
-            );
-          }
-        } else {
-          // Show loading or sync version
-          final canAddSync = UserUtils.canAddToCartSync(data, cartQuantity);
-          return CartControls(
-            itemId: id,
-            cartQuantity: cartQuantity,
-            canAdd: canAddSync,
-            onStockError: () => _showStockError(context),
-          );
-        }
-      },
+    if (_stockState.hasUnlimitedStock) {
+      return CartControls(
+        itemId: widget.id,
+        cartQuantity: cartQuantity,
+        canAdd: true,
+        onStockError: () => _showStockError(context),
+      );
+    }
+
+    if (_stockState.availableStock <= 0) {
+      return _buildUnavailableButton('Out of Stock');
+    }
+
+    // Check if can add more to cart based on current available stock
+    final canAdd = (cartQuantity + 1) <= _stockState.availableStock;
+
+    return CartControls(
+      itemId: widget.id,
+      cartQuantity: cartQuantity,
+      canAdd: canAdd,
+      onStockError: () => _showStockError(context, _stockState.availableStock),
     );
   }
 
@@ -391,46 +472,35 @@ class MenuItemCard extends StatelessWidget {
   }
 
   void _showStockError(BuildContext context, [int? availableStock]) {
-    FutureBuilder<int>(
-      future: availableStock != null 
-        ? Future.value(availableStock) 
-        : UserUtils.getAvailableStock(data, id),
-      builder: (context, snapshot) {
-        final stock = snapshot.data ?? 0;
-        
-        String message;
-        if (stock <= 0) {
-          message = '${data['name']} is out of stock';
-        } else {
-          message = 'Only $stock ${data['name']} available';
-        }
-        
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.warning_rounded, color: Colors.white, size: 20),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      message,
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
-                    ),
-                  ),
-                ],
+    final stock = availableStock ?? _stockState.availableStock;
+    
+    String message;
+    if (stock <= 0) {
+      message = '${widget.data['name']} is out of stock';
+    } else {
+      message = 'Only $stock ${widget.data['name']} available';
+    }
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.warning_rounded, color: Colors.white, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
               ),
-              backgroundColor: Colors.red,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              margin: const EdgeInsets.all(16),
-              duration: const Duration(seconds: 3),
             ),
-          );
-        });
-        
-        return SizedBox.shrink();
-      },
+          ],
+        ),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 3),
+      ),
     );
   }
 }

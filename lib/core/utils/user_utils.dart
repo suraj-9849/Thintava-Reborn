@@ -1,10 +1,14 @@
-// lib/core/utils/user_utils.dart - WITH RESERVATION SYSTEM
+// lib/core/utils/user_utils.dart - FIXED COMPILATION ERRORS
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../enums/user_enums.dart';
 import '../../services/reservation_service.dart';
 
 class UserUtils {
+  // Cache to store recent stock calculations to reduce API calls
+  static final Map<String, _StockCache> _stockCache = {};
+  static const Duration _cacheValidDuration = Duration(seconds: 30);
+
   // Date formatting without intl package
   static String formatDate(DateTime dateTime) {
     final months = [
@@ -79,7 +83,7 @@ class UserUtils {
     }
   }
   
-  // Stock calculations (WITH RESERVATIONS)
+  // ✅ OPTIMIZED: Stock calculations with caching to reduce flickering
   static Future<int> getAvailableStock(Map<String, dynamic> itemData, String itemId) async {
     final hasUnlimitedStock = itemData['hasUnlimitedStock'] ?? false;
     
@@ -87,11 +91,35 @@ class UserUtils {
       return 999999;
     }
     
-    // Get available stock from reservation service (actual - reserved)
-    return await ReservationService.getAvailableStock(itemId);
+    // Check cache first
+    final cached = _stockCache[itemId];
+    if (cached != null && cached.isValid()) {
+      return cached.availableStock;
+    }
+    
+    try {
+      // Get available stock from reservation service (actual - reserved)
+      final availableStock = await ReservationService.getAvailableStock(itemId);
+      
+      // Get actual stock for caching
+      final actualStock = itemData['quantity'] ?? 0;
+      
+      // Cache the result
+      _stockCache[itemId] = _StockCache(
+        actualStock: actualStock,
+        availableStock: availableStock,
+        timestamp: DateTime.now(),
+      );
+      
+      return availableStock;
+    } catch (e) {
+      print('Error getting available stock for $itemId: $e');
+      // Return sync calculation as fallback
+      return getAvailableStockSync(itemData);
+    }
   }
   
-  // Legacy method for backward compatibility (now async)
+  // Improved sync method with better fallback
   static int getAvailableStockSync(Map<String, dynamic> itemData) {
     final hasUnlimitedStock = itemData['hasUnlimitedStock'] ?? false;
     
@@ -118,7 +146,7 @@ class UserUtils {
     return StockStatusType.inStock;
   }
   
-  // Legacy sync method for immediate display
+  // Improved sync method
   static StockStatusType getStockStatusSync(Map<String, dynamic> itemData) {
     final available = itemData['available'] ?? false;
     final hasUnlimitedStock = itemData['hasUnlimitedStock'] ?? false;
@@ -187,9 +215,19 @@ class UserUtils {
     return (currentCartQuantity + 1) <= availableStock;
   }
   
-  // Helper method to get both actual and available stock info
+  // ✅ OPTIMIZED: Enhanced method with caching and better error handling
   static Future<Map<String, int>> getStockInfo(String itemId) async {
     try {
+      // Check cache first
+      final cached = _stockCache[itemId];
+      if (cached != null && cached.isValid()) {
+        return {
+          'actual': cached.actualStock,
+          'available': cached.availableStock,
+          'reserved': cached.actualStock - cached.availableStock,
+        };
+      }
+      
       final doc = await FirebaseFirestore.instance.collection('menuItems').doc(itemId).get();
       
       if (doc.exists) {
@@ -197,6 +235,13 @@ class UserUtils {
         final hasUnlimitedStock = data['hasUnlimitedStock'] ?? false;
         
         if (hasUnlimitedStock) {
+          // Cache unlimited stock items too
+          _stockCache[itemId] = _StockCache(
+            actualStock: 999999,
+            availableStock: 999999,
+            timestamp: DateTime.now(),
+          );
+          
           return {
             'actual': 999999,
             'available': 999999,
@@ -207,6 +252,13 @@ class UserUtils {
         final actualStock = data['quantity'] ?? 0;
         final reservedStock = await ReservationService.getActiveReservationsForItem(itemId);
         final availableStock = actualStock - reservedStock;
+        
+        // Cache the result
+        _stockCache[itemId] = _StockCache(
+          actualStock: actualStock,
+          availableStock: availableStock > 0 ? availableStock : 0,
+          timestamp: DateTime.now(),
+        );
         
         return {
           'actual': actualStock,
@@ -228,5 +280,38 @@ class UserUtils {
         'reserved': 0,
       };
     }
+  }
+  
+  // ✅ NEW: Method to clear cache when needed
+  static void clearStockCache([String? itemId]) {
+    if (itemId != null) {
+      _stockCache.remove(itemId);
+    } else {
+      _stockCache.clear();
+    }
+  }
+  
+  // ✅ NEW: Method to clear expired cache entries
+  static void cleanupExpiredCache() {
+    final now = DateTime.now();
+    _stockCache.removeWhere((key, cache) => !cache.isValid(now));
+  }
+}
+
+// ✅ NEW: Cache class for stock information
+class _StockCache {
+  final int actualStock;
+  final int availableStock;
+  final DateTime timestamp;
+
+  _StockCache({
+    required this.actualStock,
+    required this.availableStock,
+    required this.timestamp,
+  });
+
+  bool isValid([DateTime? now]) {
+    now ??= DateTime.now();
+    return now.difference(timestamp) < UserUtils._cacheValidDuration;
   }
 }
