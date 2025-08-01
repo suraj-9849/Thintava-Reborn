@@ -489,162 +489,329 @@ exports.sendWelcomeNotification = functions.firestore
 // ============================================================================
 
 // 🔥 Create Razorpay order for auto-capture
-exports.createRazorpayOrder = functions.https.onCall(async (data, context) => {
-  try {
-    // Check if user is authenticated
-    if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
-    }
+// Enhanced createRazorpayOrder function - Add this to your functions/index.js
 
-    const { amount, currency = 'INR', receipt, notes = {} } = data;
-
-    // Validate required fields
-    if (!amount || amount <= 0) {
-      throw new functions.https.HttpsError('invalid-argument', 'Valid amount is required');
-    }
-
-    console.log(`🔄 Creating Razorpay order for user ${context.auth.uid}, amount: ${amount}`);
-
-    // Create order with Razorpay
-    const orderOptions = {
-      amount: amount, // Amount in paise
-      currency: currency,
-      receipt: receipt || `order_${Date.now()}`,
-      payment_capture: 1, // 🔑 AUTO-CAPTURE ENABLED
-      notes: {
-        ...notes,
-        userId: context.auth.uid,
-        userEmail: context.auth.token.email || '',
+// ✅ ENHANCED: createRazorpayOrder with timeout prevention and better error handling
+exports.createRazorpayOrder = functions
+  .runWith({
+    timeoutSeconds: 120, // Increase timeout to 2 minutes
+    memory: '512MB'      // Increase memory for better performance
+  })
+  .https.onCall(async (data, context) => {
+    const startTime = Date.now();
+    
+    try {
+      // Enhanced logging
+      console.log(`🔄 [${startTime}] Creating Razorpay order - User: ${context.auth?.uid}, Amount: ${data.amount}`);
+      
+      // Check if user is authenticated
+      if (!context.auth) {
+        console.error('❌ User not authenticated');
+        throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
       }
-    };
 
-    const razorpayOrder = await razorpay.orders.create(orderOptions);
+      const { amount, currency = 'INR', receipt, notes = {} } = data;
 
-    console.log(`✅ Razorpay order created: ${razorpayOrder.id}`);
+      // Enhanced validation
+      if (!amount || amount <= 0) {
+        console.error('❌ Invalid amount:', amount);
+        throw new functions.https.HttpsError('invalid-argument', 'Valid amount is required');
+      }
 
-    // Store order info in Firestore for tracking
-    await admin.firestore().collection('razorpay_orders').doc(razorpayOrder.id).set({
-      razorpayOrderId: razorpayOrder.id,
-      userId: context.auth.uid,
-      amount: amount,
-      currency: currency,
-      status: razorpayOrder.status,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      notes: orderOptions.notes,
-      autoCaptureEnabled: true,
-    });
+      if (amount > 10000000) { // 1 lakh rupees in paise
+        console.error('❌ Amount too large:', amount);
+        throw new functions.https.HttpsError('invalid-argument', 'Amount exceeds maximum limit');
+      }
 
-    // Return order details to client
-    return {
-      success: true,
-      orderId: razorpayOrder.id,
-      amount: razorpayOrder.amount,
-      currency: razorpayOrder.currency,
-      status: razorpayOrder.status,
-      autoCaptureEnabled: true,
-    };
+      // Enhanced configuration check
+      const keyId = functions.config().razorpay?.key_id;
+      const keySecret = functions.config().razorpay?.key_secret;
 
-  } catch (error) {
-    console.error('❌ Error creating Razorpay order:', error);
-    throw new functions.https.HttpsError('internal', 'Failed to create order', error.message);
-  }
-});
+      if (!keyId || !keySecret) {
+        console.error('❌ Razorpay configuration missing');
+        console.error('Run: firebase functions:config:set razorpay.key_id="your_key" razorpay.key_secret="your_secret"');
+        throw new functions.https.HttpsError('failed-precondition', 'Payment service configuration error');
+      }
 
-// 🔥 Verify Razorpay payment WITH RESERVATION SYSTEM
-exports.verifyRazorpayPayment = functions.https.onCall(async (data, context) => {
-  try {
-    // Check if user is authenticated
-    if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
-    }
+      // Create Razorpay instance
+      const razorpay = new Razorpay({
+        key_id: keyId,
+        key_secret: keySecret,
+      });
 
-    const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = data;
+      // Enhanced order options
+      const orderOptions = {
+        amount: amount, // Amount in paise
+        currency: currency,
+        receipt: receipt || `order_${Date.now()}`,
+        payment_capture: 1, // AUTO-CAPTURE ENABLED
+        notes: {
+          ...notes,
+          userId: context.auth.uid,
+          userEmail: context.auth.token.email || '',
+          createdAt: new Date().toISOString(),
+          functionStartTime: startTime.toString(),
+        }
+      };
 
-    // Validate required fields
-    if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
-      throw new functions.https.HttpsError('invalid-argument', 'Payment ID, Order ID, and Signature are required');
-    }
+      console.log(`📋 [${Date.now() - startTime}ms] Order options prepared`);
 
-    console.log(`🔍 Verifying payment with reservation: ${razorpay_payment_id} for order: ${razorpay_order_id}`);
+      // Create Razorpay order with timeout
+      const razorpayOrderPromise = razorpay.orders.create(orderOptions);
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Razorpay API timeout')), 30000); // 30 second timeout
+      });
 
-    // Create signature verification string
-    const generated_signature = crypto
-      .createHmac('sha256', functions.config().razorpay.key_secret)
-      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-      .digest('hex');
-
-    // Verify signature
-    const isSignatureValid = generated_signature === razorpay_signature;
-
-    if (!isSignatureValid) {
-      console.log('❌ Invalid payment signature - failing reservation');
+      const razorpayOrder = await Promise.race([razorpayOrderPromise, timeoutPromise]);
       
-      // Fail any associated reservation
-      await failReservationByPaymentId(razorpay_order_id);
+      console.log(`✅ [${Date.now() - startTime}ms] Razorpay order created: ${razorpayOrder.id}`);
+
+      // ✅ ENHANCED: Simplified Firestore write with better error handling
+      try {
+        const firestoreData = {
+          razorpayOrderId: razorpayOrder.id,
+          userId: context.auth.uid,
+          amount: amount,
+          currency: currency,
+          status: razorpayOrder.status,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          notes: orderOptions.notes,
+          autoCaptureEnabled: true,
+          processingTime: Date.now() - startTime,
+        };
+
+        // Use a more reliable write approach
+        const docRef = admin.firestore().collection('razorpay_orders').doc(razorpayOrder.id);
+        
+        // Set with merge option to handle conflicts
+        await docRef.set(firestoreData, { merge: true });
+        
+        console.log(`✅ [${Date.now() - startTime}ms] Order stored in Firestore`);
+      } catch (firestoreError) {
+        console.warn(`⚠️ [${Date.now() - startTime}ms] Firestore write failed: ${firestoreError.message}`);
+        // Continue anyway - the order was created successfully in Razorpay
+        // The order can be tracked via Razorpay webhooks if needed
+      }
+
+      // ✅ ENHANCED: Return response immediately with timing info
+      const response = {
+        success: true,
+        orderId: razorpayOrder.id,
+        amount: razorpayOrder.amount,
+        currency: razorpayOrder.currency,
+        status: razorpayOrder.status,
+        autoCaptureEnabled: true,
+        processingTime: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+      };
+
+      console.log(`✅ [${Date.now() - startTime}ms] Function completed successfully`);
+      return response;
+
+    } catch (error) {
+      const errorTime = Date.now() - startTime;
+      console.error(`❌ [${errorTime}ms] Error creating Razorpay order:`, error);
       
-      throw new functions.https.HttpsError('permission-denied', 'Invalid payment signature');
+      // Enhanced error categorization
+      let errorCode = 'internal';
+      let errorMessage = 'Failed to create order';
+      
+      if (error.message?.includes('key_id') || error.message?.includes('authentication')) {
+        errorCode = 'failed-precondition';
+        errorMessage = 'Payment service authentication error';
+      } else if (error.message?.includes('key_secret')) {
+        errorCode = 'failed-precondition';
+        errorMessage = 'Payment service configuration error';
+      } else if (error.message?.includes('BAD_REQUEST') || error.message?.includes('amount')) {
+        errorCode = 'invalid-argument';
+        errorMessage = 'Invalid payment parameters';
+      } else if (error.message?.includes('timeout')) {
+        errorCode = 'deadline-exceeded';
+        errorMessage = 'Payment service timeout - please try again';
+      } else if (error.message?.includes('network') || error.message?.includes('connection')) {
+        errorCode = 'unavailable';
+        errorMessage = 'Payment service temporarily unavailable';
+      }
+      
+      // Log error details for debugging
+      console.error(`❌ Error details:`, {
+        code: errorCode,
+        message: errorMessage,
+        originalError: error.message,
+        stack: error.stack,
+        processingTime: errorTime,
+        userId: context.auth?.uid,
+        amount: data.amount,
+      });
+      
+      if (error instanceof functions.https.HttpsError) {
+        throw error;
+      }
+      
+      throw new functions.https.HttpsError(errorCode, errorMessage, {
+        originalError: error.message,
+        processingTime: errorTime,
+      });
     }
+  });
 
-    console.log('✅ Payment signature verified successfully');
-
-    // Get payment details from Razorpay
-    const payment = await razorpay.payments.fetch(razorpay_payment_id);
-
-    // Complete the reservation
-    await completeReservationByPaymentId(razorpay_order_id);
-
-    // Store payment info in Firestore
-    await admin.firestore().collection('razorpay_payments').doc(razorpay_payment_id).set({
-      paymentId: razorpay_payment_id,
-      orderId: razorpay_order_id,
-      signature: razorpay_signature,
-      amount: payment.amount,
-      status: payment.status,
-      method: payment.method,
-      userId: context.auth.uid,
-      verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-      razorpayData: payment,
-      autoCaptured: payment.captured || false,
-      reservationCompleted: true,
-    });
-
-    // Update order status
-    await admin.firestore().collection('razorpay_orders').doc(razorpay_order_id).update({
-      paymentId: razorpay_payment_id,
-      paymentStatus: payment.status,
-      paymentVerified: true,
-      verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-      autoCaptured: payment.captured || false,
-      reservationCompleted: true,
-    });
-
-    console.log(`✅ Payment verification and reservation completion done for: ${razorpay_payment_id}`);
-
-    return {
-      success: true,
-      paymentId: razorpay_payment_id,
-      status: payment.status,
-      amount: payment.amount,
-      method: payment.method,
-      captured: payment.captured || false,
-      verified: true,
-      reservationCompleted: true,
-    };
-
-  } catch (error) {
-    console.error('❌ Error verifying payment with reservation:', error);
+// ✅ ENHANCED: verifyRazorpayPayment with better error handling
+exports.verifyRazorpayPayment = functions
+  .runWith({
+    timeoutSeconds: 120,
+    memory: '512MB'
+  })
+  .https.onCall(async (data, context) => {
+    const startTime = Date.now();
     
-    // Try to fail reservation on any error
-    if (data.razorpay_order_id) {
-      await failReservationByPaymentId(data.razorpay_order_id);
+    try {
+      console.log(`🔍 [${startTime}] Verifying payment: ${data.razorpay_payment_id}`);
+      
+      // Check if user is authenticated
+      if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+      }
+
+      const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = data;
+
+      // Validate required fields
+      if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
+        throw new functions.https.HttpsError('invalid-argument', 'Payment ID, Order ID, and Signature are required');
+      }
+
+      console.log(`🔄 [${Date.now() - startTime}ms] Verifying signature for order: ${razorpay_order_id}`);
+
+      // Create signature verification string
+      const keySecret = functions.config().razorpay?.key_secret;
+      if (!keySecret) {
+        throw new functions.https.HttpsError('failed-precondition', 'Payment service configuration error');
+      }
+
+      const generated_signature = crypto
+        .createHmac('sha256', keySecret)
+        .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+        .digest('hex');
+
+      // Verify signature
+      const isSignatureValid = generated_signature === razorpay_signature;
+
+      if (!isSignatureValid) {
+        console.log(`❌ [${Date.now() - startTime}ms] Invalid payment signature`);
+        
+        // Fail any associated reservation
+        await failReservationByPaymentId(razorpay_order_id);
+        
+        throw new functions.https.HttpsError('permission-denied', 'Invalid payment signature');
+      }
+
+      console.log(`✅ [${Date.now() - startTime}ms] Payment signature verified successfully`);
+
+      // Get payment details from Razorpay with timeout
+      const razorpay = new Razorpay({
+        key_id: functions.config().razorpay.key_id,
+        key_secret: keySecret,
+      });
+
+      const paymentPromise = razorpay.payments.fetch(razorpay_payment_id);
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Razorpay fetch timeout')), 15000);
+      });
+
+      const payment = await Promise.race([paymentPromise, timeoutPromise]);
+
+      console.log(`📋 [${Date.now() - startTime}ms] Payment details fetched from Razorpay`);
+
+      // Complete the reservation
+      await completeReservationByPaymentId(razorpay_order_id);
+
+      // Store payment info in Firestore with better error handling
+      try {
+        await admin.firestore().collection('razorpay_payments').doc(razorpay_payment_id).set({
+          paymentId: razorpay_payment_id,
+          orderId: razorpay_order_id,
+          signature: razorpay_signature,
+          amount: payment.amount,
+          status: payment.status,
+          method: payment.method,
+          userId: context.auth.uid,
+          verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+          razorpayData: payment,
+          autoCaptured: payment.captured || false,
+          reservationCompleted: true,
+          processingTime: Date.now() - startTime,
+        }, { merge: true });
+
+        console.log(`✅ [${Date.now() - startTime}ms] Payment info stored in Firestore`);
+      } catch (firestoreError) {
+        console.warn(`⚠️ Firestore payment write failed: ${firestoreError.message}`);
+        // Continue - payment verification was successful
+      }
+
+      // Update order status with better error handling
+      try {
+        await admin.firestore().collection('razorpay_orders').doc(razorpay_order_id).update({
+          paymentId: razorpay_payment_id,
+          paymentStatus: payment.status,
+          paymentVerified: true,
+          verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+          autoCaptured: payment.captured || false,
+          reservationCompleted: true,
+          processingTime: Date.now() - startTime,
+        });
+      } catch (updateError) {
+        console.warn(`⚠️ Order update failed: ${updateError.message}`);
+        // Continue - verification was successful
+      }
+
+      console.log(`✅ [${Date.now() - startTime}ms] Payment verification completed successfully`);
+
+      return {
+        success: true,
+        paymentId: razorpay_payment_id,
+        status: payment.status,
+        amount: payment.amount,
+        method: payment.method,
+        captured: payment.captured || false,
+        verified: true,
+        reservationCompleted: true,
+        processingTime: Date.now() - startTime,
+      };
+
+    } catch (error) {
+      const errorTime = Date.now() - startTime;
+      console.error(`❌ [${errorTime}ms] Error verifying payment:`, error);
+      
+      // Try to fail reservation on any error
+      if (data.razorpay_order_id) {
+        try {
+          await failReservationByPaymentId(data.razorpay_order_id);
+        } catch (reservationError) {
+          console.error(`❌ Failed to fail reservation: ${reservationError.message}`);
+        }
+      }
+      
+      // Enhanced error handling
+      if (error instanceof functions.https.HttpsError) {
+        throw error;
+      }
+      
+      let errorCode = 'internal';
+      let errorMessage = 'Payment verification failed';
+      
+      if (error.message?.includes('timeout')) {
+        errorCode = 'deadline-exceeded';
+        errorMessage = 'Payment verification timeout - please try again';
+      } else if (error.message?.includes('network') || error.message?.includes('connection')) {
+        errorCode = 'unavailable';
+        errorMessage = 'Payment service temporarily unavailable';
+      }
+      
+      throw new functions.https.HttpsError(errorCode, errorMessage, {
+        originalError: error.message,
+        processingTime: errorTime,
+      });
     }
-    
-    if (error instanceof functions.https.HttpsError) {
-      throw error;
-    }
-    throw new functions.https.HttpsError('internal', 'Payment verification failed', error.message);
-  }
-});
+  });
 
 // 🔥 Razorpay webhook handler WITH RESERVATION SYSTEM
 exports.handleRazorpayWebhook = functions.https.onRequest(async (req, res) => {
