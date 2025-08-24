@@ -1,4 +1,4 @@
-// lib/screens/kitchen/kitchen_home.dart - REMOVED DEBUG BUTTON AND TERMINATED OPTION
+// lib/screens/kitchen/kitchen_home.dart - UPDATED WITH LIVE ORDERS PER ITEM TAB
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -22,6 +22,7 @@ class _KitchenHomeState extends State<KitchenHome>
   late TabController _tabController;
   final List<String> _statusFilters = [
     'All',
+    'Items', // MOVED NEXT TO ALL
     'Placed',
     'Cooking',
     'Cooked',
@@ -35,7 +36,7 @@ class _KitchenHomeState extends State<KitchenHome>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 7, vsync: this); // Updated length to 7
     _tabController.addListener(() {
       setState(() {
         _currentFilter = _statusFilters[_tabController.index];
@@ -145,6 +146,14 @@ class _KitchenHomeState extends State<KitchenHome>
         }
         return false;
       }).toList();
+    } else if (_currentFilter == 'Items') {
+      // Return active orders for item counting (we'll handle this differently)
+      return allDocs.where((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        final status = data['status'] as String?;
+        // Only include active orders for cooking
+        return status == 'Placed' || status == 'Cooking';
+      }).toList();
     } else {
       // For all other tabs, exclude terminated and completed orders
       final activeDocs = allDocs.where((doc) {
@@ -221,10 +230,12 @@ class _KitchenHomeState extends State<KitchenHome>
             indicatorWeight: 3,
             labelColor: Colors.black87,
             unselectedLabelColor: Colors.black54,
-            tabs: _statusFilters.map((status) => Tab(text: status)).toList(),
+            tabs: _statusFilters.map((status) => Tab(
+              text: status,
+              icon: status == 'Items' ? const Icon(Icons.restaurant_menu, size: 16) : null,
+            )).toList(),
           ),
         ),
-        // REMOVED DEBUG BUTTON - Only refresh button remains
         floatingActionButton: FloatingActionButton(
           backgroundColor: const Color(0xFFFFB703),
           foregroundColor: Colors.black87,
@@ -292,6 +303,12 @@ class _KitchenHomeState extends State<KitchenHome>
                   });
                 }
               });
+            }
+
+            // NEW: Handle Items tab - Show live item counts
+            if (_currentFilter == 'Items') {
+              final activeOrders = _filterOrdersForCurrentTab(allDocs);
+              return LiveItemCountView(activeOrders: activeOrders);
             }
 
             // Filter orders for current tab
@@ -387,6 +404,451 @@ class _KitchenHomeState extends State<KitchenHome>
   }
 }
 
+// NEW: Live Item Count View - Shows current active orders per item
+class LiveItemCountView extends StatelessWidget {
+  final List<QueryDocumentSnapshot> activeOrders;
+
+  const LiveItemCountView({
+    Key? key,
+    required this.activeOrders,
+  }) : super(key: key);
+
+  Map<String, ItemCount> _calculateLiveItemCounts() {
+    Map<String, ItemCount> itemCounts = {};
+
+    for (var orderDoc in activeOrders) {
+      final orderData = orderDoc.data() as Map<String, dynamic>;
+      final itemsData = orderData['items'];
+      final status = orderData['status'] as String? ?? 'Unknown';
+      final orderId = orderDoc.id;
+      final userEmail = orderData['userEmail'] as String? ?? 'Unknown';
+
+      if (itemsData != null) {
+        List<Map<String, dynamic>> parsedItems = [];
+
+        // Parse items based on data structure
+        if (itemsData is List) {
+          for (var item in itemsData) {
+            if (item is Map<String, dynamic>) {
+              parsedItems.add(item);
+            }
+          }
+        } else if (itemsData is Map<String, dynamic>) {
+          itemsData.forEach((itemId, itemData) {
+            if (itemData is Map<String, dynamic>) {
+              parsedItems.add(itemData);
+            }
+          });
+        }
+
+        // Process each item
+        for (var item in parsedItems) {
+          final itemName = item['name'] as String? ?? 'Unknown Item';
+          final quantity = (item['quantity'] as num?)?.toInt() ?? 1;
+
+          if (!itemCounts.containsKey(itemName)) {
+            itemCounts[itemName] = ItemCount(
+              name: itemName,
+              totalQuantity: 0,
+              placedQuantity: 0,
+              cookingQuantity: 0,
+              orderIds: [],
+            );
+          }
+
+          final itemCount = itemCounts[itemName]!;
+          
+          // Update quantities
+          itemCount.totalQuantity += quantity;
+          itemCount.orderIds.add('${orderId.substring(0, 6)}($userEmail)');
+
+          // Update status-specific quantities
+          if (status == 'Placed') {
+            itemCount.placedQuantity += quantity;
+          } else if (status == 'Cooking') {
+            itemCount.cookingQuantity += quantity;
+          }
+        }
+      }
+    }
+
+    return itemCounts;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final itemCounts = _calculateLiveItemCounts();
+    
+    // Sort items by total quantity (most to least)
+    final sortedItems = itemCounts.values.toList()
+      ..sort((a, b) => b.totalQuantity.compareTo(a.totalQuantity));
+
+    if (sortedItems.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.restaurant_menu_outlined,
+              size: 80,
+              color: Colors.grey[400],
+            ),
+            const SizedBox(height: 24),
+            Text(
+              "No Active Orders",
+              style: Theme.of(context).textTheme.headlineSmall,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              "Items will appear here when orders are placed",
+              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        // Items List - LIVE COOKING QUEUE MOVED TO SCROLLABLE AREA
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: sortedItems.length + 1, // +1 for header
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                // Live Status Header as first item in scroll
+                return Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF4CAF50), Color(0xFF45A049)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.green.withOpacity(0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.local_fire_department,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "🔥 LIVE COOKING QUEUE",
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              "${sortedItems.length} items • ${activeOrders.length} active orders",
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              "LIVE",
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              } else {
+                // Item cards
+                final item = sortedItems[index - 1];
+                return LiveItemCard(
+                  itemCount: item,
+                  priority: index, // index already accounts for header
+                );
+              }
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// NEW: Item Count Data Class
+class ItemCount {
+  final String name;
+  int totalQuantity;
+  int placedQuantity;
+  int cookingQuantity;
+  List<String> orderIds;
+
+  ItemCount({
+    required this.name,
+    required this.totalQuantity,
+    required this.placedQuantity,
+    required this.cookingQuantity,
+    required this.orderIds,
+  });
+}
+
+// NEW: Live Item Card Widget
+class LiveItemCard extends StatelessWidget {
+  final ItemCount itemCount;
+  final int priority;
+
+  const LiveItemCard({
+    Key? key,
+    required this.itemCount,
+    required this.priority,
+  }) : super(key: key);
+
+  Color _getPriorityColor() {
+    if (itemCount.totalQuantity >= 5) {
+      return Colors.red; // High priority
+    } else if (itemCount.totalQuantity >= 3) {
+      return Colors.orange; // Medium priority
+    } else {
+      return Colors.blue; // Normal priority
+    }
+  }
+
+  String _getPriorityLabel() {
+    if (itemCount.totalQuantity >= 5) {
+      return 'HIGH';
+    } else if (itemCount.totalQuantity >= 3) {
+      return 'MEDIUM';
+    } else {
+      return ''; // REMOVED NORMAL LABEL
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final priorityColor = _getPriorityColor();
+    
+    return Card(
+      elevation: 6,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: priorityColor.withOpacity(0.5),
+          width: 2,
+        ),
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: LinearGradient(
+            colors: [
+              priorityColor.withOpacity(0.05),
+              Colors.white,
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              // Header with priority and item name
+              Row(
+                children: [
+                  if (_getPriorityLabel().isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: priorityColor,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: priorityColor.withOpacity(0.3),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.local_fire_department,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _getPriorityLabel(),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
+                  Expanded(
+                    child: Text(
+                      itemCount.name,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: priorityColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: priorityColor.withOpacity(0.3),
+                        width: 2,
+                      ),
+                    ),
+                    child: Text(
+                      '${itemCount.totalQuantity}',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: priorityColor,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              
+              const SizedBox(height: 16),
+              
+              // Status breakdown
+              Row(
+                children: [
+                  if (itemCount.placedQuantity > 0) ...[
+                    Expanded(
+                      child: _buildStatusChip(
+                        'Placed',
+                        itemCount.placedQuantity,
+                        Colors.blue,
+                        Icons.receipt_long,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  if (itemCount.cookingQuantity > 0) ...[
+                    Expanded(
+                      child: _buildStatusChip(
+                        'Cooking',
+                        itemCount.cookingQuantity,
+                        Colors.orange,
+                        Icons.restaurant,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusChip(String label, int count, Color color, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: color.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: color, size: 16),
+          const SizedBox(width: 6),
+          Text(
+            '$count',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Keep the existing EnhancedOrderCard class unchanged...
 class EnhancedOrderCard extends StatefulWidget {
   final String orderId;
   final Map<String, dynamic> data;
@@ -448,8 +910,7 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
   @override
   Widget build(BuildContext context) {
     final status = capitalize(widget.data['status'] ?? '');
-    final fullOrderId =
-        widget.orderId; // Show full order ID instead of shortened
+    final fullOrderId = widget.orderId;
 
     // Get order data
     final itemsData = widget.data['items'];
@@ -733,7 +1194,6 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
                                   widget.onUpdate(widget.orderId, newStatus);
                                 }
                               },
-                              // REMOVED 'Terminated' FROM DROPDOWN OPTIONS
                               items: [
                                 'Placed',
                                 'Cooking',
