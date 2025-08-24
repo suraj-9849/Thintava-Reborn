@@ -1,8 +1,9 @@
-// lib/providers/cart_provider.dart - WITH RESERVATION SYSTEM
+// lib/providers/cart_provider.dart - UPDATED WITH PLATFORM FEE
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:canteen_app/services/stock_management_service.dart';
 import 'package:canteen_app/services/reservation_service.dart';
+import 'package:canteen_app/utils/platform_fee_calculator.dart';  // NEW IMPORT
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
 
@@ -15,6 +16,27 @@ class CartProvider extends ChangeNotifier {
   bool get isEmpty => _cart.isEmpty;
   List<String> get itemIds => _cart.keys.toList();
   bool get isValidatingStock => _isValidatingStock;
+  
+  // ✅ NEW: Platform fee methods
+  double getPlatformFee(Map<String, double> itemPrices) {
+    final subtotal = getTotalPrice(itemPrices);
+    return PlatformFeeCalculator.calculatePlatformFee(subtotal);
+  }
+  
+  double getTotalWithPlatformFee(Map<String, double> itemPrices) {
+    final subtotal = getTotalPrice(itemPrices);
+    return PlatformFeeCalculator.calculateTotalWithFee(subtotal);
+  }
+  
+  Map<String, double> getCostBreakdown(Map<String, double> itemPrices) {
+    final subtotal = getTotalPrice(itemPrices);
+    return PlatformFeeCalculator.getCostBreakdown(subtotal);
+  }
+  
+  String getFormattedPlatformFee(Map<String, double> itemPrices) {
+    final subtotal = getTotalPrice(itemPrices);
+    return PlatformFeeCalculator.formatPlatformFee(subtotal);
+  }
   
   // Add item to cart with reservation-aware stock validation
   Future<bool> addItem(String itemId, {int quantity = 1}) async {
@@ -105,7 +127,7 @@ class CartProvider extends ChangeNotifier {
     return _cart.containsKey(itemId) && _cart[itemId]! > 0;
   }
   
-  // Get total price (requires item prices)
+  // Get total price (subtotal - without platform fee)
   double getTotalPrice(Map<String, double> itemPrices) {
     double total = 0.0;
     _cart.forEach((itemId, quantity) {
@@ -369,31 +391,47 @@ class CartProvider extends ChangeNotifier {
     }
   }
   
-  // Get cart summary for display
-  String getCartSummary() {
+  // Get cart summary for display (with platform fee)
+  String getCartSummary(Map<String, double> itemPrices) {
     if (_cart.isEmpty) return 'Cart is empty';
+    
+    final breakdown = getCostBreakdown(itemPrices);
+    final subtotal = breakdown['subtotal']!;
+    final platformFee = breakdown['platformFee']!;
+    final total = breakdown['total']!;
     
     List<String> items = [];
     _cart.forEach((itemId, quantity) {
       items.add('$itemId x$quantity');
     });
     
-    return items.join(', ');
+    String summary = items.join(', ');
+    if (platformFee > 0) {
+      summary += ' | Subtotal: ₹${subtotal.toStringAsFixed(2)} + Platform Fee: ₹${platformFee.toStringAsFixed(2)} = Total: ₹${total.toStringAsFixed(2)}';
+    } else {
+      summary += ' | Total: ₹${total.toStringAsFixed(2)}';
+    }
+    
+    return summary;
   }
   
-  // Debug method to print cart contents with stock info
-  Future<void> printCartWithStockInfo() async {
+  // Debug method to print cart contents with stock info and platform fee
+  Future<void> printCartWithStockInfo(Map<String, double> itemPrices) async {
     print('=== CART CONTENTS WITH STOCK INFO ===');
     if (_cart.isEmpty) {
       print('Cart is empty');
     } else {
       final stockInfo = await getCartStockInfo();
+      final breakdown = getCostBreakdown(itemPrices);
       
       _cart.forEach((itemId, quantity) {
         final info = stockInfo[itemId] ?? {'actual': 0, 'available': 0, 'reserved': 0};
         print('$itemId: $quantity (Actual: ${info['actual']}, Available: ${info['available']}, Reserved: ${info['reserved']})');
       });
       print('Total items: $itemCount');
+      print('Subtotal: ₹${breakdown['subtotal']!.toStringAsFixed(2)}');
+      print('Platform Fee: ₹${breakdown['platformFee']!.toStringAsFixed(2)}');
+      print('Total with Fee: ₹${breakdown['total']!.toStringAsFixed(2)}');
     }
     print('======================================');
   }

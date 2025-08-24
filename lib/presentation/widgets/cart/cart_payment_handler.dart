@@ -1,4 +1,4 @@
-// lib/presentation/widgets/cart/cart_payment_handler.dart - FIXED VERSION
+// lib/presentation/widgets/cart/cart_payment_handler.dart - UPDATED WITH PLATFORM FEE
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -12,11 +12,12 @@ import 'package:canteen_app/services/active_order_service.dart';
 import 'package:canteen_app/services/reservation_service.dart';
 import 'package:canteen_app/models/reservation_model.dart';
 import 'package:canteen_app/presentation/widgets/cart/cart_dialogs.dart';
+import 'package:canteen_app/utils/platform_fee_calculator.dart';  // ✅ NEW IMPORT
 
 class CartPaymentHandler {
   final BuildContext context;
   final Map<String, dynamic> menuMap;
-  final double total;
+  final double total;  // ✅ This now includes platform fee
   late Razorpay _razorpay;
   
   String? currentRazorpayOrderId;
@@ -26,7 +27,7 @@ class CartPaymentHandler {
   CartPaymentHandler({
     required this.context,
     required this.menuMap,
-    required this.total,
+    required this.total,  // ✅ Total already includes platform fee
   }) {
     _razorpay = Razorpay();
     _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
@@ -74,7 +75,7 @@ class CartPaymentHandler {
     }
   }
 
-  /// Create Razorpay Order with enhanced error handling and retries
+  /// ✅ UPDATED: Create Razorpay Order with total including platform fee
   Future<String?> _createRazorpayOrder(double amount) async {
     int retryCount = 0;
     const maxRetries = 3;
@@ -82,18 +83,19 @@ class CartPaymentHandler {
 
     while (retryCount < maxRetries) {
       try {
-        print('🔄 Creating Razorpay order (attempt ${retryCount + 1}/$maxRetries) for amount: ₹$amount');
+        print('🔄 Creating Razorpay order (attempt ${retryCount + 1}/$maxRetries) for amount: ₹$amount (includes platform fee)');
         
         final callable = FirebaseFunctions.instance.httpsCallable('createRazorpayOrder');
         
         // Add timeout to prevent hanging on slow networks
         final result = await callable.call({
-          'amount': (amount * 100).toInt(),
+          'amount': (amount * 100).toInt(),  // ✅ Amount already includes platform fee
           'currency': 'INR',
           'receipt': 'order_${DateTime.now().millisecondsSinceEpoch}',
           'notes': {
             'app': 'Thintava',
             'order_type': 'food_order',
+            'includes_platform_fee': 'true',  // ✅ NEW: Mark that this includes platform fee
           }
         }).timeout(
           const Duration(seconds: 45), // 45 second timeout
@@ -113,7 +115,7 @@ class CartPaymentHandler {
           }
           
           if (orderId != null) {
-            print('✅ Firebase Function created Razorpay order: $orderId');
+            print('✅ Firebase Function created Razorpay order: $orderId (with platform fee)');
             return orderId;
           } else {
             throw Exception('ORDER_ID_MISSING');
@@ -178,7 +180,7 @@ class CartPaymentHandler {
     throw Exception('MAX_RETRIES_EXCEEDED');
   }
 
-  /// Start payment with comprehensive error handling
+  /// ✅ UPDATED: Start payment with comprehensive error handling (total includes platform fee)
   Future<void> startPayment() async {
     if (_isProcessing) {
       _showInfoSnackBar(
@@ -208,7 +210,7 @@ class CartPaymentHandler {
         return;
       }
 
-      // STEP 2: Show loading dialog
+      // STEP 2: Show loading dialog with platform fee info
       _showNetworkAwareLoading();
       
       // STEP 3: Check for active orders
@@ -222,9 +224,9 @@ class CartPaymentHandler {
         return;
       }
       
-      print('✅ No active orders found, proceeding with payment...');
+      print('✅ No active orders found, proceeding with payment (total: ₹$total including platform fee)...');
 
-      // STEP 4: Create Razorpay order with retries
+      // STEP 4: Create Razorpay order with retries (total already includes platform fee)
       currentRazorpayOrderId = await _createRazorpayOrder(total);
       
       if (currentRazorpayOrderId == null) {
@@ -232,14 +234,14 @@ class CartPaymentHandler {
         throw Exception('ORDER_CREATION_FAILED');
       }
 
-      // STEP 5: Create reservation
+      // STEP 5: Create reservation with total including platform fee
       print('🔄 Creating reservation for payment: $currentRazorpayOrderId');
       
       final reservationRequest = ReservationCreateRequest(
         paymentId: currentRazorpayOrderId!,
         cartItems: cartProvider.cart,
         menuMap: menuMap,
-        totalAmount: total,
+        totalAmount: total,  // ✅ This includes platform fee
       );
 
       currentReservation = await ReservationService.createReservation(reservationRequest);
@@ -249,7 +251,7 @@ class CartPaymentHandler {
         throw Exception('RESERVATION_FAILED');
       }
 
-      print('✅ Reservation created: ${currentReservation!.id}');
+      print('✅ Reservation created: ${currentReservation!.id} with total ₹$total (including platform fee)');
 
       // STEP 6: Start payment
       Navigator.pop(context); // Close loading
@@ -344,7 +346,7 @@ class CartPaymentHandler {
     _showErrorSnackBar(title, message, icon, action: action);
   }
 
-  /// Show network-aware loading dialog
+  /// Show network-aware loading dialog with platform fee info
   void _showNetworkAwareLoading() {
     showDialog(
       context: context,
@@ -361,6 +363,15 @@ class CartPaymentHandler {
               style: GoogleFonts.poppins(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Amount: ₹${total.toStringAsFixed(2)} (incl. platform fee)",  // ✅ NEW: Show total with platform fee
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                color: const Color(0xFFFFB703),
+                fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 8),
@@ -383,7 +394,7 @@ class CartPaymentHandler {
     );
   }
 
-  /// Start payment with Razorpay order
+  /// Start payment with Razorpay order (total includes platform fee)
   void _startPaymentWithOrder() {
     if (currentRazorpayOrderId == null) {
       _showErrorSnackBar(
@@ -396,10 +407,10 @@ class CartPaymentHandler {
 
     var options = {
       'key': 'rzp_live_cDOinLBuxva4w0',
-      'amount': (total * 100).toInt(),
+      'amount': (total * 100).toInt(),  // ✅ Total includes platform fee
       'currency': 'INR',
       'name': 'Thintava',
-      'description': 'Food Order Payment - Items Reserved',
+      'description': 'Food Order Payment (incl. platform fee) - Items Reserved',  // ✅ Updated description
       'order_id': currentRazorpayOrderId,
       'prefill': {
         'contact': '',
@@ -413,11 +424,12 @@ class CartPaymentHandler {
         'user_id': FirebaseAuth.instance.currentUser?.uid ?? '',
         'reservation_id': currentReservation?.id ?? '',
         'auto_capture': 'enabled',
+        'includes_platform_fee': 'true',  // ✅ NEW: Mark payment as including platform fee
       }
     };
 
     try {
-      print('🚀 Starting Razorpay payment with reservation: ${currentReservation?.id}');
+      print('🚀 Starting Razorpay payment with reservation: ${currentReservation?.id} for total ₹$total (including platform fee)');
       _razorpay.open(options);
     } catch (e) {
       debugPrint("Razorpay Error: $e");
@@ -466,7 +478,7 @@ class CartPaymentHandler {
         throw Exception('User not authenticated');
       }
 
-      print('✅ Payment successful: ${response.paymentId}');
+      print('✅ Payment successful: ${response.paymentId} for total ₹$total (including platform fee)');
 
       // Verify payment with retries
       final verificationResult = await _verifyPaymentWithRetry(response);
@@ -494,10 +506,10 @@ class CartPaymentHandler {
 
       final cartProvider = Provider.of<CartProvider>(context, listen: false);
       
-      // Create order document
+      // ✅ UPDATED: Create order document with platform fee breakdown
       final orderDocRef = await _createOrderDocument(user, cartProvider, response);
 
-      print('✅ Order created successfully: ${orderDocRef.id}');
+      print('✅ Order created successfully: ${orderDocRef.id} with total ₹$total (including platform fee)');
       
       // Clear cart and tracking
       cartProvider.clearCart();
@@ -549,13 +561,29 @@ class CartPaymentHandler {
     throw Exception('Payment verification failed after retries');
   }
 
-  /// Create order document with error handling
+  /// ✅ UPDATED: Create order document with platform fee breakdown
   Future<DocumentReference> _createOrderDocument(
     User user,
     CartProvider cartProvider,
     PaymentSuccessResponse response,
   ) async {
     final List<Map<String, dynamic>> orderItems = [];
+    final cartProvider = Provider.of<CartProvider>(context, listen: false);
+    
+    // Calculate breakdown for order document
+    Map<String, double> itemPrices = {};
+    menuMap.forEach((id, data) {
+      final price = data['price'];
+      if (price != null) {
+        itemPrices[id] = price is double ? price : double.parse(price.toString());
+      }
+    });
+    
+    final costBreakdown = cartProvider.getCostBreakdown(itemPrices);
+    final subtotal = costBreakdown['subtotal']!;
+    final platformFee = costBreakdown['platformFee']!;
+    final totalWithFee = costBreakdown['total']!;
+    
     cartProvider.cart.forEach((itemId, qty) {
       final itemData = menuMap[itemId];
       if (itemData != null) {
@@ -575,13 +603,25 @@ class CartPaymentHandler {
       'items': orderItems,
       'status': 'Placed',
       'timestamp': Timestamp.now(),
-      'total': total,
+      
+      // ✅ NEW: Detailed cost breakdown including platform fee
+      'subtotal': subtotal,
+      'platformFee': platformFee,
+      'total': totalWithFee,
+      'totalAmount': totalWithFee,  // Keep this for backward compatibility
+      
+      // Payment info
       'paymentId': response.paymentId,
       'razorpayOrderId': currentRazorpayOrderId,
       'reservationId': currentReservation?.id,
       'paymentStatus': 'success',
       'autoCaptureEnabled': true,
       'reservationCompleted': true,
+      
+      // ✅ NEW: Platform fee metadata
+      'hasPlatformFee': platformFee > 0,
+      'platformFeeAmount': platformFee,
+      'platformFeeCalculation': PlatformFeeCalculator.formatPlatformFee(subtotal),
     });
   }
 

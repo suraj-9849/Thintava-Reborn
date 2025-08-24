@@ -1,4 +1,4 @@
-// lib/screens/user/cart_screen.dart - ENHANCED VERSION
+// lib/screens/user/cart_screen.dart - UPDATED WITH PLATFORM FEE
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -18,8 +18,11 @@ class CartScreen extends StatefulWidget {
 }
 
 class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
+  double subtotal = 0;
+  double platformFee = 0;
   double total = 0;
   Map<String, dynamic> menuMap = {};
+  Map<String, double> itemPrices = {};  // ✅ NEW: Store item prices
   bool isLoading = true;
   bool isProcessing = false;
   CartPaymentHandler? _paymentHandler;
@@ -126,12 +129,22 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
             .timeout(const Duration(seconds: 10));
         
         final newMenuMap = <String, dynamic>{};
+        final newItemPrices = <String, double>{};
+        
         for (var doc in snapshot.docs) {
-          newMenuMap[doc.id] = doc.data();
+          final data = doc.data();
+          newMenuMap[doc.id] = data;
+          
+          // ✅ NEW: Store item prices separately for easy access
+          final price = data['price'];
+          if (price != null) {
+            newItemPrices[doc.id] = price is double ? price : double.parse(price.toString());
+          }
         }
         
         setState(() {
           menuMap = newMenuMap;
+          itemPrices = newItemPrices;
         });
         
         recalcTotal();
@@ -141,7 +154,7 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
         _paymentHandler = CartPaymentHandler(
           context: context,
           menuMap: menuMap,
-          total: total,
+          total: total,  // ✅ This now includes platform fee
         );
         
         return; // Success
@@ -175,19 +188,18 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// Recalculate total with error handling
+  /// ✅ UPDATED: Recalculate total with platform fee
   void recalcTotal() {
     try {
       final cartProvider = Provider.of<CartProvider>(context, listen: false);
-      double newTotal = 0;
       
-      cartProvider.cart.forEach((key, qty) {
-        final price = menuMap[key]?['price'] ?? 0;
-        newTotal += price * qty;
-      });
+      // Get cost breakdown including platform fee
+      final breakdown = cartProvider.getCostBreakdown(itemPrices);
       
       setState(() {
-        total = newTotal;
+        subtotal = breakdown['subtotal']!;
+        platformFee = breakdown['platformFee']!;
+        total = breakdown['total']!;
       });
       
       // Update payment handler total if needed
@@ -195,7 +207,7 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
         _paymentHandler = CartPaymentHandler(
           context: context,
           menuMap: menuMap,
-          total: total,
+          total: total,  // ✅ Pass total including platform fee
         );
       }
     } catch (e) {
@@ -311,7 +323,7 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
       builder: (context, cartProvider, child) {
         // Update total when cart changes
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (menuMap.isNotEmpty) {
+          if (menuMap.isNotEmpty && itemPrices.isNotEmpty) {
             recalcTotal();
           }
         });
@@ -737,7 +749,7 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildBillDetails(),
+          _buildBillDetails(cartProvider),
           const SizedBox(height: 16),
           _buildOrderButton(),
         ],
@@ -745,7 +757,8 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildBillDetails() {
+  /// ✅ UPDATED: Build bill details with platform fee
+  Widget _buildBillDetails(CartProvider cartProvider) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -758,6 +771,8 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
           ),
         ),
         const SizedBox(height: 8),
+        
+        // Item Total (Subtotal)
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -769,7 +784,7 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
               ),
             ),
             Text(
-              "₹${total.toStringAsFixed(2)}",
+              "₹${subtotal.toStringAsFixed(2)}",
               style: GoogleFonts.poppins(
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
@@ -777,6 +792,44 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
             ),
           ],
         ),
+        
+        // ✅ NEW: Platform Fee Row (only show if > 0)
+        if (platformFee > 0) ...[
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    "Platform Fee",
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Tooltip(
+                    message: cartProvider.getFormattedPlatformFee(itemPrices),
+                    child: Icon(
+                      Icons.info_outline,
+                      size: 14,
+                      color: Colors.grey[500],
+                    ),
+                  ),
+                ],
+              ),
+              Text(
+                "₹${platformFee.toStringAsFixed(2)}",
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ],
+        
         const SizedBox(height: 4),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -800,6 +853,8 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
         const SizedBox(height: 4),
         const Divider(),
         const SizedBox(height: 4),
+        
+        // ✅ UPDATED: Grand Total (now includes platform fee)
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -821,14 +876,17 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
             ),
           ],
         ),
+        
+
       ],
     );
   }
 
+  /// ✅ UPDATED: Order button with total including platform fee
   Widget _buildOrderButton() {
     return SizedBox(
       width: double.infinity,
-      height: 50,
+      height: 56,  // ✅ INCREASED HEIGHT to prevent text cropping
       child: ElevatedButton(
         onPressed: (isProcessing || !_isConnected) ? null : _startPayment,
         style: ElevatedButton.styleFrom(
@@ -840,6 +898,7 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
             borderRadius: BorderRadius.circular(12),
           ),
           elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),  // ✅ ADDED EXPLICIT PADDING
         ),
         child: isProcessing
           ? Row(
@@ -859,6 +918,7 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                   style: GoogleFonts.poppins(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
+                    height: 1.2,  // ✅ ADDED LINE HEIGHT
                   ),
                 ),
               ],
@@ -874,6 +934,7 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                     style: GoogleFonts.poppins(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
+                      height: 1.2,  // ✅ ADDED LINE HEIGHT
                     ),
                   ),
                 ],
@@ -881,13 +942,14 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.payment),
+                  const Icon(Icons.payment, size: 20),  // ✅ EXPLICIT ICON SIZE
                   const SizedBox(width: 8),
                   Text(
                     "Pay Now • ₹${total.toStringAsFixed(2)}",
                     style: GoogleFonts.poppins(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
+                      height: 1.2,  // ✅ ADDED LINE HEIGHT to prevent cropping
                     ),
                   ),
                 ],
