@@ -1,7 +1,9 @@
 name: canteen_app
-description: A Flutter project with single device user authentication, stock reservation system, and enhanced error handling.
+description: A Flutter project with forced update system, single device authentication, and stock reservation system.
 publish_to: 'none'
-version: 1.0.0+1
+
+# IMPORTANT: Change these values for each update!
+version: 1.0.1+2  # Increment build number (+2) for forced updates
 
 environment:
   sdk: '>=3.1.0 <4.0.0'
@@ -56,6 +58,10 @@ dependencies:
   
   # Permissions - ADDED FOR BETTER PERMISSION HANDLING
   permission_handler: ^11.2.0
+  
+  # NEW DEPENDENCIES FOR FORCED UPDATE SYSTEM
+  package_info_plus: ^4.2.0      # Get app version info
+  url_launcher: ^6.2.1           # Launch app store URLs
 
 dev_dependencies:
   flutter_test:

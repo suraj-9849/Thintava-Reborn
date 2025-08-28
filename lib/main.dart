@@ -1,4 +1,4 @@
-// lib/main.dart - CORRECTED VERSION (FIXED AppBarThemeData ERROR)
+// lib/main.dart - UPDATED WITH VERSION GUARD
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -19,6 +19,7 @@ import 'package:canteen_app/services/notification_service.dart';
 import 'package:canteen_app/utils/firebase_utils.dart';
 import 'package:canteen_app/services/auth_service.dart';
 import 'package:canteen_app/providers/cart_provider.dart';
+import 'package:canteen_app/widgets/version_guard.dart'; // NEW IMPORT
 
 // Initialize global plugins
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = 
@@ -51,8 +52,12 @@ Future<void> main() async {
   // Initialize Firebase based on platform
   await _initializeFirebase();
   
-  // Run the application
-  runApp(const ThintavaApp());
+  // Run the application WITH VERSION GUARD
+  runApp(
+    VersionGuard(
+      child: const ThintavaApp(),
+    ),
+  );
 }
 
 // Firebase initialization function
@@ -179,7 +184,7 @@ class _ThintavaAppState extends State<ThintavaApp> {
       _handleForcedLogout();
     });
     
-    print('🚀 Thintava App initialized with Device Management');
+    print('🚀 Thintava App initialized with Device Management and Version Control');
   }
   
   // FIXED: DEVICE MANAGEMENT - ENHANCED FORCED LOGOUT HANDLER
@@ -364,7 +369,7 @@ class _ThintavaAppState extends State<ThintavaApp> {
         return ChangeNotifierProvider(
           create: (context) => CartProvider()..loadFromStorage(), // Load cart on app start
           child: MaterialApp(
-            title: 'Thintava - Smart Food Ordering with Device Security',
+            title: 'Thintava - Smart Food Ordering with Version Control',
             debugShowCheckedModeBanner: false,
             theme: _buildAppTheme(),
             navigatorKey: navigatorKey,
