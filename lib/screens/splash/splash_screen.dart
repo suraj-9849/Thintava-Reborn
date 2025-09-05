@@ -9,6 +9,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:canteen_app/constants/food_quotes.dart';
 import 'package:canteen_app/services/auth_service.dart';
 import 'package:canteen_app/services/notification_service.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -24,14 +25,64 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   late Animation<double> _fadeAnimation;
   final AuthService _authService = AuthService();
   String _statusMessage = "Preparing your experience...";
+  bool _isOffline = false;
 
   @override
   void initState() {
     super.initState();
     _setupAnimations();
-    _setupOrderNotifications();
-    _startListeningToAuth();
-    print('🎬 Enhanced splash screen initialized with Google Auth support');
+    _checkConnectivityAndProceed();
+    print('🎬 Enhanced splash screen initialized with connectivity check');
+  }
+
+  Future<void> _checkConnectivityAndProceed() async {
+    try {
+      setState(() {
+        _statusMessage = "Checking connection...";
+      });
+      
+      final connectivityResult = await Connectivity().checkConnectivity();
+      
+      if (connectivityResult == ConnectivityResult.none) {
+        setState(() {
+          _isOffline = true;
+          _statusMessage = "No internet connection";
+        });
+        _showOfflineMessage();
+        return;
+      }
+      
+      // If connected, proceed with normal startup
+      _setupOrderNotifications();
+      _startListeningToAuth();
+      
+    } catch (e) {
+      print('❌ Error checking connectivity: $e');
+      // If connectivity check fails, proceed anyway
+      _setupOrderNotifications();
+      _startListeningToAuth();
+    }
+  }
+
+  void _showOfflineMessage() {
+    // Show retry option after a delay
+    Timer(const Duration(seconds: 2), () {
+      if (mounted && _isOffline) {
+        setState(() {
+          _statusMessage = "Tap to retry";
+        });
+      }
+    });
+  }
+
+  Future<void> _retryConnection() async {
+    setState(() {
+      _isOffline = false;
+      _statusMessage = "Retrying...";
+    });
+    
+    await Future.delayed(const Duration(milliseconds: 500));
+    _checkConnectivityAndProceed();
   }
 
   void _setupAnimations() {
@@ -375,89 +426,40 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   ),
                 ),
                 const SizedBox(height: 40),
-                // Google Auth indicator
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.security,
-                        color: Colors.white,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        "Secure Google Authentication",
-                        style: GoogleFonts.poppins(
+                // Loading indicator or offline icon
+                _isOffline 
+                  ? GestureDetector(
+                      onTap: _retryConnection,
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(50),
+                          border: Border.all(color: Colors.white.withOpacity(0.3)),
+                        ),
+                        child: const Icon(
+                          Icons.wifi_off,
                           color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
+                          size: 32,
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                // Order notification indicator
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.notifications_active,
-                        color: Colors.white,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        "Order Notifications Enabled",
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                const CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  strokeWidth: 3,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  _statusMessage,
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 16,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 40),
-                // Privacy notice
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Text(
-                    "We'll send you notifications only about your orders - no promotions or spam!",
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.poppins(
-                      color: Colors.white.withOpacity(0.7),
-                      fontSize: 12,
-                      fontStyle: FontStyle.italic,
+                    )
+                  : const CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      strokeWidth: 3,
                     ),
+                const SizedBox(height: 16),
+                GestureDetector(
+                  onTap: _isOffline ? _retryConnection : null,
+                  child: Text(
+                    _statusMessage,
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: _isOffline ? FontWeight.w600 : FontWeight.normal,
+                      decoration: _isOffline ? TextDecoration.underline : TextDecoration.none,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
                 ),
               ],

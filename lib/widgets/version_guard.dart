@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:canteen_app/services/update_service.dart';
 import 'package:canteen_app/screens/update_required_screen.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class VersionGuard extends StatefulWidget {
   final Widget child;
@@ -19,6 +20,8 @@ class VersionGuard extends StatefulWidget {
 class _VersionGuardState extends State<VersionGuard> {
   bool _isChecking = true;
   UpdateCheckResult? _updateResult;
+  bool _isOffline = false;
+  String _statusMessage = "Checking for updates...";
 
   @override
   void initState() {
@@ -48,6 +51,29 @@ class _VersionGuardState extends State<VersionGuard> {
     print('🔍 VersionGuard: Starting version check...');
     
     try {
+      // First check connectivity
+      final connectivityResult = await Connectivity().checkConnectivity();
+      
+      if (connectivityResult == ConnectivityResult.none) {
+        print('🔍 VersionGuard: No internet connection');
+        if (mounted) {
+          setState(() {
+            _isOffline = true;
+            _statusMessage = "No internet connection";
+          });
+          
+          // Show retry after delay
+          Timer(const Duration(seconds: 2), () {
+            if (mounted && _isOffline) {
+              setState(() {
+                _statusMessage = "Tap to retry";
+              });
+            }
+          });
+        }
+        return;
+      }
+      
       // Add a timeout to prevent infinite loading
       final result = await UpdateService.checkForUpdate()
           .timeout(const Duration(seconds: 10));
@@ -86,6 +112,16 @@ class _VersionGuardState extends State<VersionGuard> {
         print('🔍 VersionGuard: Error state updated, allowing app to continue');
       }
     }
+  }
+
+  Future<void> _retryVersionCheck() async {
+    setState(() {
+      _isOffline = false;
+      _statusMessage = "Checking for updates...";
+    });
+    
+    await Future.delayed(const Duration(milliseconds: 500));
+    _checkVersion();
   }
 
   @override
@@ -144,17 +180,39 @@ class _VersionGuardState extends State<VersionGuard> {
                     ),
                   ),
                   const SizedBox(height: 32),
-                  const CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    strokeWidth: 3,
-                  ),
+                  // Show offline icon or loading spinner
+                  _isOffline 
+                    ? GestureDetector(
+                        onTap: _retryVersionCheck,
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(50),
+                            border: Border.all(color: Colors.white.withOpacity(0.3)),
+                          ),
+                          child: const Icon(
+                            Icons.wifi_off,
+                            color: Colors.white,
+                            size: 32,
+                          ),
+                        ),
+                      )
+                    : const CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        strokeWidth: 3,
+                      ),
                   const SizedBox(height: 16),
-                  const Text(
-                    'Checking for updates...',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.white,
+                  GestureDetector(
+                    onTap: _isOffline ? _retryVersionCheck : null,
+                    child: Text(
+                      _statusMessage,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: _isOffline ? FontWeight.w600 : FontWeight.w500,
+                        color: Colors.white,
+                        decoration: _isOffline ? TextDecoration.underline : TextDecoration.none,
+                      ),
                     ),
                   ),
                 ],
