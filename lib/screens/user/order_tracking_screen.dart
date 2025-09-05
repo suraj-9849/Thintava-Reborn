@@ -241,13 +241,13 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
                         child: OrderProgressBar(currentStatus: statusType),
                       ),
                       
-                      // Show buttons for Pick Up status
+                      // Show only QR Code for Pick Up status
                       if (statusType == OrderStatusType.pickUp)
                         Container(
                           margin: const EdgeInsets.symmetric(vertical: 16),
                           child: Column(
                             children: [
-                              // QR Code Button
+                              // QR Code Button - only this button shown for pickup
                               SizedBox(
                                 width: double.infinity,
                                 height: 55,
@@ -263,7 +263,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
                                   },
                                   icon: const Icon(Icons.qr_code),
                                   label: Text(
-                                    "SHOW QR CODE",
+                                    "SHOW QR CODE FOR PICKUP",
                                     style: GoogleFonts.poppins(
                                       fontWeight: FontWeight.bold,
                                     ),
@@ -277,14 +277,6 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> with SingleTi
                                     elevation: 3,
                                   ),
                                 ),
-                              ),
-                              
-                              const SizedBox(height: 12),
-                              
-                              // Manual Pickup Button
-                              PickupButton(
-                                orderId: doc.id,
-                                orderData: data,
                               ),
                             ],
                           ),

@@ -23,6 +23,7 @@ class _KitchenHomeState extends State<KitchenHome>
   final List<String> _statusFilters = [
     'All',
     'Items', // MOVED NEXT TO ALL
+    'Order History',
     'Placed',
     'Pick Up'
   ];
@@ -32,7 +33,7 @@ class _KitchenHomeState extends State<KitchenHome>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this); // Updated length to 4
+    _tabController = TabController(length: 5, vsync: this); // Updated length to 5
     _tabController.addListener(() {
       setState(() {
         _currentFilter = _statusFilters[_tabController.index];
@@ -99,13 +100,27 @@ class _KitchenHomeState extends State<KitchenHome>
   List<QueryDocumentSnapshot> _filterOrdersForCurrentTab(
       List<QueryDocumentSnapshot> allDocs) {
     if (_currentFilter == 'Items') {
-      // Return active orders for item counting (we'll handle this differently)
+      // Return only orders that are placed and need to be cooked
       return allDocs.where((doc) {
         final data = doc.data() as Map<String, dynamic>;
         final status = data['status'] as String?;
-        // Only include active orders for cooking
-        return status == 'Placed';
+        final timestamp = data['timestamp'] as Timestamp?;
+        
+        // Only include orders that are placed (not yet being cooked or picked up)
+        if (status != 'Placed') return false;
+        
+        // Check if order is older than 24 hours (expired)
+        if (timestamp != null) {
+          final orderDate = timestamp.toDate();
+          final twentyFourHoursAgo = DateTime.now().subtract(const Duration(hours: 24));
+          if (orderDate.isBefore(twentyFourHoursAgo)) return false;
+        }
+        
+        return true;
       }).toList();
+    } else if (_currentFilter == 'Order History') {
+      // Return all orders including completed ones for history
+      return allDocs.toList();
     } else {
       // For all other tabs, exclude completed orders
       final activeDocs = allDocs.where((doc) {
@@ -212,8 +227,7 @@ class _KitchenHomeState extends State<KitchenHome>
             labelColor: Colors.black87,
             unselectedLabelColor: Colors.black54,
             tabs: _statusFilters.map((status) => Tab(
-              text: status,
-              icon: status == 'Items' ? const Icon(Icons.restaurant_menu, size: 16) : null,
+              text: status
             )).toList(),
           ),
         ),
@@ -278,6 +292,12 @@ class _KitchenHomeState extends State<KitchenHome>
             if (_currentFilter == 'Items') {
               final activeOrders = _filterOrdersForCurrentTab(allDocs);
               return LiveItemCountView(activeOrders: activeOrders);
+            }
+
+            // NEW: Handle Order History tab - Show history view with search
+            if (_currentFilter == 'Order History') {
+              final allOrders = _filterOrdersForCurrentTab(allDocs);
+              return OrderHistoryView(orders: allOrders);
             }
 
             // Filter orders for current tab
@@ -369,9 +389,7 @@ class LiveItemCountView extends StatelessWidget {
     for (var orderDoc in activeOrders) {
       final orderData = orderDoc.data() as Map<String, dynamic>;
       final itemsData = orderData['items'];
-      final status = orderData['status'] as String? ?? 'Unknown';
       final orderId = orderDoc.id;
-      final userEmail = orderData['userEmail'] as String? ?? 'Unknown';
 
       if (itemsData != null) {
         List<Map<String, dynamic>> parsedItems = [];
@@ -408,14 +426,9 @@ class LiveItemCountView extends StatelessWidget {
 
           final itemCount = itemCounts[itemName]!;
           
-          // Update quantities
+          // Update quantities - just total quantity now, no state-specific counts
           itemCount.totalQuantity += quantity;
-          itemCount.orderIds.add('${orderId.substring(0, 6)}($userEmail)');
-
-          // Update status-specific quantities
-          if (status == 'Placed') {
-            itemCount.placedQuantity += quantity;
-          }
+          itemCount.orderIds.add(orderId.substring(0, 6));
         }
       }
     }
@@ -443,13 +456,13 @@ class LiveItemCountView extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             Text(
-              "No Active Orders",
+              "No Items to Prepare",
               style: Theme.of(context).textTheme.headlineSmall,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
             Text(
-              "Items will appear here when orders are placed",
+              "Items from new orders will appear here",
               style: TextStyle(fontSize: 16, color: Colors.grey[600]),
               textAlign: TextAlign.center,
             ),
@@ -458,113 +471,99 @@ class LiveItemCountView extends StatelessWidget {
       );
     }
 
+    // Calculate total items across all orders
+    final totalItems = sortedItems.fold<int>(0, (sum, item) => sum + item.totalQuantity);
+
     return Column(
       children: [
-        // Items List - LIVE COOKING QUEUE MOVED TO SCROLLABLE AREA
+        // Fixed Header - Summary Stats
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFFFFB703), Color(0xFFE69500)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.orange.withOpacity(0.3),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.kitchen,
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Cooking Queue",
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      "$totalItems items • ${activeOrders.length} orders",
+                      style: const TextStyle(
+                        fontSize: 15,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(25),
+                ),
+                child: Text(
+                  "${sortedItems.length}",
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFFFB703),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Items List
         Expanded(
           child: ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: sortedItems.length + 1, // +1 for header
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: sortedItems.length,
             itemBuilder: (context, index) {
-              if (index == 0) {
-                // Live Status Header as first item in scroll
-                return Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF4CAF50), Color(0xFF45A049)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.green.withOpacity(0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.local_fire_department,
-                          color: Colors.white,
-                          size: 24,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              "🔥 LIVE COOKING QUEUE",
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              "${sortedItems.length} items • ${activeOrders.length} active orders",
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: Colors.white70,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            const Text(
-                              "LIVE",
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              } else {
-                // Item cards
-                final item = sortedItems[index - 1];
-                return LiveItemCard(
-                  itemCount: item,
-                  priority: index, // index already accounts for header
-                );
-              }
+              final item = sortedItems[index];
+              return LiveItemCard(
+                itemCount: item,
+                priority: index + 1,
+              );
             },
           ),
         ),
@@ -624,117 +623,106 @@ class LiveItemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final priorityColor = _getPriorityColor();
+    final priorityLabel = _getPriorityLabel();
     
-    return Card(
-      elevation: 6,
+    return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
+      decoration: BoxDecoration(
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: priorityColor.withOpacity(0.5),
-          width: 2,
+        border: Border.all(
+          color: priorityColor.withOpacity(0.2),
+          width: 1,
         ),
-      ),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: LinearGradient(
-            colors: [
-              priorityColor.withOpacity(0.05),
-              Colors.white,
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              // Header with priority and item name
-              Row(
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Row(
+          children: [
+            // Left side - Item info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (_getPriorityLabel().isNotEmpty) ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: priorityColor,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: priorityColor.withOpacity(0.3),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
+                  // Priority badge and item name row
+                  Row(
+                    children: [
+                      if (priorityLabel.isNotEmpty) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: priorityColor,
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.local_fire_department,
-                            color: Colors.white,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            _getPriorityLabel(),
+                          child: Text(
+                            priorityLabel,
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               color: Colors.white,
-                              fontSize: 12,
+                              fontSize: 10,
                             ),
                           ),
-                        ],
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      Expanded(
+                        child: Text(
+                          itemCount.name,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                  ],
-                  Expanded(
-                    child: Text(
-                      itemCount.name,
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    ],
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: priorityColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: priorityColor.withOpacity(0.3),
-                        width: 2,
-                      ),
-                    ),
-                    child: Text(
-                      '${itemCount.totalQuantity}',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: priorityColor,
-                      ),
+                  const SizedBox(height: 6),
+                  // Quantity info
+                  Text(
+                    "${itemCount.totalQuantity} ${itemCount.totalQuantity > 1 ? 'items' : 'item'} needed",
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
               ),
-              
-              const SizedBox(height: 16),
-              
-              // Status breakdown
-              if (itemCount.placedQuantity > 0)
-                _buildStatusChip(
-                  'Placed',
-                  itemCount.placedQuantity,
-                  Colors.blue,
-                  Icons.receipt_long,
+            ),
+            // Right side - Quantity badge
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: priorityColor.withOpacity(0.1),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: priorityColor.withOpacity(0.3),
+                  width: 2,
                 ),
-            ],
-          ),
+              ),
+              child: Center(
+                child: Text(
+                  '${itemCount.totalQuantity}',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: priorityColor,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -784,6 +772,7 @@ class EnhancedOrderCard extends StatefulWidget {
   final Map<String, dynamic> data;
   final Future<void> Function(String, String) onUpdate;
   final bool isTerminated;
+  final bool isReadOnly;
 
   const EnhancedOrderCard({
     Key? key,
@@ -791,6 +780,7 @@ class EnhancedOrderCard extends StatefulWidget {
     required this.data,
     required this.onUpdate,
     this.isTerminated = false,
+    this.isReadOnly = false,
   }) : super(key: key);
 
   @override
@@ -1043,7 +1033,39 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
                 ),
                 const SizedBox(height: 8),
 
-                // Status update section
+                // Status update section - conditional based on isReadOnly
+                if (widget.isReadOnly)
+                  // Read-only status display
+                  Row(
+                    children: [
+                      const Text(
+                        "Status: ",
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black54,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: _getStatusColor(status).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: _getStatusColor(status).withOpacity(0.3)),
+                        ),
+                        child: Text(
+                          status,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: _getStatusColor(status),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  // Editable status dropdown
                   Row(
                     children: [
                       const Text(
@@ -1203,6 +1225,181 @@ class _EnhancedOrderCardState extends State<EnhancedOrderCard> {
           ]),
         ),
       ),
+    );
+  }
+}
+
+// NEW: Order History View with Search
+class OrderHistoryView extends StatefulWidget {
+  final List<QueryDocumentSnapshot> orders;
+
+  const OrderHistoryView({
+    Key? key,
+    required this.orders,
+  }) : super(key: key);
+
+  @override
+  State<OrderHistoryView> createState() => _OrderHistoryViewState();
+}
+
+class _OrderHistoryViewState extends State<OrderHistoryView> {
+  String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<QueryDocumentSnapshot> get _filteredOrders {
+    if (_searchQuery.isEmpty) {
+      return widget.orders..sort((a, b) {
+        final aTimestamp = a.data() as Map<String, dynamic>?;
+        final bTimestamp = b.data() as Map<String, dynamic>?;
+        final aTime = (aTimestamp?['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now();
+        final bTime = (bTimestamp?['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now();
+        return bTime.compareTo(aTime); // Most recent first
+      });
+    }
+    
+    return widget.orders.where((doc) {
+      final orderId = doc.id.toLowerCase();
+      return orderId.contains(_searchQuery.toLowerCase());
+    }).toList()..sort((a, b) {
+      final aTimestamp = a.data() as Map<String, dynamic>?;
+      final bTimestamp = b.data() as Map<String, dynamic>?;
+      final aTime = (aTimestamp?['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now();
+      final bTime = (bTimestamp?['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now();
+      return bTime.compareTo(aTime); // Most recent first
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filteredOrders = _filteredOrders;
+
+    return Column(
+      children: [
+        // Search bar
+        Container(
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[300]!),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: TextField(
+            controller: _searchController,
+            onChanged: (value) {
+              setState(() {
+                _searchQuery = value;
+              });
+            },
+            decoration: InputDecoration(
+              hintText: 'Search by Order ID...',
+              border: InputBorder.none,
+              prefixIcon: const Icon(Icons.search, color: Colors.grey),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, color: Colors.grey),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() {
+                          _searchQuery = '';
+                        });
+                      },
+                    )
+                  : null,
+            ),
+          ),
+        ),
+        
+        // Results header
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              Icon(Icons.history, color: Colors.grey[600], size: 20),
+              const SizedBox(width: 8),
+              Text(
+                _searchQuery.isEmpty 
+                  ? "All Orders (${filteredOrders.length})"
+                  : "Search Results (${filteredOrders.length})",
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Orders list
+        Expanded(
+          child: filteredOrders.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        _searchQuery.isEmpty ? Icons.history : Icons.search_off,
+                        size: 80,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        _searchQuery.isEmpty 
+                          ? "No Order History" 
+                          : "No orders found",
+                        style: Theme.of(context).textTheme.headlineSmall,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _searchQuery.isEmpty 
+                          ? "Order history will appear here"
+                          : "Try searching with a different Order ID",
+                        style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: filteredOrders.length,
+                  itemBuilder: (context, index) {
+                    final doc = filteredOrders[index];
+                    final data = doc.data()! as Map<String, dynamic>;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: EnhancedOrderCard(
+                        key: ValueKey(doc.id),
+                        orderId: doc.id,
+                        data: data,
+                        onUpdate: (String orderId, String newStatus) async {
+                          // Read-only for history view - no updates allowed
+                          return;
+                        },
+                        isTerminated: false,
+                        isReadOnly: true,
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 }

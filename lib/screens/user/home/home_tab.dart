@@ -741,54 +741,56 @@ class _StatelessFilteredListState extends State<_StatelessFilteredList> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // Filter dropdown
+        // Filter options as clickable chips
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Filter: ',
+                'Filter Options:',
                 style: GoogleFonts.poppins(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                   color: Colors.grey[700],
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 5,
-                      offset: const Offset(0, 2),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: widget.filterOptions.map((option) {
+                  final isSelected = _selectedFilter == option;
+                  return GestureDetector(
+                    onTap: () => _onFilterChanged(option),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: isSelected ? const Color(0xFFFFB703) : Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 5,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                        border: Border.all(
+                          color: isSelected ? const Color(0xFFFFB703) : Colors.grey.withOpacity(0.3),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Text(
+                        option,
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: isSelected ? Colors.white : const Color(0xFFFFB703),
+                        ),
+                      ),
                     ),
-                  ],
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _selectedFilter,
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFFFFB703),
-                    ),
-                    isDense: true,
-                    onChanged: (String? newValue) {
-                      if (newValue != null) {
-                        _onFilterChanged(newValue);
-                      }
-                    },
-                    items: widget.filterOptions.map<DropdownMenuItem<String>>((String value) {
-                      return DropdownMenuItem<String>(
-                        value: value,
-                        child: Text(value),
-                      );
-                    }).toList(),
-                  ),
-                ),
+                  );
+                }).toList(),
               ),
             ],
           ),

@@ -30,6 +30,9 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
   
   // ADDED: Flag to track if we're in intentional logout process
   bool _isLoggingOut = false;
+  
+  // ADDED: Flag to control when page changes are programmatic vs manual
+  bool _isAnimatingProgrammatically = false;
 
   @override
   void initState() {
@@ -195,14 +198,22 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
       return;
     }
     
+    // Set flag to indicate programmatic navigation
+    _isAnimatingProgrammatically = true;
+    
     setState(() {
       _currentIndex = index;
     });
+    
+    // Use jumpToPage for instant navigation, but keep animateToPage for smooth transition
     _pageController.animateToPage(
       index,
-      duration: const Duration(milliseconds: 400),
-      curve: Curves.easeInOutCubic,
-    );
+      duration: const Duration(milliseconds: 200), // Reduced duration for snappier feel
+      curve: Curves.fastOutSlowIn, // Changed to a more direct curve
+    ).then((_) {
+      // Reset flag after animation completes
+      _isAnimatingProgrammatically = false;
+    });
   }
 
   @override
@@ -237,7 +248,8 @@ class _UserHomeState extends State<UserHome> with TickerProviderStateMixin {
       body: PageView(
         controller: _pageController,
         onPageChanged: (index) {
-          if (!_isLoggingOut) {
+          // Only update index if this is a manual swipe (not programmatic navigation)
+          if (!_isLoggingOut && !_isAnimatingProgrammatically) {
             setState(() {
               _currentIndex = index;
             });
