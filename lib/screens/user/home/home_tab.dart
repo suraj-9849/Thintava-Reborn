@@ -31,7 +31,7 @@ class HomeTab extends StatefulWidget {
 class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
   
-  final List<String> _filterOptions = ['All', 'Veg', 'Non-Veg', 'Available'];
+  final List<String> _filterOptions = ['All', 'Veg', 'Non-Veg', 'Available', 'Breakfast', 'Lunch', 'Snacks'];
 
   @override
   void dispose() {
@@ -291,43 +291,6 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin {
   Widget _buildMenuContent() {
     return Column(
       children: [
-        // Menu Section Header with operational status
-        Container(
-          padding: const EdgeInsets.fromLTRB(24, 20, 24, 15),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFB703).withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: const Icon(
-                  Icons.restaurant_menu_rounded,
-                  color: Color(0xFFFFB703),
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Our Menu",
-                      style: GoogleFonts.poppins(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    _buildEnabledMenusIndicator(),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
         
         Expanded(
           child: _buildMenuItemsWithSearch(),
@@ -372,95 +335,95 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin {
           );
         }
 
-        return Wrap(
-          spacing: 6,
-          children: enabledMenus.map((menuType) => Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: menuType.color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: menuType.color.withOpacity(0.3),
-                width: 1,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  menuType.icon,
-                  size: 12,
-                  color: menuType.color,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  menuType.displayName,
-                  style: GoogleFonts.poppins(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                    color: menuType.color,
-                  ),
-                ),
-              ],
-            ),
-          )).toList(),
-        );
+        return const SizedBox.shrink();
       },
     );
   }
 
   // ✅ COMPLETELY FIXED: No setState calls, no rebuilds, no overflow
   Widget _buildMenuItemsWithSearch() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _buildEnabledMenuItemsStream(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+    return FutureBuilder<List<MenuType>>(
+      future: MenuOperationsService.getEnabledMenuTypes(),
+      builder: (context, enabledMenuSnapshot) {
+        if (enabledMenuSnapshot.connectionState == ConnectionState.waiting) {
           return const LoadingGrid();
         }
 
-        if (snapshot.hasError) {
-          print('Stream error: ${snapshot.error}');
-          return _buildSafeEmptyState(
-            icon: Icons.error_outline,
-            title: 'Error Loading Menu',
-            subtitle: 'Unable to load menu items. Please try again.',
-            actionText: 'Retry',
-            onActionPressed: () {
-              setState(() {});
-            },
-            iconColor: Colors.red,
-          );
-        }
+        final enabledMenuTypes = enabledMenuSnapshot.data ?? [];
+        final dynamicFilterOptions = _buildDynamicFilterOptions(enabledMenuTypes);
 
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return _buildSafeEmptyState(
-            icon: Icons.restaurant_menu,
-            title: 'No Menu Items Available',
-            subtitle: 'Menu items will appear here when available.',
-            iconColor: Colors.grey,
-          );
-        }
+        return StreamBuilder<QuerySnapshot>(
+          stream: _buildEnabledMenuItemsStream(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const LoadingGrid();
+            }
 
-        final allItems = snapshot.data!.docs;
+            if (snapshot.hasError) {
+              print('Stream error: ${snapshot.error}');
+              return _buildSafeEmptyState(
+                icon: Icons.error_outline,
+                title: 'Error Loading Menu',
+                subtitle: 'Unable to load menu items. Please try again.',
+                actionText: 'Retry',
+                onActionPressed: () {
+                  setState(() {});
+                },
+                iconColor: Colors.red,
+              );
+            }
 
-        return Column(
-          children: [
-            // ✅ FIXED: Search bar that doesn't cause rebuilds
-            _buildStatelessSearchBar(),
-            
-            // ✅ FIXED: Filtered items list
-            Expanded(
-              child: _StatelessFilteredList(
-                allItems: allItems,
-                searchController: _searchController,
-                filterOptions: _filterOptions,
-                onStockError: _showStockError,
-              ),
-            ),
-          ],
+            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+              return _buildSafeEmptyState(
+                icon: Icons.restaurant_menu,
+                title: 'No Menu Items Available',
+                subtitle: 'Menu items will appear here when available.',
+                iconColor: Colors.grey,
+              );
+            }
+
+            final allItems = snapshot.data!.docs;
+
+            return Column(
+              children: [
+                // ✅ FIXED: Search bar that doesn't cause rebuilds
+                _buildStatelessSearchBar(),
+                
+                // ✅ FIXED: Filtered items list with dynamic filter options
+                Expanded(
+                  child: _StatelessFilteredList(
+                    allItems: allItems,
+                    searchController: _searchController,
+                    filterOptions: dynamicFilterOptions,
+                    onStockError: _showStockError,
+                  ),
+                ),
+              ],
+            );
+          },
         );
       },
     );
+  }
+
+  List<String> _buildDynamicFilterOptions(List<MenuType> enabledMenuTypes) {
+    List<String> options = ['All', 'Veg', 'Non-Veg', 'Available'];
+    
+    for (final menuType in enabledMenuTypes) {
+      switch (menuType.value.toLowerCase()) {
+        case 'breakfast':
+          options.add('Breakfast');
+          break;
+        case 'lunch':
+          options.add('Lunch');
+          break;
+        case 'snacks':
+          options.add('Snacks');
+          break;
+      }
+    }
+    
+    return options;
   }
 
   // ✅ FIXED: Safe empty state that doesn't overflow
@@ -657,6 +620,19 @@ class _StatelessFilteredListState extends State<_StatelessFilteredList> {
   }
 
   @override
+  void didUpdateWidget(_StatelessFilteredList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    
+    // Reset selected filter if it's no longer available in the new filter options
+    if (!widget.filterOptions.contains(_selectedFilter)) {
+      setState(() {
+        _selectedFilter = 'All';
+        _cachedFilteredItems = null;
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _debounceTimer?.cancel();
     widget.searchController.removeListener(_onSearchChanged);
@@ -707,6 +683,15 @@ class _StatelessFilteredListState extends State<_StatelessFilteredList> {
         } catch (e) {
           return UserUtils.getAvailableStockSync(data) > 0;
         }
+      case 'Breakfast':
+        final menuType = data['menuType'] ?? 'breakfast';
+        return menuType.toLowerCase() == 'breakfast';
+      case 'Lunch':
+        final menuType = data['menuType'] ?? 'breakfast';
+        return menuType.toLowerCase() == 'lunch';
+      case 'Snacks':
+        final menuType = data['menuType'] ?? 'breakfast';
+        return menuType.toLowerCase() == 'snacks';
       case 'All':
       default:
         return true;
@@ -741,43 +726,35 @@ class _StatelessFilteredListState extends State<_StatelessFilteredList> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // Filter options as clickable chips
+        // Filter options as scrollable chips
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Filter Options:',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.grey[700],
-                ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: widget.filterOptions.map((option) {
-                  final isSelected = _selectedFilter == option;
-                  return GestureDetector(
+          height: 60,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: widget.filterOptions.map((option) {
+                final isSelected = _selectedFilter == option;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: GestureDetector(
                     onTap: () => _onFilterChanged(option),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(
                         color: isSelected ? const Color(0xFFFFB703) : Colors.white,
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(18),
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withOpacity(0.1),
-                            blurRadius: 5,
+                            blurRadius: 4,
                             offset: const Offset(0, 2),
                           ),
                         ],
                         border: Border.all(
                           color: isSelected ? const Color(0xFFFFB703) : Colors.grey.withOpacity(0.3),
-                          width: 1.5,
+                          width: 1,
                         ),
                       ),
                       child: Text(
@@ -789,10 +766,10 @@ class _StatelessFilteredListState extends State<_StatelessFilteredList> {
                         ),
                       ),
                     ),
-                  );
-                }).toList(),
-              ),
-            ],
+                  ),
+                );
+              }).toList(),
+            ),
           ),
         ),
         
@@ -902,6 +879,12 @@ class _StatelessFilteredListState extends State<_StatelessFilteredList> {
         return 'No vegetarian items found';
       case 'Non-Veg':
         return 'No non-vegetarian items found';
+      case 'Breakfast':
+        return 'No breakfast items found';
+      case 'Lunch':
+        return 'No lunch items found';
+      case 'Snacks':
+        return 'No snacks found';
       default:
         return 'No items match current filters';
     }

@@ -197,12 +197,12 @@ class _MenuItemCardState extends State<MenuItemCard> {
                   child: Stack(
                     children: [
                       Padding(
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(12),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             _buildFoodImage(imageUrl, isVeg, isOutOfStock),
-                            const SizedBox(width: 16),
+                            const SizedBox(width: 12),
                             Expanded(
                               child: _buildFoodDetails(
                                 name, price, description, 
@@ -229,8 +229,8 @@ class _MenuItemCardState extends State<MenuItemCard> {
     return Stack(
       children: [
         Container(
-          width: 85,
-          height: 85,
+          width: 95,
+          height: 95,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
@@ -344,21 +344,24 @@ class _MenuItemCardState extends State<MenuItemCard> {
         
         const SizedBox(height: 12),
         
-        // Price
-        Text(
-          "₹${price.toStringAsFixed(2)}",
-          style: GoogleFonts.poppins(
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-            color: available ? const Color(0xFFFFB703) : Colors.grey[500],
-            decoration: available ? null : TextDecoration.lineThrough,
-          ),
+        // Price and Cart Controls Row
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              "₹${price.toStringAsFixed(2)}",
+              style: GoogleFonts.poppins(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: available ? const Color(0xFFFFB703) : Colors.grey[500],
+                decoration: available ? null : TextDecoration.lineThrough,
+              ),
+            ),
+            const SizedBox(width: 8),
+            _buildCompactCartControls(cartProvider, cartQuantity, context),
+          ],
         ),
-        
-        const SizedBox(height: 16),
-        
-        // ✅ FIXED: Use stable cart controls that don't flicker
-        _buildStableCartControls(cartProvider, cartQuantity, context),
       ],
     );
   }
@@ -373,31 +376,22 @@ class _MenuItemCardState extends State<MenuItemCard> {
     );
   }
 
-  // ✅ FIXED: Stable cart controls without flickering
-  Widget _buildStableCartControls(CartProvider cartProvider, int cartQuantity, BuildContext context) {
+  // ✅ FIXED: Compact cart controls for right side positioning
+  Widget _buildCompactCartControls(CartProvider cartProvider, int cartQuantity, BuildContext context) {
     final available = widget.data['available'] ?? true;
     
     if (!available) {
-      return _buildUnavailableButton('Currently Unavailable');
+      return _buildCompactUnavailableButton('Unavailable');
     }
 
-    if (_stockState.hasUnlimitedStock) {
-      return CartControls(
-        itemId: widget.id,
-        cartQuantity: cartQuantity,
-        canAdd: true,
-        onStockError: () => _showStockError(context),
-      );
-    }
-
-    if (_stockState.availableStock <= 0) {
-      return _buildUnavailableButton('Out of Stock');
+    if (_stockState.availableStock <= 0 && !_stockState.hasUnlimitedStock) {
+      return _buildCompactUnavailableButton('Out of Stock');
     }
 
     // Check if can add more to cart based on current available stock
-    final canAdd = (cartQuantity + 1) <= _stockState.availableStock;
+    final canAdd = _stockState.hasUnlimitedStock || (cartQuantity + 1) <= _stockState.availableStock;
 
-    return CartControls(
+    return _CompactCartControls(
       itemId: widget.id,
       cartQuantity: cartQuantity,
       canAdd: canAdd,
@@ -405,32 +399,20 @@ class _MenuItemCardState extends State<MenuItemCard> {
     );
   }
 
-  Widget _buildUnavailableButton(String message) {
+  Widget _buildCompactUnavailableButton(String message) {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.grey[200],
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            message.contains('Unavailable') ? Icons.block_rounded : Icons.hourglass_empty_rounded,
-            color: Colors.grey[600],
-            size: 18,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            message,
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
+      child: Text(
+        message,
+        style: GoogleFonts.poppins(
+          fontSize: 10,
+          color: Colors.grey[600],
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
@@ -502,5 +484,197 @@ class _MenuItemCardState extends State<MenuItemCard> {
         duration: const Duration(seconds: 3),
       ),
     );
+  }
+}
+
+// Compact Cart Controls Widget
+class _CompactCartControls extends StatefulWidget {
+  final String itemId;
+  final int cartQuantity;
+  final bool canAdd;
+  final VoidCallback? onStockError;
+  
+  const _CompactCartControls({
+    required this.itemId,
+    required this.cartQuantity,
+    required this.canAdd,
+    this.onStockError,
+  });
+
+  @override
+  State<_CompactCartControls> createState() => _CompactCartControlsState();
+}
+
+class _CompactCartControlsState extends State<_CompactCartControls> {
+  bool _isLoading = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<CartProvider>(
+      builder: (context, cartProvider, child) {
+        if (widget.cartQuantity > 0) {
+          return _buildQuantityControls(cartProvider);
+        } else {
+          return _buildAddButton(cartProvider);
+        }
+      },
+    );
+  }
+
+  Widget _buildQuantityControls(CartProvider cartProvider) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFB703).withOpacity(0.1),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(
+          color: const Color(0xFFFFB703).withOpacity(0.3)
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildCartButton(
+            icon: Icons.remove_rounded,
+            onTap: _isLoading ? null : () => _handleRemove(cartProvider),
+            color: const Color(0xFFFFB703),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFB703),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: _isLoading 
+              ? SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.5,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : Text(
+                  widget.cartQuantity.toString(),
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+          ),
+          _buildCartButton(
+            icon: Icons.add_rounded,
+            onTap: (_isLoading || !widget.canAdd) ? null : () => _handleAdd(cartProvider),
+            color: (!widget.canAdd || _isLoading) ? Colors.grey : const Color(0xFFFFB703),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddButton(CartProvider cartProvider) {
+    return GestureDetector(
+      onTap: (_isLoading || !widget.canAdd) ? null : () => _handleAdd(cartProvider),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: widget.canAdd ? const Color(0xFFFFB703) : Colors.grey[400],
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _isLoading 
+              ? SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.5,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : Icon(
+                  Icons.add_shopping_cart_rounded, 
+                  size: 16, 
+                  color: Colors.white
+                ),
+            const SizedBox(width: 4),
+            Text(
+              _isLoading ? "Adding..." : "Add",
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCartButton({
+    required IconData icon, 
+    required VoidCallback? onTap, 
+    required Color color
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        child: Icon(
+          icon,
+          color: color,
+          size: 18,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleAdd(CartProvider cartProvider) async {
+    if (_isLoading) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final success = await cartProvider.addItem(widget.itemId);
+      
+      if (!success && widget.onStockError != null) {
+        widget.onStockError!();
+      }
+    } catch (e) {
+      print('Error adding item to cart: $e');
+      if (widget.onStockError != null) {
+        widget.onStockError!();
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _handleRemove(CartProvider cartProvider) async {
+    if (_isLoading) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      cartProvider.removeItem(widget.itemId);
+    } catch (e) {
+      print('Error removing item from cart: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 }
