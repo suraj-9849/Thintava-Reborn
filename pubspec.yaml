@@ -82,12 +82,8 @@ flutter_launcher_icons:
 flutter:
   uses-material-design: true
   
-  # REMOVED: Commented out assets and fonts until you create the directories
-  # Uncomment these after creating the asset folders and files
-  
-  # assets:
-  #   - assets/images/
-  #   - assets/icons/
+  assets:
+    - assets/icon/app_icon.png
     
   # fonts:
   #   - family: Poppins

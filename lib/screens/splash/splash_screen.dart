@@ -52,31 +52,25 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     print('🎭 Animations set up');
   }
 
-  void _setupOrderNotifications() {
-    setState(() {
-      _statusMessage = "Setting up order notifications...";
-    });
 
+  void _setupOrderNotifications() {
     try {
       // Order notification setup is handled in main.dart during app initialization
       // Here we just confirm it's working
       print('📱 Order notification system confirmed active');
       
-      setState(() {
-        _statusMessage = "Order notifications ready!";
-      });
-      
-      // After a brief delay, continue with auth
-      Timer(const Duration(milliseconds: 1500), () {
+      if (mounted) {
         setState(() {
-          _statusMessage = "Checking authentication...";
+          _statusMessage = "Ready to connect...";
         });
-      });
+      }
     } catch (e) {
       print('❗ Error in order notification setup: $e');
-      setState(() {
-        _statusMessage = "Preparing app...";
-      });
+      if (mounted) {
+        setState(() {
+          _statusMessage = "Preparing app...";
+        });
+      }
     }
   }
 
@@ -321,6 +315,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     super.dispose();
   }
 
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -352,10 +347,10 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                       ),
                     ],
                   ),
-                  child: const Icon(
-                    Icons.restaurant_menu,
-                    size: 60,
-                    color: Color(0xFFFFB703),
+                  child: Image.asset(
+                    'assets/icon/app_icon.png',
+                    width: 60,
+                    height: 60,
                   ),
                 ),
                 const SizedBox(height: 24),

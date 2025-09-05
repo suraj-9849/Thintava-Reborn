@@ -47,10 +47,10 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen> {
                       ),
                     ],
                   ),
-                  child: Icon(
-                    Icons.restaurant,
-                    size: 48,
-                    color: Colors.white,
+                  child: Image.asset(
+                    'assets/icon/app_icon.png',
+                    width: 48,
+                    height: 48,
                   ),
                 ),
                 
@@ -84,7 +84,9 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen> {
                     ],
                   ),
                   child: Text(
-                    'Please update to continue using the app.',
+                    widget.updateResult.message.isNotEmpty 
+                        ? widget.updateResult.message 
+                        : 'Please update to continue using the app.',
                     style: GoogleFonts.poppins(
                       fontSize: 16,
                       color: Colors.black54,

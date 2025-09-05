@@ -19,7 +19,7 @@ import 'package:canteen_app/services/notification_service.dart';
 import 'package:canteen_app/utils/firebase_utils.dart';
 import 'package:canteen_app/services/auth_service.dart';
 import 'package:canteen_app/providers/cart_provider.dart';
-import 'package:canteen_app/widgets/version_guard.dart'; // NEW IMPORT
+import 'package:canteen_app/widgets/version_guard.dart';
 
 // Initialize global plugins
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = 
@@ -52,7 +52,7 @@ Future<void> main() async {
   // Initialize Firebase based on platform
   await _initializeFirebase();
   
-  // Run the application WITH VERSION GUARD
+  // Run the application with version checking
   runApp(
     VersionGuard(
       child: const ThintavaApp(),
@@ -354,11 +354,67 @@ class _ThintavaAppState extends State<ThintavaApp> {
       future: _appLoadingFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const MaterialApp(
+          return MaterialApp(
+            debugShowCheckedModeBanner: false,
             home: Scaffold(
-              body: Center(
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFB703)),
+              body: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFFFFB703), Color(0xFFFFB703)],
+                  ),
+                ),
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Logo Container with shadow effect
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.2),
+                              blurRadius: 20,
+                              spreadRadius: 5,
+                            ),
+                          ],
+                        ),
+                        child: Image.asset(
+                          'assets/icon/app_icon.png',
+                          width: 60,
+                          height: 60,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      const Text(
+                        'Thintava',
+                        style: TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+                      const CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        strokeWidth: 3,
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Loading...',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

@@ -9,7 +9,8 @@ class UpdateService {
   /// Check if app needs update
   static Future<UpdateCheckResult> checkForUpdate() async {
     try {
-      print('🔄 Checking for app updates...');
+      print('🔄 UpdateService: Starting version check...');
+      print('🔄 UpdateService: Checking Firebase connectivity...');
       
       // Get current app version
       final packageInfo = await PackageInfo.fromPlatform();
@@ -19,6 +20,7 @@ class UpdateService {
       print('📱 Current version: $currentVersion (Build: $currentBuildNumber)');
       
       // Get minimum required version from Firebase
+      print('🔄 UpdateService: Fetching version_control document from Firebase...');
       final doc = await _firestore.collection('app_config').doc('version_control').get();
       
       if (!doc.exists) {
@@ -57,12 +59,31 @@ class UpdateService {
       print('🔒 Force update: $isForceUpdate');
       
       // Compare versions - we use build number for precise comparison
+      print('🔍 Version Comparison Details:');
+      print('   ════════════════════════════════');
+      print('   Current App Version: $currentVersion');
+      print('   Current Build Number: $currentBuildNumber');
+      print('   Required App Version: $requiredVersion');
+      print('   Required Build Number: $requiredBuildNumber');
+      print('   Force Update Enabled: $isForceUpdate');
+      print('   ════════════════════════════════');
+      print('   Build Comparison: $currentBuildNumber < $requiredBuildNumber = ${currentBuildNumber < requiredBuildNumber}');
+      
+      // The app needs update if:
+      // 1. Force update is enabled AND
+      // 2. Current build number is less than required build number
       final needsUpdate = isForceUpdate && currentBuildNumber < requiredBuildNumber;
       
+      print('   ════════════════════════════════');
+      print('   🎯 FINAL DECISION: needsUpdate = $needsUpdate');
+      print('   Logic: ($isForceUpdate && $currentBuildNumber < $requiredBuildNumber) = $needsUpdate');
+      print('   ════════════════════════════════');
+      
       if (needsUpdate) {
-        print('❌ App is outdated and needs update');
+        print('❌ UPDATE REQUIRED: App is outdated and needs update');
+        print('   User will be blocked from using the app');
       } else {
-        print('✅ App is up to date');
+        print('✅ NO UPDATE NEEDED: App can continue normally');
       }
       
       return UpdateCheckResult(
