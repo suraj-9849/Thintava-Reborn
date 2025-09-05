@@ -15,6 +15,8 @@ import 'package:canteen_app/screens/admin/admin_analytics_screen.dart';
 import 'package:canteen_app/screens/admin/menu_operations_screen.dart'; // NEW
 import 'package:canteen_app/screens/kitchen/kitchen_home.dart';
 import 'package:canteen_app/screens/splash/splash_screen.dart';
+import 'package:canteen_app/screens/legal/privacy_policy_screen.dart';
+import 'package:canteen_app/screens/legal/terms_of_service_screen.dart';
 import '../models/menu_type.dart';
 
 class RouteConfig {
@@ -55,6 +57,10 @@ class RouteConfig {
       '/kitchen': (_) => const KitchenHome(), // Now serves as the main dashboard
       '/kitchen-menu': (_) => const KitchenHome(), // Redirect to main kitchen dashboard
       '/kitchen-home': (_) => const KitchenHome(), // Redirect to main kitchen dashboard
+      
+      // Legal routes
+      '/privacy-policy': (_) => const PrivacyPolicyScreen(),
+      '/terms-of-service': (_) => const TermsOfServiceScreen(),
       
       // App routes
       '/splash': (context) => const SplashScreen(),

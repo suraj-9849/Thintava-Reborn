@@ -201,12 +201,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                             _showComingSoonSnackBar,
                           ),
                         ),
-                        MenuItemData(
-                          icon: Icons.favorite_border,
-                          title: "Favorite Items",
-                          subtitle: "View and manage your favorites",
-                          onTap: () => _showComingSoonSnackBar("Favorites"),
-                        ),
                       ],
                     ),
                     
@@ -266,13 +260,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                           icon: Icons.privacy_tip_outlined,
                           title: "Privacy Policy",
                           subtitle: "Read our privacy policy",
-                          onTap: () => _showComingSoonSnackBar("Privacy Policy"),
+                          onTap: () => Navigator.pushNamed(context, '/privacy-policy'),
                         ),
                         MenuItemData(
                           icon: Icons.description_outlined,
                           title: "Terms of Service",
                           subtitle: "Read our terms and conditions",
-                          onTap: () => _showComingSoonSnackBar("Terms of Service"),
+                          onTap: () => Navigator.pushNamed(context, '/terms-of-service'),
                         ),
                       ],
                     ),
