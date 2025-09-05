@@ -291,8 +291,8 @@ class _QRScannerWidgetState extends State<QRScannerWidget> {
       // Send notification to user
       await _sendCompletionNotification(orderData);
 
-      // Show success message
-      _showSuccessDialog(qrCode);
+      // Show success message with order details
+      _showSuccessDialog(qrCode, orderData);
 
     } catch (e) {
       print('Error processing QR scan: $e');
@@ -326,7 +326,38 @@ class _QRScannerWidgetState extends State<QRScannerWidget> {
     }
   }
 
-  void _showSuccessDialog(String orderId) {
+  void _showSuccessDialog(String orderId, Map<String, dynamic> orderData) {
+    // Parse order items
+    final itemsData = orderData['items'];
+    List<Map<String, dynamic>> parsedItems = [];
+    
+    if (itemsData != null) {
+      if (itemsData is List) {
+        for (var item in itemsData) {
+          if (item is Map<String, dynamic>) {
+            parsedItems.add({
+              'name': item['name'] ?? 'Unknown Item',
+              'quantity': item['quantity'] ?? 1,
+              'price': item['price'] ?? 0.0,
+            });
+          }
+        }
+      } else if (itemsData is Map<String, dynamic>) {
+        itemsData.forEach((itemId, itemData) {
+          if (itemData is Map<String, dynamic>) {
+            parsedItems.add({
+              'name': itemData['name'] ?? 'Unknown Item',
+              'quantity': itemData['quantity'] ?? 1,
+              'price': itemData['price'] ?? 0.0,
+            });
+          }
+        });
+      }
+    }
+
+    final total = orderData['total'] ?? 0.0;
+    final userEmail = orderData['userEmail'] ?? 'Unknown User';
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -343,24 +374,179 @@ class _QRScannerWidgetState extends State<QRScannerWidget> {
             color: const Color(0xFF023047),
           ),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Order successfully marked as picked up.',
-              style: GoogleFonts.poppins(),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Order ID: ${orderId.length > 10 ? '${orderId.substring(0, 10)}...' : orderId}',
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                color: Colors.grey[600],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Order successfully marked as picked up.',
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w600,
+                ),
+                textAlign: TextAlign.center,
               ),
-              textAlign: TextAlign.center,
-            ),
-          ],
+              const SizedBox(height: 16),
+              
+              // Order ID
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Order ID',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      orderId,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              const SizedBox(height: 12),
+              
+              // Customer
+              Row(
+                children: [
+                  Icon(Icons.person, size: 16, color: Colors.grey[600]),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      userEmail,
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        color: Colors.black87,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              
+              const SizedBox(height: 16),
+              
+              // Items section
+              Text(
+                'Items (${parsedItems.length})',
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFF023047),
+                ),
+              ),
+              const SizedBox(height: 8),
+              
+              if (parsedItems.isNotEmpty)
+                ...parsedItems.map((item) => Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey[300]!),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item['name'],
+                              style: GoogleFonts.poppins(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              'Qty: ${item['quantity']} × ₹${item['price'].toStringAsFixed(2)}',
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Text(
+                        '₹${(item['quantity'] * item['price']).toStringAsFixed(2)}',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFFFFB703),
+                        ),
+                      ),
+                    ],
+                  ),
+                )).toList()
+              else
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'No items in this order',
+                    style: GoogleFonts.poppins(
+                      fontStyle: FontStyle.italic,
+                      color: Colors.grey[600],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              
+              const SizedBox(height: 12),
+              
+              // Total
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFB703).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFFFB703).withOpacity(0.3)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Total Amount',
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      '₹${total.toStringAsFixed(2)}',
+                      style: GoogleFonts.poppins(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFFFFB703),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           ElevatedButton(
@@ -372,6 +558,7 @@ class _QRScannerWidgetState extends State<QRScannerWidget> {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFFFB703),
               foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
             child: Text(
               'OK',
