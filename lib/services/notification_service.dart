@@ -536,6 +536,68 @@ class NotificationService {
     }
   }
 
+  // Send order completion notification
+  static Future<void> sendOrderCompletionNotification({
+    required String userId,
+    required String orderId,
+    required String orderTotal,
+  }) async {
+    try {
+      // Add notification document to trigger cloud function
+      await FirebaseFirestore.instance
+          .collection('notifications')
+          .add({
+        'userId': userId,
+        'title': 'Order Completed! 🎉',
+        'body': 'Your order (₹$orderTotal) has been picked up successfully. Thank you for choosing us!',
+        'type': 'order_completed',
+        'orderId': orderId,
+        'timestamp': FieldValue.serverTimestamp(),
+        'read': false,
+        'data': {
+          'orderTotal': orderTotal,
+          'completedAt': FieldValue.serverTimestamp(),
+          'action': 'view_order_tracking',
+        },
+      });
+
+      print('Order completion notification sent for user: $userId, order: $orderId');
+    } catch (e) {
+      print('Error sending order completion notification: $e');
+    }
+  }
+
+  // Send pickup ready notification
+  static Future<void> sendPickupReadyNotification({
+    required String userId,
+    required String orderId,
+    required String orderTotal,
+  }) async {
+    try {
+      // Add notification document to trigger cloud function
+      await FirebaseFirestore.instance
+          .collection('notifications')
+          .add({
+        'userId': userId,
+        'title': 'Order Ready for Pickup! 📦',
+        'body': 'Your order (₹$orderTotal) is ready! Show your QR code to the kitchen staff.',
+        'type': 'order_pickup_ready',
+        'orderId': orderId,
+        'timestamp': FieldValue.serverTimestamp(),
+        'read': false,
+        'data': {
+          'orderTotal': orderTotal,
+          'readyAt': FieldValue.serverTimestamp(),
+          'action': 'track_order',
+        },
+      });
+
+      print('Pickup ready notification sent for user: $userId, order: $orderId');
+    } catch (e) {
+      print('Error sending pickup ready notification: $e');
+    }
+  }
+
   // Method to show a test notification (for debugging)
   static Future<void> showTestOrderNotification() async {
     // FIXED: Create AndroidNotificationDetails without const to avoid issues

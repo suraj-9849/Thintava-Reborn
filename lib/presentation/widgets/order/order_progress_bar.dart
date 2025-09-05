@@ -21,24 +21,6 @@ class OrderProgressBar extends StatelessWidget {
         Expanded(
           child: Container(
             height: 3,
-            color: _isStatusActive(OrderStatusType.cooking) 
-              ? const Color(0xFFFFB703) 
-              : Colors.grey[300],
-          ),
-        ),
-        _buildStatusStep(OrderStatusType.cooking, Icons.restaurant),
-        Expanded(
-          child: Container(
-            height: 3,
-            color: _isStatusActive(OrderStatusType.cooked) 
-              ? const Color(0xFFFFB703) 
-              : Colors.grey[300],
-          ),
-        ),
-        _buildStatusStep(OrderStatusType.cooked, Icons.check_circle),
-        Expanded(
-          child: Container(
-            height: 3,
             color: _isStatusActive(OrderStatusType.pickUp) 
               ? const Color(0xFFFFB703) 
               : Colors.grey[300],
@@ -83,16 +65,12 @@ class OrderProgressBar extends StatelessWidget {
   bool _isStatusActive(OrderStatusType checkStatus) {
     final statusOrder = [
       OrderStatusType.placed,
-      OrderStatusType.cooking,
-      OrderStatusType.cooked,
       OrderStatusType.pickUp,
       OrderStatusType.pickedUp
     ];
     
     final currentIndex = statusOrder.indexOf(currentStatus);
     final checkIndex = statusOrder.indexOf(checkStatus);
-    
-    if (currentStatus == OrderStatusType.terminated) return false;
     
     return currentIndex >= checkIndex && checkIndex != -1;
   }
@@ -101,10 +79,6 @@ class OrderProgressBar extends StatelessWidget {
     switch (status) {
       case OrderStatusType.placed:
         return 'Placed';
-      case OrderStatusType.cooking:
-        return 'Cooking';
-      case OrderStatusType.cooked:
-        return 'Cooked';
       case OrderStatusType.pickUp:
         return 'Pick Up';
       default:

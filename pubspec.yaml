@@ -62,6 +62,10 @@ dependencies:
   # NEW DEPENDENCIES FOR FORCED UPDATE SYSTEM
   package_info_plus: ^4.2.0      # Get app version info
   url_launcher: ^6.2.1           # Launch app store URLs
+  
+  # QR Code System
+  qr_flutter: ^4.1.0             # Generate QR codes
+  mobile_scanner: ^3.5.6         # Scan QR codes (better compatibility)
 
 dev_dependencies:
   flutter_test:

@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:canteen_app/services/auth_service.dart';
-import 'package:canteen_app/widgets/order_expiry_timer.dart';
 
 // Capitalize helper
 String capitalize(String s) =>
@@ -22,19 +21,15 @@ class _AdminKitchenViewScreenState extends State<AdminKitchenViewScreen>
   final List<String> _statusFilters = [
     'All',
     'Placed',
-    'Cooking',
-    'Cooked',
-    'Pick Up',
-    'Terminated'
+    'Pick Up'
   ];
   String _currentFilter = 'All';
   final _authService = AuthService();
-  int _terminatedCount = 0;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       setState(() {
         _currentFilter = _statusFilters[_tabController.index];
@@ -58,66 +53,26 @@ class _AdminKitchenViewScreenState extends State<AdminKitchenViewScreen>
         .snapshots();
   }
 
-  // CLIENT-SIDE FILTERING FOR TODAY'S TERMINATED ORDERS
-  int _getTerminatedCountFromDocs(List<QueryDocumentSnapshot> allDocs) {
-    final now = DateTime.now();
-    final startOfDay = DateTime(now.year, now.month, now.day);
-    final endOfDay = DateTime(now.year, now.month, now.day, 23, 59, 59);
-
-    int count = 0;
-    for (var doc in allDocs) {
-      final data = doc.data() as Map<String, dynamic>;
-      final status = data['status'] as String?;
-      final timestamp = data['timestamp'] as Timestamp?;
-
-      if (status == 'Terminated' && timestamp != null) {
-        final orderDate = timestamp.toDate();
-        if (orderDate.isAfter(startOfDay) && orderDate.isBefore(endOfDay)) {
-          count++;
-        }
-      }
-    }
-    return count;
-  }
 
   // CLIENT-SIDE FILTERING FOR ORDERS BASED ON CURRENT TAB
   List<QueryDocumentSnapshot> _filterOrdersForCurrentTab(
       List<QueryDocumentSnapshot> allDocs) {
-    final now = DateTime.now();
-    final startOfDay = DateTime(now.year, now.month, now.day);
-    final endOfDay = DateTime(now.year, now.month, now.day, 23, 59, 59);
+    // Exclude completed orders
+    final activeDocs = allDocs.where((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      final status = data['status'] as String?;
+      return status != 'PickedUp';
+    }).toList();
 
-    if (_currentFilter == 'Terminated') {
-      // Return only today's terminated orders
-      return allDocs.where((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        final status = data['status'] as String?;
-        final timestamp = data['timestamp'] as Timestamp?;
-
-        if (status == 'Terminated' && timestamp != null) {
-          final orderDate = timestamp.toDate();
-          return orderDate.isAfter(startOfDay) && orderDate.isBefore(endOfDay);
-        }
-        return false;
-      }).toList();
+    if (_currentFilter == 'All') {
+      return activeDocs;
     } else {
-      // For all other tabs, exclude terminated and completed orders
-      final activeDocs = allDocs.where((doc) {
+      // Filter by specific status
+      return activeDocs.where((doc) {
         final data = doc.data() as Map<String, dynamic>;
-        final status = data['status'] as String?;
-        return status != 'Terminated' && status != 'PickedUp';
+        final status = capitalize(data['status'] as String? ?? '');
+        return status == _currentFilter;
       }).toList();
-
-      if (_currentFilter == 'All') {
-        return activeDocs;
-      } else {
-        // Filter by specific status
-        return activeDocs.where((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          final status = capitalize(data['status'] as String? ?? '');
-          return status == _currentFilter;
-        }).toList();
-      }
     }
   }
 
@@ -199,18 +154,6 @@ class _AdminKitchenViewScreenState extends State<AdminKitchenViewScreen>
           // ALL CLIENT-SIDE FILTERING HERE
           final allDocs = snapshot.data!.docs;
 
-          // Update terminated count
-          final newTerminatedCount = _getTerminatedCountFromDocs(allDocs);
-          if (_terminatedCount != newTerminatedCount) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                setState(() {
-                  _terminatedCount = newTerminatedCount;
-                });
-              }
-            });
-          }
-
           // Filter orders for current tab
           final filteredDocs = _filterOrdersForCurrentTab(allDocs);
 
@@ -220,13 +163,9 @@ class _AdminKitchenViewScreenState extends State<AdminKitchenViewScreen>
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
-                      _currentFilter == 'Terminated'
-                          ? Icons.delete_sweep_outlined
-                          : Icons.food_bank_outlined,
+                      Icons.food_bank_outlined,
                       size: 80,
-                      color: _currentFilter == 'Terminated'
-                          ? Colors.red.withOpacity(0.7)
-                          : const Color(0xFFFFB703)),
+                      color: const Color(0xFFFFB703)),
                   const SizedBox(height: 24),
                   Text(
                     _getEmptyMessage(),
@@ -245,17 +184,6 @@ class _AdminKitchenViewScreenState extends State<AdminKitchenViewScreen>
             );
           }
 
-          // Sort terminated orders by timestamp (most recent first)
-          if (_currentFilter == 'Terminated') {
-            filteredDocs.sort((a, b) {
-              final aTime = (a.data() as Map<String, dynamic>)['timestamp']
-                  as Timestamp?;
-              final bTime = (b.data() as Map<String, dynamic>)['timestamp']
-                  as Timestamp?;
-              if (aTime == null || bTime == null) return 0;
-              return bTime.compareTo(aTime); // Descending (most recent first)
-            });
-          }
 
           return ListView.builder(
             padding: const EdgeInsets.all(16),
@@ -269,7 +197,7 @@ class _AdminKitchenViewScreenState extends State<AdminKitchenViewScreen>
                   key: ValueKey(doc.id),
                   orderId: doc.id,
                   data: data,
-                  isTerminated: _currentFilter == 'Terminated',
+                  isTerminated: false,
                 ),
               );
             },
@@ -281,8 +209,6 @@ class _AdminKitchenViewScreenState extends State<AdminKitchenViewScreen>
 
   String _getEmptyMessage() {
     switch (_currentFilter) {
-      case 'Terminated':
-        return "No terminated orders today";
       case 'All':
         return "No active orders";
       default:
@@ -292,8 +218,6 @@ class _AdminKitchenViewScreenState extends State<AdminKitchenViewScreen>
 
   String _getEmptySubMessage() {
     switch (_currentFilter) {
-      case 'Terminated':
-        return "No orders were terminated today. Great job!";
       case 'All':
         return "All caught up! The kitchen is quiet for now.";
       default:
@@ -326,37 +250,13 @@ class _ReadOnlyOrderCardState extends State<ReadOnlyOrderCard> {
     switch (status) {
       case 'Placed':
         return Colors.blue;
-      case 'Cooking':
-        return Colors.orange;
-      case 'Cooked':
-        return const Color(0xFFFFB703);
       case 'Pick Up':
-        return Colors.purple;
-      case 'Terminated':
-        return Colors.red;
+        return Colors.green;
       default:
         return Colors.grey;
     }
   }
 
-  String _formatTerminatedTime(dynamic timestamp) {
-    if (timestamp == null) return '';
-
-    try {
-      DateTime dateTime;
-      if (timestamp is DateTime) {
-        dateTime = timestamp;
-      } else if (timestamp.toDate != null) {
-        dateTime = timestamp.toDate();
-      } else {
-        return '';
-      }
-
-      return '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
-    } catch (e) {
-      return '';
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -408,25 +308,18 @@ class _ReadOnlyOrderCardState extends State<ReadOnlyOrderCard> {
     final timeStr =
         '${orderTime.hour.toString().padLeft(2, '0')}:${orderTime.minute.toString().padLeft(2, '0')}';
 
-    // Get pickup time for timer (only for non-terminated orders)
     final pickedUpTime = widget.data['pickedUpTime'] as Timestamp?;
 
-    // Get terminated time for terminated orders
-    final terminatedTime = widget.data['terminatedTime'] as Timestamp?;
-    final terminatedTimeStr =
-        terminatedTime != null ? _formatTerminatedTime(terminatedTime) : '';
-
     return Card(
-      elevation: widget.isTerminated ? 2 : 4,
+      elevation: 4,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: _getStatusColor(status)
-              .withOpacity(widget.isTerminated ? 0.3 : 0.5),
+          color: _getStatusColor(status).withOpacity(0.5),
           width: 1.5,
         ),
       ),
-      color: widget.isTerminated ? Colors.grey.shade50 : Colors.white,
+      color: Colors.white,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () {
@@ -450,14 +343,6 @@ class _ReadOnlyOrderCardState extends State<ReadOnlyOrderCard> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (widget.isTerminated) ...[
-                          Icon(
-                            Icons.cancel,
-                            color: _getStatusColor(status),
-                            size: 12,
-                          ),
-                          const SizedBox(width: 4),
-                        ],
                         Text(
                           status,
                           style: TextStyle(
@@ -482,17 +367,6 @@ class _ReadOnlyOrderCardState extends State<ReadOnlyOrderCard> {
                           fontSize: 12,
                         ),
                       ),
-                      if (widget.isTerminated && terminatedTimeStr.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          "Terminated: $terminatedTimeStr",
-                          style: const TextStyle(
-                            color: Colors.red,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ],
@@ -510,7 +384,7 @@ class _ReadOnlyOrderCardState extends State<ReadOnlyOrderCard> {
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
                         fontFamily: 'monospace',
-                        color: widget.isTerminated ? Colors.black54 : Colors.black87,
+                        color: Colors.black87,
                       ),
                       maxLines: 1,
                     ),
@@ -527,7 +401,7 @@ class _ReadOnlyOrderCardState extends State<ReadOnlyOrderCard> {
                     width: double.infinity,
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: widget.isTerminated ? Colors.grey[100] : Colors.grey[50],
+                      color: Colors.grey[50],
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: Colors.grey[300]!),
                     ),
@@ -561,14 +435,14 @@ class _ReadOnlyOrderCardState extends State<ReadOnlyOrderCard> {
                     children: [
                       Icon(Icons.person,
                           size: 16,
-                          color: widget.isTerminated ? Colors.grey : Colors.grey[600]),
+                          color: Colors.grey[600]),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           userEmail,
                           style: TextStyle(
                             fontSize: 12,
-                            color: widget.isTerminated ? Colors.black38 : Colors.black54,
+                            color: Colors.black54,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -582,7 +456,7 @@ class _ReadOnlyOrderCardState extends State<ReadOnlyOrderCard> {
                     children: [
                       Icon(Icons.currency_rupee,
                           size: 16,
-                          color: widget.isTerminated ? Colors.grey : Colors.grey[600]),
+                          color: Colors.grey[600]),
                       const SizedBox(width: 8),
                       Text(
                         'Total: ₹${total.toStringAsFixed(2)}',
@@ -628,56 +502,7 @@ class _ReadOnlyOrderCardState extends State<ReadOnlyOrderCard> {
                     ],
                   ),
 
-                  // Timer widget - only for "Pick Up" status (READ-ONLY)
-                  if (!widget.isTerminated && status == 'Pick Up' && pickedUpTime != null) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Text(
-                          "Timer: ",
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.black54,
-                          ),
-                        ),
-                        SimpleCountdownTimer(
-                          startTime: pickedUpTime.toDate(),
-                          duration: const Duration(minutes: 5),
-                        ),
-                      ],
-                    ),
-                  ],
 
-                  // Terminated order info
-                  if (widget.isTerminated) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.red.withOpacity(0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.info_outline, color: Colors.red, size: 14),
-                          const SizedBox(width: 6),
-                          const Expanded(
-                            child: Text(
-                              "Order was terminated due to pickup timeout",
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.red,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
                 ],
               ),
 
@@ -776,7 +601,7 @@ class _ReadOnlyOrderCardState extends State<ReadOnlyOrderCard> {
                   _isExpanded
                       ? Icons.keyboard_arrow_up
                       : Icons.keyboard_arrow_down,
-                  color: widget.isTerminated ? Colors.black38 : Colors.black54,
+                  color: Colors.black54,
                 ),
               ),
             ]

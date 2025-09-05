@@ -46,53 +46,11 @@ class OrderHistoryCard extends StatelessWidget {
     final total = data['total'] ?? 0.0;
     final shortOrderId = orderId.length > 6 ? orderId.substring(0, 6) : orderId;
     
-    // FIXED: Special handling for terminated orders
-    Widget statusWidget;
-    if (statusType == OrderStatusType.terminated) {
-      // Check if terminated order is from today
-      final now = DateTime.now();
-      final isToday = timestamp.year == now.year && 
-                     timestamp.month == now.month && 
-                     timestamp.day == now.day;
-      
-      statusWidget = Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: isToday ? Colors.orange.withOpacity(0.1) : Colors.red.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isToday ? Colors.orange.withOpacity(0.3) : Colors.red.withOpacity(0.3),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isToday ? Icons.access_time : Icons.cancel,
-              color: isToday ? Colors.orange : Colors.red,
-              size: 10,
-            ),
-            const SizedBox(width: 2),
-            Flexible(
-              child: Text(
-                isToday ? 'Expired' : 'Terminated',
-                style: GoogleFonts.poppins(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w600,
-                  color: isToday ? Colors.orange : Colors.red,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      );
-    } else {
-      statusWidget = StatusIndicator(
-        status: statusType,
-        isCompact: true,
-      );
-    }
+    // Status widget for simplified 2-state system
+    final statusWidget = StatusIndicator(
+      status: statusType,
+      isCompact: true,
+    );
     
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -207,46 +165,6 @@ class OrderHistoryCard extends StatelessWidget {
                     ),
                   ),
                 
-                // FIXED: Show pickup instructions for terminated orders from today
-                if (statusType == OrderStatusType.terminated && _isFromToday(timestamp))
-                  Container(
-                    margin: const EdgeInsets.only(top: 12),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFB703).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFFFB703).withOpacity(0.3)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.info_outline, color: Color(0xFFFFB703), size: 16),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                "Still available for pickup today!",
-                                style: GoogleFonts.poppins(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: const Color(0xFFFFB703),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          "Show Order ID to kitchen staff: $orderId",
-                          style: GoogleFonts.poppins(
-                            fontSize: 11,
-                            color: Colors.grey[700],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
               ],
             ),
           ],
@@ -255,26 +173,13 @@ class OrderHistoryCard extends StatelessWidget {
     );
   }
 
-  // FIXED: Helper methods for terminated orders
+  // Helper methods for simplified 2-state system
   Color _getBorderColor(OrderStatusType statusType, DateTime timestamp) {
-    if (statusType == OrderStatusType.terminated) {
-      return _isFromToday(timestamp) ? Colors.orange : Colors.red;
-    }
     return UserUtils.getStatusColor(statusType);
   }
 
   IconData _getStatusIcon(OrderStatusType statusType, DateTime timestamp) {
-    if (statusType == OrderStatusType.terminated) {
-      return _isFromToday(timestamp) ? Icons.access_time : Icons.cancel;
-    }
     return UserUtils.getStatusIcon(statusType);
-  }
-
-  bool _isFromToday(DateTime timestamp) {
-    final now = DateTime.now();
-    return timestamp.year == now.year && 
-           timestamp.month == now.month && 
-           timestamp.day == now.day;
   }
 
   List<Map<String, dynamic>> _processOrderItems(dynamic itemsData) {

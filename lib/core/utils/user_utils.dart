@@ -34,16 +34,12 @@ class UserUtils {
     switch (status) {
       case 'Placed':
         return OrderStatusType.placed;
-      case 'Cooking':
-        return OrderStatusType.cooking;
-      case 'Cooked':
-        return OrderStatusType.cooked;
       case 'Pick Up':
         return OrderStatusType.pickUp;
       case 'PickedUp':
         return OrderStatusType.pickedUp;
-      case 'Terminated':
-        return OrderStatusType.terminated;
+      case 'Expired':
+        return OrderStatusType.expired;
       default:
         return OrderStatusType.placed;
     }
@@ -53,16 +49,12 @@ class UserUtils {
     switch (status) {
       case OrderStatusType.placed:
         return Icons.receipt_long;
-      case OrderStatusType.cooking:
-        return Icons.restaurant;
-      case OrderStatusType.cooked:
-        return Icons.check_circle;
       case OrderStatusType.pickUp:
         return Icons.delivery_dining;
       case OrderStatusType.pickedUp:
         return Icons.done_all;
-      case OrderStatusType.terminated:
-        return Icons.cancel;
+      case OrderStatusType.expired:
+        return Icons.access_time_filled;
     }
   }
   
@@ -70,15 +62,11 @@ class UserUtils {
     switch (status) {
       case OrderStatusType.placed:
         return Colors.blue;
-      case OrderStatusType.cooking:
-        return Colors.orange;
-      case OrderStatusType.cooked:
-        return Colors.green;
       case OrderStatusType.pickUp:
-        return const Color(0xFFFFB703);
+        return Colors.green;
       case OrderStatusType.pickedUp:
         return Colors.green;
-      case OrderStatusType.terminated:
+      case OrderStatusType.expired:
         return Colors.red;
     }
   }

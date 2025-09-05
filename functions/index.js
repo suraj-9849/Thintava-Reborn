@@ -20,50 +20,93 @@ const razorpay = new Razorpay({
 // EXISTING FUNCTIONS (KEEP ALL YOUR CURRENT FUNCTIONALITY)
 // ============================================================================
 
-// ✅ Your existing function (KEEP IT)
-exports.terminateStalePickups = functions.pubsub
-  .schedule('every 1 minutes')
+// Clean up orders older than 24 hours (runs every hour)
+exports.cleanupExpiredOrders = functions.pubsub
+  .schedule('0 * * * *') // Run every hour
+  .timeZone('Asia/Kolkata')
   .onRun(async (context) => {
-    const db = admin.firestore();
-    const now = admin.firestore.FieldValue.serverTimestamp();
-    const serverNow = admin.firestore.Timestamp.now();
-    const cutoff = admin.firestore.Timestamp.fromMillis(serverNow.toMillis() - 5 * 60 * 1000);
-
-    const stale = await db.collection('orders')
-      .where('status', '==', 'Pick Up')
-      .where('pickedUpTime', '<=', cutoff)
-      .get();
-
-    if (stale.empty) {
-      console.log('No stale orders found.');
-      return null;
+    try {
+      console.log('🧹 Starting cleanup of expired orders...');
+      
+      // Calculate 24 hours ago
+      const twentyFourHoursAgo = admin.firestore.Timestamp.fromDate(
+        new Date(Date.now() - 24 * 60 * 60 * 1000)
+      );
+      
+      // Find orders older than 24 hours that are not picked up
+      const expiredOrdersQuery = await admin.firestore()
+        .collection('orders')
+        .where('timestamp', '<=', twentyFourHoursAgo)
+        .where('status', 'in', ['Placed', 'Pick Up'])
+        .get();
+      
+      if (expiredOrdersQuery.empty) {
+        console.log('✅ No expired orders found');
+        return null;
+      }
+      
+      console.log(`🗑️ Found ${expiredOrdersQuery.docs.length} expired orders to clean up`);
+      
+      const batch = admin.firestore().batch();
+      let cleanupCount = 0;
+      
+      for (const orderDoc of expiredOrdersQuery.docs) {
+        const orderData = orderDoc.data();
+        const orderId = orderDoc.id;
+        
+        console.log(`🗑️ Cleaning up expired order: ${orderId}`);
+        
+        // Add to order history with expired status
+        const expiredOrderData = {
+          ...orderData,
+          status: 'Expired',
+          expiredAt: admin.firestore.FieldValue.serverTimestamp(),
+          originalStatus: orderData.status,
+        };
+        
+        // Add to user's order history
+        if (orderData.userId) {
+          batch.set(
+            admin.firestore()
+              .collection('users')
+              .doc(orderData.userId)
+              .collection('orderHistory')
+              .doc(orderId),
+            expiredOrderData
+          );
+        }
+        
+        // Add to admin order history
+        batch.set(
+          admin.firestore().collection('adminOrderHistory').doc(orderId),
+          expiredOrderData
+        );
+        
+        // Delete from active orders
+        batch.delete(orderDoc.ref);
+        
+        cleanupCount++;
+        
+        // Process in batches of 500 (Firestore limit)
+        if (cleanupCount % 500 === 0) {
+          await batch.commit();
+          console.log(`✅ Processed ${cleanupCount} expired orders`);
+        }
+      }
+      
+      // Commit remaining operations
+      if (cleanupCount % 500 !== 0) {
+        await batch.commit();
+      }
+      
+      console.log(`✅ Cleanup completed: ${cleanupCount} expired orders processed`);
+      
+      return { cleanedUp: cleanupCount };
+      
+    } catch (error) {
+      console.error('❌ Error during order cleanup:', error);
+      return { error: error.message };
     }
-
-    const batch = db.batch();
-    stale.forEach(doc => {
-      const data = doc.data();
-      const id = doc.id;
-      const userId = data.userId;
-
-      batch.update(db.collection('orders').doc(id), {
-        status: 'Terminated',
-        terminatedTime: now,
-      });
-
-      batch.set(
-        db.collection('users').doc(userId).collection('orderHistory').doc(id),
-        { ...data, status: 'Terminated', terminatedTime: serverNow }
-      );
-
-      batch.set(
-        db.collection('adminOrderHistory').doc(id),
-        { ...data, status: 'Terminated', terminatedTime: serverNow }
-      );
-    });
-
-    await batch.commit();
-    console.log(`Terminated ${stale.size} stale pickups.`);
-    return null;
   });
 
 exports.notifyKitchenOnNewOrder = functions.firestore
@@ -282,7 +325,7 @@ exports.testKitchenNotifications = functions.https.onRequest(async (req, res) =>
   }
 });
 
-// 🚀 Enhanced function: notify user when order status changes
+// Simplified function: notify user when order status changes (only for Pick Up status)
 exports.notifyUserOnOrderStatusChange = functions.firestore
   .document('orders/{orderId}')
   .onUpdate(async (change, context) => {
@@ -290,8 +333,8 @@ exports.notifyUserOnOrderStatusChange = functions.firestore
       const beforeStatus = change.before.data().status;
       const afterStatus = change.after.data().status;
 
-      // Only send notification if status actually changed
-      if (beforeStatus === afterStatus) {
+      // Only send notification if status changed to Pick Up
+      if (beforeStatus === afterStatus || afterStatus !== 'Pick Up') {
         return null;
       }
 
@@ -314,45 +357,16 @@ exports.notifyUserOnOrderStatusChange = functions.firestore
         return null;
       }
 
-      // Calculate item count from order data
-      let itemCount = 0;
-      if (orderData.items && Array.isArray(orderData.items)) {
-        itemCount = orderData.items.reduce((total, item) => {
-          return total + (item.quantity || 1);
-        }, 0);
-      }
-
-      // Create status-specific messages
-      let notificationBody = `Your order status has been updated to ${afterStatus}.`;
-      switch (afterStatus.toLowerCase()) {
-        case 'cooking':
-          notificationBody = 'Your order is now being prepared! 👨‍🍳';
-          break;
-        case 'cooked':
-          notificationBody = 'Your order is ready! Please come to pick it up. 🍽️';
-          break;
-        case 'pick up':
-          notificationBody = 'Your order is ready for pickup! Please collect it within 5 minutes. ⏰';
-          break;
-        case 'pickedup':
-          notificationBody = 'Thank you! Enjoy your meal! 😊';
-          break;
-        case 'terminated':
-          notificationBody = 'Your order has been cancelled. Please contact support if needed.';
-          break;
-      }
-
       const payload = {
         notification: {
-          title: 'Order Update',
-          body: notificationBody,
+          title: 'Order Ready!',
+          body: 'Your order is ready for pickup! Please come collect it. 🍽️',
         },
         data: {
           type: 'ORDER_STATUS_UPDATE',
           orderId: context.params.orderId,
           newStatus: afterStatus,
           oldStatus: beforeStatus,
-          itemCount: itemCount.toString(),
         }
       };
 
@@ -1952,5 +1966,193 @@ exports.forceLogoutUser = functions.https.onRequest(async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// Manual cleanup function for testing (accessible via HTTP)
+exports.manualCleanupExpiredOrders = functions.https.onRequest(async (req, res) => {
+  try {
+    console.log('🧪 Manual cleanup test started');
+    
+    // Calculate 24 hours ago
+    const twentyFourHoursAgo = admin.firestore.Timestamp.fromDate(
+      new Date(Date.now() - 24 * 60 * 60 * 1000)
+    );
+    
+    // Find orders older than 24 hours that are not picked up
+    const expiredOrdersQuery = await admin.firestore()
+      .collection('orders')
+      .where('timestamp', '<=', twentyFourHoursAgo)
+      .where('status', 'in', ['Placed', 'Pick Up'])
+      .get();
+    
+    if (expiredOrdersQuery.empty) {
+      res.status(200).json({
+        success: true,
+        message: 'No expired orders found',
+        cleanedUp: 0
+      });
+      return;
+    }
+    
+    console.log(`🗑️ Found ${expiredOrdersQuery.docs.length} expired orders for manual cleanup`);
+    
+    const batch = admin.firestore().batch();
+    let cleanupCount = 0;
+    const cleanedOrders = [];
+    
+    for (const orderDoc of expiredOrdersQuery.docs) {
+      const orderData = orderDoc.data();
+      const orderId = orderDoc.id;
+      
+      console.log(`🗑️ Manually cleaning up expired order: ${orderId}`);
+      
+      // Add to order history with expired status
+      const expiredOrderData = {
+        ...orderData,
+        status: 'Expired',
+        expiredAt: admin.firestore.FieldValue.serverTimestamp(),
+        originalStatus: orderData.status,
+        manualCleanup: true,
+      };
+      
+      // Add to user's order history
+      if (orderData.userId) {
+        batch.set(
+          admin.firestore()
+            .collection('users')
+            .doc(orderData.userId)
+            .collection('orderHistory')
+            .doc(orderId),
+          expiredOrderData
+        );
+      }
+      
+      // Add to admin order history
+      batch.set(
+        admin.firestore().collection('adminOrderHistory').doc(orderId),
+        expiredOrderData
+      );
+      
+      // Delete from active orders
+      batch.delete(orderDoc.ref);
+      
+      cleanedOrders.push({
+        orderId: orderId,
+        originalStatus: orderData.status,
+        userEmail: orderData.userEmail || 'Unknown'
+      });
+      
+      cleanupCount++;
+    }
+    
+    // Commit all operations
+    await batch.commit();
+    
+    console.log(`✅ Manual cleanup completed: ${cleanupCount} expired orders processed`);
+    
+    res.status(200).json({
+      success: true,
+      message: `Successfully cleaned up ${cleanupCount} expired orders`,
+      cleanedUp: cleanupCount,
+      orders: cleanedOrders
+    });
+    
+  } catch (error) {
+    console.error('❌ Error during manual cleanup:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Handle notifications created in the notifications collection
+exports.sendNotificationToUser = functions.firestore
+  .document('notifications/{notificationId}')
+  .onCreate(async (snap, context) => {
+    try {
+      const notification = snap.data();
+      const notificationId = context.params.notificationId;
+
+      console.log('📱 New notification created:', notificationId);
+      console.log('📱 Notification data:', JSON.stringify(notification, null, 2));
+
+      // Get user's FCM token
+      const userId = notification.userId;
+      if (!userId) {
+        console.warn('❌ No userId in notification document');
+        return null;
+      }
+
+      const userDoc = await admin.firestore()
+        .collection('users')
+        .doc(userId)
+        .get();
+
+      if (!userDoc.exists) {
+        console.warn(`❌ User ${userId} not found`);
+        return null;
+      }
+
+      const userData = userDoc.data();
+      const fcmToken = userData.fcmToken;
+
+      if (!fcmToken || fcmToken.trim() === '') {
+        console.warn(`❌ User ${userId} has no FCM token`);
+        return null;
+      }
+
+      // Send the notification
+      const payload = {
+        notification: {
+          title: notification.title,
+          body: notification.body,
+        },
+        data: {
+          type: notification.type || 'general',
+          orderId: notification.orderId || '',
+          action: notification.data?.action || 'view_notification',
+          notificationId: notificationId,
+          timestamp: new Date().toISOString(),
+        },
+        token: fcmToken,
+        android: {
+          notification: {
+            icon: '@mipmap/ic_launcher',
+            color: '#FFB703',
+            channelId: notification.type === 'order_completed' ? 'thintava_orders' : 'thintava_orders',
+          },
+          priority: 'high',
+        },
+        apns: {
+          payload: {
+            aps: {
+              badge: 1,
+              sound: 'default',
+            },
+          },
+        },
+      };
+
+      await admin.messaging().send(payload);
+      console.log(`✅ Notification sent successfully to user ${userId}`);
+
+      // Mark notification as sent
+      await snap.ref.update({
+        sent: true,
+        sentAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+    } catch (error) {
+      console.error('❌ Error sending notification:', error);
+      
+      // Mark notification as failed
+      await snap.ref.update({
+        sent: false,
+        failed: true,
+        error: error.message,
+        failedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+  });
 
 console.log('🚀 Firebase Functions loaded successfully with RESERVATION SYSTEM enabled!');
